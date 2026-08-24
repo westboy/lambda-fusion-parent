@@ -10,6 +10,7 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
@@ -19,6 +20,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,11 +34,15 @@ import org.apache.commons.lang3.StringUtils;
  * AgentScope 细粒度事件到官方 AG-UI 事件的薄映射器。
  *
  * <p>本类只处理协议事件配对与工具结果缓冲，不解释业务 Run 状态，也不生成另一套快照增量。运行中快照直接投影本类输出的
- * {@link AguiEvent}。
+ * {@link AguiEvent}。纯文本工具结果保持原字符串；包含数据块时输出版本化 JSON 信封，{@code content} 保留 AgentScope
+ * {@link ContentBlock} 的原生多态结构。
  *
  * @author Jin
  */
 public final class AgentEventMapper {
+
+    private static final String TOOL_RESULT_ENVELOPE_SCHEMA = "lambda-fusion/tool-result";
+    private static final int TOOL_RESULT_ENVELOPE_VERSION = 1;
 
     private final String threadId;
     private final String runId;
@@ -66,6 +72,7 @@ public final class AgentEventMapper {
             case TOOL_CALL_DELTA -> mapToolCallDelta(event, events);
             case TOOL_RESULT_START -> mapToolResultStart(event, events);
             case TOOL_RESULT_TEXT_DELTA -> mapToolResultTextDelta(event);
+            case TOOL_RESULT_DATA_DELTA -> mapToolResultDataDelta(event);
             case TOOL_RESULT_END -> mapToolResultEnd(event, events);
             case REQUIRE_USER_CONFIRM -> mapRequireUserConfirm(event, events);
             case REQUIRE_EXTERNAL_EXECUTION -> mapRequireExternalExecution(event, events);
@@ -191,6 +198,12 @@ public final class AgentEventMapper {
         }
     }
 
+    private void mapToolResultDataDelta(AgentEvent event) {
+        if (event instanceof ToolResultDataDeltaEvent tool) {
+            toolCallTracker.appendResult(tool.getToolCallId(), tool.getData());
+        }
+    }
+
     private void mapToolResultEnd(AgentEvent event, List<AguiEvent> out) {
         if (!(event instanceof ToolResultEndEvent tool)) {
             return;
@@ -307,6 +320,7 @@ public final class AgentEventMapper {
 
         private final Set<String> startedToolCalls = new HashSet<>();
         private final Map<String, StringBuilder> resultBuffers = new HashMap<>();
+        private final Map<String, List<ContentBlock>> resultContent = new HashMap<>();
 
         boolean markStarted(String toolCallId) {
             resultBuffers.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
@@ -319,9 +333,31 @@ public final class AgentEventMapper {
                     .append(delta);
         }
 
+        void appendResult(String toolCallId, ContentBlock content) {
+            if (content != null) {
+                resultContent
+                        .computeIfAbsent(toolCallId, ignored -> new ArrayList<>())
+                        .add(content);
+            }
+        }
+
         String result(String toolCallId) {
             StringBuilder result = resultBuffers.get(toolCallId);
-            return result == null ? "" : result.toString();
+            String text = result == null ? "" : result.toString();
+            List<ContentBlock> content = resultContent.get(toolCallId);
+            if (content == null || content.isEmpty()) {
+                return text;
+            }
+            return JsonUtils.getJsonCodec()
+                    .toJson(new ToolResultEnvelope(
+                            TOOL_RESULT_ENVELOPE_SCHEMA, TOOL_RESULT_ENVELOPE_VERSION, text, content));
+        }
+    }
+
+    private record ToolResultEnvelope(String schema, int version, String text, List<ContentBlock> content) {
+
+        private ToolResultEnvelope {
+            content = List.copyOf(content);
         }
     }
 }

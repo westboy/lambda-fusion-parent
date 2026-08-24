@@ -1,29 +1,21 @@
-package com.lambda.fusion.ai.rag.storage;
+package com.lambda.fusion.ai.storage;
 
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
-/**
- * 将文档原文件保存在本地目录，路径格式为 {@code {root}/{tenantId}/{kbId}/{documentId}.{ext}}。
- * 根目录依次取文档存储的显式配置、{@code workspace.root/knowledge-files} 和用户目录下的默认路径。
- *
- * @author Jin
- */
-@Slf4j
+/** LOCAL AI 文件存储。 */
 @RequiredArgsConstructor
 @SuppressFBWarnings("EI_EXPOSE_REP2")
-public class LocalDocumentFileStorage implements DocumentFileStorage {
+public class LocalAiFileStorage implements AiFileStorage {
 
     public static final String TYPE = "LOCAL";
 
@@ -35,8 +27,8 @@ public class LocalDocumentFileStorage implements DocumentFileStorage {
     }
 
     @Override
-    public String store(Path source, String relativeName) {
-        Path target = resolveRoot().resolve(relativeName);
+    public String store(Path source, String relativeName, String contentType) {
+        Path target = resolveStoragePath(relativeName);
         try {
             Files.createDirectories(target.getParent());
             Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
@@ -49,19 +41,29 @@ public class LocalDocumentFileStorage implements DocumentFileStorage {
     @Override
     public void delete(String storagePath) {
         try {
-            Files.deleteIfExists(resolveRoot().resolve(storagePath));
+            Files.deleteIfExists(resolveStoragePath(storagePath));
         } catch (IOException e) {
             throw new AiBusinessException(AiErrorCode.DOCUMENT_STORAGE_ERROR, e);
         }
     }
 
     @Override
-    public void download(String storagePath, OutputStream out) {
+    public AiFileResource open(String storagePath) {
+        Path path = resolveStoragePath(storagePath);
         try {
-            Files.copy(resolveRoot().resolve(storagePath), out);
+            return new AiFileResource(Files.newInputStream(path), Files.size(path));
         } catch (IOException e) {
             throw new AiBusinessException(AiErrorCode.DOCUMENT_STORAGE_ERROR, e);
         }
+    }
+
+    private Path resolveStoragePath(String relativePath) {
+        Path root = resolveRoot().toAbsolutePath().normalize();
+        Path target = root.resolve(relativePath).normalize();
+        if (!target.startsWith(root)) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "非法存储路径");
+        }
+        return target;
     }
 
     private Path resolveRoot() {

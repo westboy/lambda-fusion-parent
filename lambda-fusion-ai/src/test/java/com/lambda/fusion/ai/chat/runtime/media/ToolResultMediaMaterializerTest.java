@@ -1,0 +1,144 @@
+package com.lambda.fusion.ai.chat.runtime.media;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
+import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
+import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+
+class ToolResultMediaMaterializerTest {
+
+    @Test
+    void shouldStoreBase64AndReturnOfficialDataBlock() {
+        AiProperties properties = properties();
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        ChatAttachmentEntity stored = attachment("123456", "generated.png", "image/png");
+        AtomicReference<byte[]> storedBytes = new AtomicReference<>();
+        when(attachmentService.storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    storedBytes.set(Files.readAllBytes(invocation.getArgument(2)));
+                    return stored;
+                });
+        ToolResultMediaMaterializer materializer =
+                new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        byte[] expected = "generated-image".getBytes();
+        ToolResultDataDeltaEvent event = event(ImageBlock.builder()
+                .source(new Base64Source("image/png", Base64.getEncoder().encodeToString(expected)))
+                .build());
+
+        AgentEvent result = materializer
+                .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
+                .block(Duration.ofSeconds(5));
+
+        assertThat(storedBytes.get()).isEqualTo(expected);
+        assertThat(result).isInstanceOfSatisfying(ToolResultDataDeltaEvent.class, transformed -> {
+            assertThat(transformed.getData()).isInstanceOfSatisfying(DataBlock.class, data -> {
+                assertThat(data.getId()).isEqualTo("attachment:123456");
+                assertThat(data.getName()).isEqualTo("generated.png");
+                assertThat(data.getSource()).isInstanceOfSatisfying(URLSource.class, source -> {
+                    assertThat(source.getUrl())
+                            .startsWith("/v1/ai/chat/attachments/123456/preview?expires=")
+                            .contains("&sig=");
+                    assertThat(source.getMimeType()).isEqualTo("image/png");
+                });
+            });
+        });
+    }
+
+    @Test
+    void shouldRejectPrivateRemoteAddressBeforeDownload() {
+        AiProperties properties = properties();
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        ToolResultMediaMaterializer materializer =
+                new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        ToolResultDataDeltaEvent event = event(ImageBlock.builder()
+                .source(new URLSource("http://127.0.0.1/generated.png", "image/png"))
+                .build());
+
+        assertThatThrownBy(() -> materializer
+                        .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
+                        .block(Duration.ofSeconds(5)))
+                .isInstanceOfSatisfying(AiBusinessException.class, error -> assertThat(error.getCode())
+                        .isEqualTo(AiErrorCode.TOOL_RESULT_MEDIA_MATERIALIZATION_FAILED.getCode()));
+        verify(attachmentService, never())
+                .storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString());
+    }
+
+    @Test
+    void shouldMaterializeOfficialVideoBlockThroughTheSharedStoragePath() {
+        AiProperties properties = properties();
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        ChatAttachmentEntity stored = attachment("video-1", "generated.mp4", "video/mp4");
+        when(attachmentService.storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString()))
+                .thenReturn(stored);
+        ToolResultMediaMaterializer materializer =
+                new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        ToolResultDataDeltaEvent event = event(VideoBlock.builder()
+                .source(new Base64Source("video/mp4", Base64.getEncoder().encodeToString("video".getBytes())))
+                .build());
+
+        AgentEvent result = materializer
+                .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
+                .block(Duration.ofSeconds(5));
+
+        assertThat(result)
+                .isInstanceOfSatisfying(ToolResultDataDeltaEvent.class, transformed -> assertThat(transformed.getData())
+                        .isInstanceOfSatisfying(DataBlock.class, data -> {
+                            assertThat(data.getId()).isEqualTo("attachment:video-1");
+                            assertThat(data.getSource())
+                                    .isInstanceOfSatisfying(URLSource.class, source -> assertThat(source.getMimeType())
+                                            .isEqualTo("video/mp4"));
+                        }));
+        verify(attachmentService)
+                .storeGenerated(eq("tenant-1"), eq("session-1"), any(Path.class), anyString(), eq("video/mp4"));
+    }
+
+    private static ToolResultDataDeltaEvent event(ContentBlock block) {
+        return new ToolResultDataDeltaEvent("reply-1", "tool-1", "generate_image", block);
+    }
+
+    private static AiProperties properties() {
+        AiProperties properties = new AiProperties();
+        properties.getChat().getAttachment().getPreview().setSecret("test-preview-secret-with-enough-entropy");
+        return properties;
+    }
+
+    private static ChatAttachmentPreviewTokenService previewTokenService(AiProperties properties) {
+        ChatAttachmentPreviewTokenService service = new ChatAttachmentPreviewTokenService(properties);
+        service.init();
+        return service;
+    }
+
+    private static ChatAttachmentEntity attachment(String id, String fileName, String mimeType) {
+        ChatAttachmentEntity entity = new ChatAttachmentEntity();
+        entity.setId(id);
+        entity.setFileName(fileName);
+        entity.setMimeType(mimeType);
+        return entity;
+    }
+}

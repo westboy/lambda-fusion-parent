@@ -19,6 +19,7 @@ import com.lambda.fusion.ai.chat.model.ConfirmTransition;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
@@ -28,6 +29,7 @@ import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -45,6 +47,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 class ChatRunCoordinatorConfirmTest {
 
@@ -66,6 +69,9 @@ class ChatRunCoordinatorConfirmTest {
         delegate = mock(ReActAgent.class);
         when(agent.getDelegate()).thenReturn(delegate);
         when(agentFactory.getOrBuild(anyString(), anyString())).thenReturn(agent);
+        ToolResultMediaMaterializer mediaMaterializer = mock(ToolResultMediaMaterializer.class);
+        when(mediaMaterializer.materialize(any(), any()))
+                .thenAnswer(invocation -> Mono.just(invocation.<AgentEvent>getArgument(0)));
 
         AiProperties properties = new AiProperties();
         instanceFactory = new ChatExecutionInstanceFactory(
@@ -74,6 +80,7 @@ class ChatRunCoordinatorConfirmTest {
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
                 mock(ObjectProvider.class),
+                mediaMaterializer,
                 properties);
         coordinator = new ChatExecutionService(
                 runService,

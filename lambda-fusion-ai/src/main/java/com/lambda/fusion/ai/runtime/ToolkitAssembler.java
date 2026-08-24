@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.runtime;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.MediaGenerationCapabilityFactory;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
@@ -12,6 +13,7 @@ import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.tool.Tool;
@@ -33,7 +35,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 工具集装配器：为每个应用构建 {@link Toolkit}，含全局 {@code @AiTool} 本地工具 Bean、
- * 应用绑定的生图工具（{@code IMAGE_GEN} 模型）与应用绑定的 MCP 服务（每个独立装载，单个失败不影响其余）。
+ * 应用绑定的图片/视频生成工具与应用绑定的 MCP 服务（每个独立装载，单个失败不影响其余）。
  *
  * @author Jin
  */
@@ -106,6 +108,7 @@ public class ToolkitAssembler {
             toolkit.registerTool(toolBean);
         }
         registerImageGenerationTool(toolkit, app);
+        registerVideoGenerationTool(toolkit, app);
         registerMcpServers(toolkit, app.getMcpServerIds());
         return toolkit;
     }
@@ -143,8 +146,11 @@ public class ToolkitAssembler {
 
     /** 按提供方类型解密 Key 并构建生图工具；不支持的类型返回 null。 */
     private ImageGenerationTool buildImageTool(LlmProviderEntity provider, String modelName) {
-        String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
         ProviderType type = ProviderType.of(provider.getProviderType());
+        if (!MediaGenerationCapabilityFactory.supports(ModelType.IMAGE_GEN, type, modelName)) {
+            return null;
+        }
+        String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
         if (type == ProviderType.DASHSCOPE) {
             return ImageGenerationTool.dashscope(apiKey, modelName);
         }
@@ -152,6 +158,38 @@ public class ToolkitAssembler {
             return ImageGenerationTool.openai(apiKey, provider.getBaseUrl(), modelName);
         }
         return null;
+    }
+
+    /**
+     * 按应用绑定的 {@code VIDEO_GEN} 模型挂载文生视频工具。AgentScope 2.0.1 仅提供 DashScope
+     * 视频生成实现；其他 provider 类型与失效配置均安全跳过。
+     */
+    private void registerVideoGenerationTool(Toolkit toolkit, AppEntity app) {
+        if (StringUtils.isBlank(app.getVideoModelId())) {
+            return;
+        }
+        try {
+            LlmModelEntity model = llmModelService.loadById(app.getVideoModelId());
+            if (model.getModelType() != ModelType.VIDEO_GEN || Boolean.FALSE.equals(model.getEnabled())) {
+                log.warn("应用 {} 绑定的视频模型 {} 已禁用或类型不符，跳过挂载", app.getId(), app.getVideoModelId());
+                return;
+            }
+            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
+            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
+                log.warn("应用 {} 视频模型所属 provider 未启用媒体生成，跳过挂载: {}", app.getId(), provider.getId());
+                return;
+            }
+            ProviderType providerType = ProviderType.of(provider.getProviderType());
+            if (!MediaGenerationCapabilityFactory.supports(ModelType.VIDEO_GEN, providerType)) {
+                log.warn("应用 {} 视频模型所属 provider 类型 {} 暂不支持视频生成，跳过挂载", app.getId(), provider.getProviderType());
+                return;
+            }
+            String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
+            toolkit.registerTool(VideoGenerationTool.dashscope(apiKey, model.getModelName()));
+            log.info("应用 {} 已挂载文生视频工具: model={}", app.getId(), model.getModelName());
+        } catch (RuntimeException e) {
+            log.warn("应用 {} 视频生成工具挂载失败，跳过", app.getId(), e);
+        }
     }
 
     private void registerMcpServers(Toolkit toolkit, List<String> mcpServerIds) {

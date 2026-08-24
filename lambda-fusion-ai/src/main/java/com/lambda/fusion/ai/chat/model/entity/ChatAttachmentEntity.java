@@ -45,7 +45,7 @@ public class ChatAttachmentEntity {
     private Long sizeBytes;
 
     @TableField("category")
-    @Schema(description = "类别: IMAGE/DOCUMENT")
+    @Schema(description = "类别: IMAGE/DOCUMENT/AUDIO/VIDEO/FILE")
     private String category;
 
     @TableField("storage_type")

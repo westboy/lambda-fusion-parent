@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.runtime;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.agui.AgentEventMapper;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
@@ -46,6 +47,7 @@ public final class AgentExecutionAdapter {
     private final String appId;
     private final String tenantId;
     private final FusionSubagentGateway subagentGateway;
+    private final ToolResultMediaMaterializer mediaMaterializer;
 
     /**
      * 创建 Agent 执行适配器。
@@ -56,7 +58,7 @@ public final class AgentExecutionAdapter {
      * @param tenantId 已归一化的租户标识
      */
     public AgentExecutionAdapter(HarnessAgent agent, ChatRunEntity run, ChatSessionEntity session, String tenantId) {
-        this(agent, run, session, tenantId, null);
+        this(agent, run, session, tenantId, null, null);
     }
 
     public AgentExecutionAdapter(
@@ -65,6 +67,16 @@ public final class AgentExecutionAdapter {
             ChatSessionEntity session,
             String tenantId,
             FusionSubagentGateway subagentGateway) {
+        this(agent, run, session, tenantId, subagentGateway, null);
+    }
+
+    public AgentExecutionAdapter(
+            HarnessAgent agent,
+            ChatRunEntity run,
+            ChatSessionEntity session,
+            String tenantId,
+            FusionSubagentGateway subagentGateway,
+            ToolResultMediaMaterializer mediaMaterializer) {
         this.agent = Objects.requireNonNull(agent, "agent");
         this.runId = Objects.requireNonNull(run.getId(), "run.id");
         this.sessionId = Objects.requireNonNull(run.getSessionId(), "run.sessionId");
@@ -72,6 +84,7 @@ public final class AgentExecutionAdapter {
         this.appId = Objects.requireNonNull(session.getAppId(), "session.appId");
         this.tenantId = Objects.requireNonNull(tenantId, "tenantId");
         this.subagentGateway = subagentGateway;
+        this.mediaMaterializer = mediaMaterializer;
     }
 
     /**
@@ -92,6 +105,11 @@ public final class AgentExecutionAdapter {
         Flux<AgentEvent> source = agent.streamEvents(message, context);
         if (subagentGateway != null) {
             source = source.doOnNext(this::recordSubagentExposure);
+        }
+        if (mediaMaterializer != null) {
+            ToolResultMediaMaterializer.Context mediaContext =
+                    new ToolResultMediaMaterializer.Context(runId, sessionId, tenantId);
+            source = source.concatMap(event -> mediaMaterializer.materialize(event, mediaContext), 1);
         }
         return endAtHitlPhaseBoundary(source);
     }

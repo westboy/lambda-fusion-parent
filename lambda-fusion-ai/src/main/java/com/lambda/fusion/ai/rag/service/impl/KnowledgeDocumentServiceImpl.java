@@ -17,8 +17,8 @@ import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
 import com.lambda.fusion.ai.rag.service.KnowledgeDocumentService;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorage;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorageResolver;
+import com.lambda.fusion.ai.storage.AiFileStorage;
+import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
@@ -53,7 +53,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final AiProperties aiProperties;
     private final ObjectProvider<SimpleKnowledgeAdapter> adapterProvider;
     private final ObjectProvider<DocumentIngestionService> ingestionServiceProvider;
-    private final DocumentFileStorageResolver storageResolver;
+    private final AiFileStorageResolver storageResolver;
 
     @Override
     public Page<KnowledgeDocumentEntity> page(KnowledgeDocumentPage query) {
@@ -95,11 +95,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             tempFile = Files.createTempFile("kb-upload-", "." + extension);
             file.transferTo(tempFile);
             // 原文件持久化必须在异步入库之前同步完成；持久化失败即上传失败，避免只留下向量数据
-            DocumentFileStorage storage = storageResolver.resolve(
+            AiFileStorage storage = storageResolver.resolve(
                     aiProperties.getRag().getDocumentStorage().getType());
             String relativeName = kbId + "/" + entity.getId() + "." + extension;
             entity.setStorageType(storage.type());
-            entity.setStoragePath(storage.store(tempFile, relativeName));
+            entity.setStoragePath(storage.store(tempFile, relativeName, file.getContentType()));
             entity.setUpdatedAt(LocalDateTime.now());
             knowledgeDocumentMapper.updateById(entity);
         } catch (IOException e) {

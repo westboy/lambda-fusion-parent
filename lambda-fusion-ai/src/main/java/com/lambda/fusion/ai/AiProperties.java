@@ -170,6 +170,33 @@ public class AiProperties {
             /** 图片预览链接参数。 */
             private Preview preview = new Preview();
 
+            /** 工具结果媒体物化参数。 */
+            @Valid
+            private GeneratedMedia generatedMedia = new GeneratedMedia();
+
+            /** 工具结果中的图片、音频、视频和通用文件物化参数。 */
+            @Data
+            public static class GeneratedMedia {
+
+                /** 单个生成文件的大小上限，单位 MB。 */
+                @Min(1)
+                @Max(1024)
+                private long maxFileSizeMb = 100;
+
+                /** 远程媒体连接超时，单位秒。 */
+                @Min(1)
+                private long connectTimeoutSeconds = 10;
+
+                /** 单次远程媒体请求总超时，单位秒。 */
+                @Min(1)
+                private long requestTimeoutSeconds = 120;
+
+                /** 远程媒体允许跟随的最大重定向次数。 */
+                @Min(0)
+                @Max(10)
+                private int maxRedirects = 3;
+            }
+
             /**
              * 图片预览链接参数。预览签名绑定附件 ID，并在到期后失效。
              */
@@ -182,6 +209,7 @@ public class AiProperties {
                 private String secret;
 
                 /** 预览签名的有效期，单位秒。 */
+                @Min(1)
                 private long ttlSeconds = 3600;
             }
         }

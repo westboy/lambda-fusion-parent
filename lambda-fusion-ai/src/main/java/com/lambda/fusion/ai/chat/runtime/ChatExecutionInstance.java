@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.chat.runtime.agui.AgentEventMapper;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapEncoder;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapModel;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaReference;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotSanitizer;
 import com.lambda.fusion.ai.chat.runtime.validator.ConfirmationValidator;
@@ -26,8 +27,10 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.message.Msg;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ScheduledExecutorService;
@@ -75,6 +78,7 @@ public final class ChatExecutionInstance {
     private AgentEventMapper eventMapper;
     private boolean awaitingInteraction;
     private List<AguiEvent> pendingInteractionEvents;
+    private final Set<String> generatedAttachmentIds = new LinkedHashSet<>();
 
     /**
      * 创建执行实例。
@@ -108,6 +112,7 @@ public final class ChatExecutionInstance {
         this.session = session;
         this.agentExecutionAdapter = agentExecutionAdapter;
         this.accumulator = accumulator;
+        this.generatedAttachmentIds.addAll(ToolResultMediaReference.attachmentIds(accumulator.buildSnapshot()));
         this.chatExecutionFinalizer = new ChatExecutionFinalizer(runService, eventStore, properties);
         this.agentStreamLifecycle = new AgentStreamLifecycle(run.getId(), scheduler, properties);
         this.eventMapper = new AgentEventMapper(
@@ -352,6 +357,7 @@ public final class ChatExecutionInstance {
             finalizeCompleted();
             return;
         }
+        ToolResultMediaReference.attachmentId(event).ifPresent(generatedAttachmentIds::add);
         List<AguiEvent> events = eventMapper.map(event);
         if (AgentEventMapper.isInteractionBoundary(event)) {
             if (awaitingInteraction) {
@@ -562,7 +568,13 @@ public final class ChatExecutionInstance {
                 log.warn("Run终结前内容关闭事件写入失败，仍继续提交业务终态: runId={}", run.getId(), closeEventFailure);
             }
             chatExecutionFinalizer.commitTerminal(
-                    run, accumulator.buildSnapshot(), status, reason, errorCode, errorMessage);
+                    run,
+                    accumulator.buildSnapshot(),
+                    List.copyOf(generatedAttachmentIds),
+                    status,
+                    reason,
+                    errorCode,
+                    errorMessage);
             // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
             // 否则等待 onSourceTerminated 在源流排空后完成它。
             if (isSourceTerminated()) {

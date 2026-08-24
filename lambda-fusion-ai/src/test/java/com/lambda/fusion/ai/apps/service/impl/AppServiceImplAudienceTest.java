@@ -20,7 +20,9 @@ import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
+import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
+import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
 import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -42,6 +44,7 @@ class AppServiceImplAudienceTest {
 
     private AppMapper appMapper;
     private LlmModelService llmModelService;
+    private LlmProviderService llmProviderService;
     private AiProperties properties;
     private AppServiceImpl service;
     private UserDetails user;
@@ -53,6 +56,7 @@ class AppServiceImplAudienceTest {
         properties.getAudience().getBRoles().add("ROLE_B");
         properties.getAudience().getCRoles().add("ROLE_C");
         llmModelService = mock(LlmModelService.class);
+        llmProviderService = mock(LlmProviderService.class);
         // 绑定校验：应用绑定/回填视图都会按 modelId 查模型，统一返回 CHAT 型
         LlmModelEntity chatModel = new LlmModelEntity();
         chatModel.setModelType(ModelType.CHAT);
@@ -63,6 +67,7 @@ class AppServiceImplAudienceTest {
                 appMapper,
                 mock(AppConfigAuditMapper.class),
                 llmModelService,
+                llmProviderService,
                 mock(ApplicationEventPublisher.class),
                 mock(WorkspacePaths.class),
                 properties);
@@ -112,13 +117,25 @@ class AppServiceImplAudienceTest {
     }
 
     @Test
-    void shouldLoadAvailableViewWithVisionCapability() {
+    void shouldLoadAvailableViewWithVisionAndMediaCapabilities() {
         AppEntity stored = app("a1", "ALL");
         stored.setModelId("m-1");
+        stored.setImageModelId("image-1");
+        stored.setVideoModelId("video-1");
         when(appMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(stored);
-        LlmModelEntity model = new LlmModelEntity();
-        model.setSupportsVision(Boolean.TRUE);
-        when(llmModelService.loadById("m-1")).thenReturn(model);
+        LlmModelEntity chatModel = new LlmModelEntity();
+        chatModel.setSupportsVision(Boolean.TRUE);
+        when(llmModelService.loadById("m-1")).thenReturn(chatModel);
+        LlmModelEntity imageModel = mediaModel("image-1", ModelType.IMAGE_GEN, "海报模型", "wanx-v1");
+        LlmModelEntity videoModel = mediaModel("video-1", ModelType.VIDEO_GEN, "视频模型", "wan2.6-t2v");
+        when(llmModelService.loadById("image-1")).thenReturn(imageModel);
+        when(llmModelService.loadById("video-1")).thenReturn(videoModel);
+        LlmProviderEntity provider = new LlmProviderEntity();
+        provider.setId("p-1");
+        provider.setProviderType("dashscope");
+        provider.setEnabled(Boolean.TRUE);
+        provider.setEnableMediaGen(Boolean.TRUE);
+        when(llmProviderService.loadById("p-1")).thenReturn(provider);
 
         try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
             auth.when(AuthUtils::getUser).thenReturn(user);
@@ -126,6 +143,11 @@ class AppServiceImplAudienceTest {
 
             assertThat(view.getId()).isEqualTo("a1");
             assertThat(view.getSupportsVision()).isTrue();
+            assertThat(view.getSupportsImageGeneration()).isTrue();
+            assertThat(view.getSupportsVideoGeneration()).isTrue();
+            assertThat(view.getMediaGenerationCapabilities())
+                    .extracting(capability -> capability.getKind() + ":" + capability.getModelLabel())
+                    .containsExactly("image:海报模型", "video:视频模型");
         }
     }
 
@@ -147,5 +169,16 @@ class AppServiceImplAudienceTest {
         app.setAppType("CHAT");
         app.setEnabled(Boolean.TRUE);
         return app;
+    }
+
+    private static LlmModelEntity mediaModel(String id, ModelType type, String name, String modelName) {
+        LlmModelEntity model = new LlmModelEntity();
+        model.setId(id);
+        model.setModelType(type);
+        model.setName(name);
+        model.setModelName(modelName);
+        model.setProviderId("p-1");
+        model.setEnabled(Boolean.TRUE);
+        return model;
     }
 }

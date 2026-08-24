@@ -56,9 +56,10 @@ class ChatRunServiceImplTest {
     private final ChatSessionMapper sessionMapper = mock(ChatSessionMapper.class);
     private final ChatSessionService sessionService = mock(ChatSessionService.class);
     private final ChatMessageService messageService = mock(ChatMessageService.class);
+    private final ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
     private final AppService appService = mock(AppService.class);
     private final ChatRunServiceImpl service = new ChatRunServiceImpl(
-            runMapper, sessionMapper, sessionService, messageService, mock(ChatAttachmentService.class), appService);
+            runMapper, sessionMapper, sessionService, messageService, attachmentService, appService);
 
     @Test
     void shouldCreateRunningRunOnceAndMarkIdempotentReplayAsLoaded() {
@@ -108,7 +109,13 @@ class ChatRunServiceImplTest {
         var result = service.finalizeExecution(
                 identity,
                 new ChatRunFinalizationCommand(
-                        ChatRunStatus.COMPLETED, ChatRunFinishReason.SUCCESS, snapshot("partial"), null, null, null));
+                        ChatRunStatus.COMPLETED,
+                        ChatRunFinishReason.SUCCESS,
+                        snapshot("partial"),
+                        null,
+                        List.of(),
+                        null,
+                        null));
 
         assertThat(result.committed()).isFalse();
         assertThat(result.status()).isEqualTo(ChatRunStatus.STOPPED.name());
@@ -135,9 +142,16 @@ class ChatRunServiceImplTest {
         var result = service.finalizeExecution(
                 identity,
                 new ChatRunFinalizationCommand(
-                        ChatRunStatus.COMPLETED, ChatRunFinishReason.SUCCESS, snapshot("answer"), null, null, null));
+                        ChatRunStatus.COMPLETED,
+                        ChatRunFinishReason.SUCCESS,
+                        snapshot("answer"),
+                        null,
+                        List.of("123456"),
+                        null,
+                        null));
 
         assertThat(result.committed()).isTrue();
+        verify(attachmentService).bindToMessage(session, List.of("123456"), 10L);
         ArgumentCaptor<LambdaUpdateWrapper<ChatRunEntity>> updateCaptor =
                 ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
         verify(runMapper).update(isNull(), updateCaptor.capture());

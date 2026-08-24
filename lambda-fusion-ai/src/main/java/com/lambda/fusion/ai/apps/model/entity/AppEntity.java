@@ -48,7 +48,7 @@ public class AppEntity {
     private String imageModelId;
 
     @TableField("video_model_id")
-    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;预留,当前未挂载生成工具)")
+    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空=无视频生成能力)")
     private String videoModelId;
 
     @TableField("max_iters")

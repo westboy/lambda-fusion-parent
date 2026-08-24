@@ -30,7 +30,7 @@ public class CreateApp {
     @Schema(description = "图像生成模型ID(IMAGE_GEN 型;空=无生图能力)")
     private String imageModelId;
 
-    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;预留;空=无视频生成)")
+    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空=无视频生成)")
     private String videoModelId;
 
     @Schema(description = "ReAct 最大迭代数")

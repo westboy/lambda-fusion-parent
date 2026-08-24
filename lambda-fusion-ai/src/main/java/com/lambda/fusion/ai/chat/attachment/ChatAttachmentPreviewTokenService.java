@@ -42,7 +42,7 @@ public class ChatAttachmentPreviewTokenService {
     public void init() {
         String secret = aiProperties.getChat().getAttachment().getPreview().getSecret();
         if (StringUtils.isBlank(secret)) {
-            log.warn("未配置 lambda.fusion.ai.chat.attachment.preview.secret，图片附件预览直链不可用");
+            log.warn("未配置 lambda.fusion.ai.chat.attachment.preview.secret，附件媒体预览直链不可用");
             return;
         }
         keySpec = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);

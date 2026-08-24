@@ -27,7 +27,7 @@ public class UpdateApp {
     @Schema(description = "图像生成模型ID(IMAGE_GEN 型;空串=解除绑定)")
     private String imageModelId;
 
-    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;预留;空串=解除绑定)")
+    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空串=解除绑定)")
     private String videoModelId;
 
     @Schema(description = "ReAct 最大迭代数")

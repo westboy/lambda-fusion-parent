@@ -105,11 +105,16 @@ lambda:
         datasource: ${AI_SCHEDULE_DATASOURCE:master}
       security:
         encryption-key: ${AI_ENCRYPTION_KEY:dev-only-please-change-in-production-32chars}
-      #### 对话附件：图片预览直链签名密钥（生产请配 AI_ATTACHMENT_PREVIEW_SECRET） ####
+      #### 对话附件与工具生成媒体（生产请配 AI_ATTACHMENT_PREVIEW_SECRET） ####
       chat:
         attachment:
           preview:
             secret: ${AI_ATTACHMENT_PREVIEW_SECRET:dev-only-please-change-attachment-preview-secret}
+          generated-media:
+            max-file-size-mb: ${AI_TOOL_MEDIA_MAX_FILE_SIZE_MB:100}
+            connect-timeout-seconds: ${AI_TOOL_MEDIA_CONNECT_TIMEOUT_SECONDS:10}
+            request-timeout-seconds: ${AI_TOOL_MEDIA_REQUEST_TIMEOUT_SECONDS:120}
+            max-redirects: ${AI_TOOL_MEDIA_MAX_REDIRECTS:3}
         #### 对话运行参数（均可省略使用默认值） ####
         run:
           #### 是否推送 Agent 推理过程(ThinkingBlock)事件，默认 true ####
@@ -125,7 +130,7 @@ lambda:
             username: ${AI_PGVECTOR_USERNAME:${AI_DB_USERNAME}}
             password: ${AI_PGVECTOR_PASSWORD:${AI_DB_PASSWORD}}
             schema: ${AI_PGVECTOR_SCHEMA:public}
-        #### 文档原文件存储：LOCAL(默认,本地目录)/OSS ####
+        #### AI 文件存储：知识库原文件、聊天附件、工具生成媒体共用 LOCAL/OSS 后端 ####
         document-storage:
           type: ${AI_KB_STORAGE_TYPE:OSS}
           local:

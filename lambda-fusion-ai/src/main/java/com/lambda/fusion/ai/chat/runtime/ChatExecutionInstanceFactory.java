@@ -4,6 +4,7 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.runtime.AgentFactory;
@@ -32,6 +33,7 @@ public class ChatExecutionInstanceFactory {
     private final AgentFactory agentFactory;
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
     private final ObjectProvider<FusionSubagentGateway> subagentGatewayProvider;
+    private final ToolResultMediaMaterializer mediaMaterializer;
     private final AiProperties properties;
 
     /**
@@ -60,7 +62,7 @@ public class ChatExecutionInstanceFactory {
         if (subagentGateway != null) {
             subagentGateway.configureAgent(agent);
         }
-        return new AgentExecutionAdapter(agent, run, session, tenantId, subagentGateway);
+        return new AgentExecutionAdapter(agent, run, session, tenantId, subagentGateway, mediaMaterializer);
     }
 
     /**

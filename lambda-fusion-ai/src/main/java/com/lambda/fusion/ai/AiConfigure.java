@@ -14,9 +14,6 @@ import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorageResolver;
-import com.lambda.fusion.ai.rag.storage.LocalDocumentFileStorage;
-import com.lambda.fusion.ai.rag.storage.OssDocumentFileStorage;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
@@ -34,6 +31,10 @@ import com.lambda.fusion.ai.runtime.workspace.WorkspaceDistributedStoreProvider;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
 import com.lambda.fusion.ai.schedule.AgentExecutionJobListener;
 import com.lambda.fusion.ai.skill.SkillRepositoryProvider;
+import com.lambda.fusion.ai.storage.AiFileStorage;
+import com.lambda.fusion.ai.storage.AiFileStorageResolver;
+import com.lambda.fusion.ai.storage.LocalAiFileStorage;
+import com.lambda.fusion.ai.storage.OssAiFileStorage;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
@@ -590,27 +591,27 @@ public class AiConfigure {
 
     /**
      * 装配知识库文档与对话附件共用的原文件存储。该配置不依赖 {@code rag.enabled}，确保关闭 RAG 后仍可访问附件。
-     * {@link OssDocumentFileStorage} 延迟获取 OSS 客户端，业务服务根据 {@link DocumentFileStorage#type()} 选择后端。
+     * {@link OssAiFileStorage} 延迟获取 OSS 客户端，业务服务根据 {@link AiFileStorage#type()} 选择后端。
      */
     @Configuration
-    public static class DocumentStorageConfiguration {
+    public static class FileStorageConfiguration {
 
         @Bean
-        public LocalDocumentFileStorage localDocumentFileStorage(AiProperties aiProperties) {
-            return new LocalDocumentFileStorage(aiProperties);
+        public LocalAiFileStorage localAiFileStorage(AiProperties aiProperties) {
+            return new LocalAiFileStorage(aiProperties);
         }
 
         @Bean
-        public OssDocumentFileStorage ossDocumentFileStorage(
+        public OssAiFileStorage ossAiFileStorage(
                 ObjectProvider<OssClientManager> ossClientManagerProvider, AiProperties aiProperties) {
-            return new OssDocumentFileStorage(ossClientManagerProvider, aiProperties);
+            return new OssAiFileStorage(ossClientManagerProvider, aiProperties);
         }
     }
 
     /**
      * 知识库（RAG）运行时装配：仅 {@code lambda.fusion.ai.rag.enabled=true} 时注册检索适配器与
      * 文档入库管线 Bean；未启用时 {@code AgentFactory} 判空跳过中间件挂载，管理 CRUD 不受影响。
-     * 原文件存储后端已上移至 {@link DocumentStorageConfiguration} 无条件注册，此处不再重复。
+     * 原文件存储后端已上移至 {@link FileStorageConfiguration} 无条件注册，此处不再重复。
      */
     @Configuration
     @ConditionalOnProperty(prefix = "lambda.fusion.ai.rag", name = "enabled", havingValue = "true")
@@ -628,7 +629,7 @@ public class AiConfigure {
         public DocumentIngestionService documentIngestionService(
                 KnowledgeDocumentMapper knowledgeDocumentMapper,
                 SimpleKnowledgeAdapter simpleKnowledgeAdapter,
-                DocumentFileStorageResolver storageResolver,
+                AiFileStorageResolver storageResolver,
                 AiProperties aiProperties) {
             return new DocumentIngestionService(
                     knowledgeDocumentMapper, simpleKnowledgeAdapter, storageResolver, aiProperties);

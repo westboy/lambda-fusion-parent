@@ -94,10 +94,15 @@
 ## 能力详解
 
 ### LLM 提供方与模型
-提供方类型 `dashscope`/`openai`/`ollama`；模型类型 `CHAT`/`EMBEDDING`；API Key AES-GCM 加密存储；`ModelResolver` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
+提供方类型 `dashscope`/`openai`/`ollama`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`；API Key AES-GCM 加密存储；`ModelResolver` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
 
 ### 智能应用
-应用字段：`modelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
+应用字段：`modelId` `imageModelId` `videoModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
+
+### 媒体生成
+- `ToolkitAssembler` 根据应用绑定的 `IMAGE_GEN` / `VIDEO_GEN` 模型挂载薄适配工具：模型名由应用锁定，生成调用和媒体块结果复用 AgentScope 2.0.1 官方 `DashScopeMultiModalTool` / `OpenAIMultiModalTool`。
+- 聊天安全视图的 `mediaGenerationCapabilities` 仅返回模型展示名、工具名及模型级尺寸/数量/时长白名单，不泄露实际模型名、provider、服务地址或凭据。DashScope 支持文生图与文生视频；OpenAI 当前只开放官方扩展已经实现的 DALL-E URL 响应协议。
+- 官方 `ImageBlock` / `VideoBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS），事件和历史消息均返回平台签名预览地址，避免把供应商临时 URL 或 Base64 持久化到聊天记录。
 
 ### MCP 服务
 传输 `stdio`/`sse`/`http`/`streamable_http`；`ToolkitAssembler` 按应用装载，单个失败不影响其余；`POST /v1/ai/mcp-servers/{id}/test` 测连通性。
@@ -215,7 +220,9 @@ lambda:
 | `skill.repository.type` | 技能仓库源；`NONE` 或扩展缺失时技能市场禁用 |
 | `rag.enabled` | 知识库检索注入总开关（默认 false）；关闭时管理 CRUD 仍可用 |
 | `rag.store.type` | 向量库后端；PGVECTOR 需配 `pgvector.*` 连接（只接受 JDBC 连接串，不走动态数据源） |
-| `rag.document-storage.type` | 文档原文件存储；LOCAL / OSS |
+| `rag.document-storage.type` | AI 文件存储后端；知识库原文件、聊天附件和工具生成媒体共用 LOCAL / OSS |
+| `chat.attachment.generated-media.*` | 工具结果 URL/Base64 媒体物化的大小、连接、请求和重定向限制 |
+| `chat.attachment.preview.*` | 附件与生成媒体预览签名密钥和有效期；OSS 预览会二次重定向到短期预签名地址 |
 | 数据源 | 元数据表使用 MySQL `master`；pgvector 连接走 `rag.pgvector.*` |
 
 ## 数据库对象
@@ -299,6 +306,9 @@ POST /v1/ai/apps   { "appType":"WORKSPACE", "selfEvolve":true, "sandboxBackend":
 | 上下文透传 | `runtime/gateway/RuntimeProperty.java` |
 | Workspace | `runtime/workspace/` |
 | RAG | `rag/` 包 |
+| 媒体生成工具 | `runtime/tools/ImageGenerationTool.java` / `runtime/tools/VideoGenerationTool.java` |
+| 工具媒体物化 | `chat/runtime/media/` |
+| AI 文件存储 | `storage/` |
 | 子代理 | `subagent/` 包 |
 | 技能市场 | `skill/` 包 |
 | 流式对话 | `chat/service/impl/ChatServiceImpl.java` |

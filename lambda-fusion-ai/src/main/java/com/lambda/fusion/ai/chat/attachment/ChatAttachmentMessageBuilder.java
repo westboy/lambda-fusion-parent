@@ -7,9 +7,9 @@ import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorage;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorageResolver;
 import com.lambda.fusion.ai.runtime.document.DocumentTextExtractor;
+import com.lambda.fusion.ai.storage.AiFileStorage;
+import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -48,7 +48,7 @@ public class ChatAttachmentMessageBuilder {
     private static final String CATEGORY_IMAGE = "IMAGE";
 
     private final LlmModelService llmModelService;
-    private final DocumentFileStorageResolver storageResolver;
+    private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
 
     /**
@@ -119,7 +119,7 @@ public class ChatAttachmentMessageBuilder {
     }
 
     private String extractDocumentText(ChatAttachmentEntity attachment) throws IOException {
-        DocumentFileStorage storage = storageResolver.resolve(attachment.getStorageType());
+        AiFileStorage storage = storageResolver.resolve(attachment.getStorageType());
         Path tempFile = Files.createTempFile("chat-doc-", "." + StringUtils.defaultString(attachment.getFileType()));
         try {
             try (OutputStream out = Files.newOutputStream(tempFile)) {
@@ -136,7 +136,7 @@ public class ChatAttachmentMessageBuilder {
     }
 
     private String encodeImageBase64(ChatAttachmentEntity attachment) {
-        DocumentFileStorage storage = storageResolver.resolve(attachment.getStorageType());
+        AiFileStorage storage = storageResolver.resolve(attachment.getStorageType());
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         storage.download(attachment.getStoragePath(), buffer);
         return Base64.getEncoder().encodeToString(buffer.toByteArray());

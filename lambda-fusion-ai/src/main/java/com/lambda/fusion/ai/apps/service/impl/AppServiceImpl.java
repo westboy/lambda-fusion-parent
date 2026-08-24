@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
 import com.lambda.fusion.ai.AiConstants.AppType;
 import com.lambda.fusion.ai.AiConstants.ModelType;
+import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.AiConstants.RagMode;
 import com.lambda.fusion.ai.AiConstants.SandboxBackend;
 import com.lambda.fusion.ai.AiProperties;
@@ -14,20 +15,25 @@ import com.lambda.fusion.ai.apps.mapper.AppMapper;
 import com.lambda.fusion.ai.apps.model.AppPageQuery;
 import com.lambda.fusion.ai.apps.model.AvailableApp;
 import com.lambda.fusion.ai.apps.model.CreateApp;
+import com.lambda.fusion.ai.apps.model.MediaGenerationCapability;
 import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppConfigAuditEntity;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
+import com.lambda.fusion.ai.apps.service.MediaGenerationCapabilityFactory;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
+import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
+import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
 import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.util.JsonUtils;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +52,7 @@ public class AppServiceImpl implements AppService {
     private final AppMapper appMapper;
     private final AppConfigAuditMapper appConfigAuditMapper;
     private final LlmModelService llmModelService;
+    private final LlmProviderService llmProviderService;
     private final ApplicationEventPublisher eventPublisher;
     private final WorkspacePaths workspacePaths;
     private final AiProperties aiProperties;
@@ -224,7 +231,7 @@ public class AppServiceImpl implements AppService {
 
     @Override
     public List<AvailableApp> listAvailableView() {
-        return listAvailable().stream().map(AppService::toAvailableView).toList();
+        return listAvailable().stream().map(this::toAvailableView).toList();
     }
 
     // 回填绑定模型的视觉能力，供前端控制图片附件入口；模型被删等异常置 null，不阻断列表
@@ -254,7 +261,48 @@ public class AppServiceImpl implements AppService {
 
     @Override
     public AvailableApp loadAvailableView(String appId) {
-        return AppService.toAvailableView(fillSupportsVision(loadAvailable(appId)));
+        return toAvailableView(fillSupportsVision(loadAvailable(appId)));
+    }
+
+    /**
+     * 构建聊天端安全视图并按当前模型/provider 状态解析真实可挂载的媒体能力。模型、provider
+     * 后续被禁用或类型被修改时不再向前端宣称可用，与 ToolkitAssembler 的降级策略保持一致。
+     */
+    private AvailableApp toAvailableView(AppEntity app) {
+        AvailableApp view = AppService.toAvailableView(app);
+        List<MediaGenerationCapability> capabilities = new ArrayList<>(2);
+        addMediaCapability(capabilities, app, app.getImageModelId(), ModelType.IMAGE_GEN);
+        addMediaCapability(capabilities, app, app.getVideoModelId(), ModelType.VIDEO_GEN);
+        view.setMediaGenerationCapabilities(List.copyOf(capabilities));
+        view.setSupportsImageGeneration(
+                capabilities.stream().anyMatch(capability -> "image".equals(capability.getKind())));
+        view.setSupportsVideoGeneration(
+                capabilities.stream().anyMatch(capability -> "video".equals(capability.getKind())));
+        return view;
+    }
+
+    private void addMediaCapability(
+            List<MediaGenerationCapability> capabilities, AppEntity app, String modelId, ModelType expectedType) {
+        if (StringUtils.isBlank(modelId)) {
+            return;
+        }
+        try {
+            LlmModelEntity model = llmModelService.loadById(modelId);
+            if (model.getModelType() != expectedType || Boolean.FALSE.equals(model.getEnabled())) {
+                return;
+            }
+            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
+            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
+                return;
+            }
+            ProviderType providerType = ProviderType.of(provider.getProviderType());
+            MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
+            if (capability != null) {
+                capabilities.add(capability);
+            }
+        } catch (RuntimeException e) {
+            log.warn("回填应用媒体生成能力失败: appId={}, modelId={}, expectedType={}", app.getId(), modelId, expectedType, e);
+        }
     }
 
     /**

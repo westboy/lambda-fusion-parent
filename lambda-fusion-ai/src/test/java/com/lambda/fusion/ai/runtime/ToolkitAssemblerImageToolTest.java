@@ -12,6 +12,7 @@ import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,8 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
 
 /**
- * 文生图工具装配条件测试：仅在应用绑定了启用中的 {@code IMAGE_GEN} 模型、且所属 provider 启用了
- * 媒体生成开关时挂载；provider 关闭开关、模型类型不符、未绑定均跳过，不阻断工具集构建。
+ * 媒体生成工具装配条件测试：图片支持 DashScope 与 AgentScope 已实现的 OpenAI DALL-E 协议，视频按
+ * AgentScope 2.0.1 的官方能力仅支持 DashScope；provider 开关关闭、模型类型不符、未绑定均跳过且不阻断工具集构建。
  *
  * @author Jin
  */
@@ -47,55 +48,84 @@ class ToolkitAssemblerImageToolTest {
 
     @Test
     void shouldRegisterImageToolWhenModelBoundAndProviderEnabled() {
-        stubImageModel(ModelType.IMAGE_GEN, Boolean.TRUE, "dashscope", Boolean.TRUE);
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "dashscope", Boolean.TRUE, "wanx-v1");
 
-        Toolkit toolkit = assembler.build(app("img-1"));
+        Toolkit toolkit = assembler.build(app("img-1", null));
 
         assertThat(toolkit.getToolNames()).contains(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
     void shouldSkipImageToolWhenProviderMediaGenSwitchOff() {
-        stubImageModel(ModelType.IMAGE_GEN, Boolean.TRUE, "dashscope", null);
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "dashscope", null, "wanx-v1");
 
-        assertThat(assembler.build(app("img-1")).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
     void shouldSkipImageToolWhenModelTypeMismatch() {
         // 绑定入口已强校验类型；此处防御配置后续变化（如模型类型被改）
-        stubImageModel(ModelType.CHAT, Boolean.TRUE, "dashscope", Boolean.TRUE);
+        stubMediaModel("img-1", ModelType.CHAT, Boolean.TRUE, "dashscope", Boolean.TRUE, "qwen-plus");
 
-        assertThat(assembler.build(app("img-1")).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
     void shouldSkipImageToolWhenModelDisabled() {
-        stubImageModel(ModelType.IMAGE_GEN, Boolean.FALSE, "dashscope", Boolean.TRUE);
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.FALSE, "dashscope", Boolean.TRUE, "wanx-v1");
 
-        assertThat(assembler.build(app("img-1")).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
     void shouldSkipImageToolWhenProviderTypeUnsupported() {
-        stubImageModel(ModelType.IMAGE_GEN, Boolean.TRUE, "ollama", Boolean.TRUE);
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "ollama", Boolean.TRUE, "local-image");
 
-        assertThat(assembler.build(app("img-1")).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldSkipGptImageUntilTheOfficialAgentScopeToolSupportsItsResponseProtocol() {
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "gpt-image-1");
+
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
     void shouldSkipImageToolWhenAppHasNoBinding() {
-        assertThat(assembler.build(app(null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+        assertThat(assembler.build(app(null, null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
     }
 
-    private void stubImageModel(ModelType modelType, Boolean modelEnabled, String providerType, Boolean mediaGen) {
+    @Test
+    void shouldRegisterVideoToolForDashscopeBinding() {
+        stubMediaModel("video-1", ModelType.VIDEO_GEN, Boolean.TRUE, "dashscope", Boolean.TRUE, "wan2.6-t2v");
+
+        Toolkit toolkit = assembler.build(app(null, "video-1"));
+
+        assertThat(toolkit.getToolNames()).contains(VideoGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldSkipVideoToolForOpenaiBecauseOfficialExtensionDoesNotProvideIt() {
+        stubMediaModel("video-1", ModelType.VIDEO_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "video-compatible");
+
+        assertThat(assembler.build(app(null, "video-1")).getToolNames()).doesNotContain(VideoGenerationTool.TOOL_NAME);
+    }
+
+    private void stubMediaModel(
+            String modelId,
+            ModelType modelType,
+            Boolean modelEnabled,
+            String providerType,
+            Boolean mediaGen,
+            String modelName) {
         LlmModelEntity model = new LlmModelEntity();
-        model.setId("img-1");
+        model.setId(modelId);
         model.setModelType(modelType);
         model.setEnabled(modelEnabled);
-        model.setModelName("wanx-v1");
+        model.setModelName(modelName);
         model.setProviderId("p-1");
-        when(llmModelService.loadById("img-1")).thenReturn(model);
+        when(llmModelService.loadById(modelId)).thenReturn(model);
 
         LlmProviderEntity provider = new LlmProviderEntity();
         provider.setId("p-1");
@@ -107,10 +137,11 @@ class ToolkitAssemblerImageToolTest {
         when(keyEncryptionService.decrypt("enc")).thenReturn("sk-test");
     }
 
-    private static AppEntity app(String imageModelId) {
+    private static AppEntity app(String imageModelId, String videoModelId) {
         AppEntity app = new AppEntity();
         app.setId("app-1");
         app.setImageModelId(imageModelId);
+        app.setVideoModelId(videoModelId);
         return app;
     }
 }

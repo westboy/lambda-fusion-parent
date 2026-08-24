@@ -12,18 +12,22 @@ import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorage;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorageResolver;
+import com.lambda.fusion.ai.storage.AiFileResource;
+import com.lambda.fusion.ai.storage.AiFileStorage;
+import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -34,7 +38,7 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 对话附件服务实现：负责附件的上传、消息绑定、下载预览与清理。
  *
- * <p>存储：上传先落临时文件再经 {@link DocumentFileStorage} 持久化，与知识库文档共用同一套存储后端
+ * <p>存储：上传先落临时文件再经 {@link AiFileStorage} 持久化，与知识库文档共用同一套存储后端
  * （复用 {@code rag.document-storage} 配置）；相对路径使用独立前缀
  * {@code chat/{sessionId}/{attachmentId}.{ext}}，与知识库文件相互隔离。
  *
@@ -52,10 +56,32 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
     private static final String CATEGORY_IMAGE = "IMAGE";
     private static final String CATEGORY_DOCUMENT = "DOCUMENT";
+    private static final String CATEGORY_AUDIO = "AUDIO";
+    private static final String CATEGORY_VIDEO = "VIDEO";
+    private static final String CATEGORY_FILE = "FILE";
+    private static final List<String> SAFE_IMAGE_MIME_TYPES =
+            List.of("image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/bmp");
+    private static final List<String> SAFE_AUDIO_MIME_TYPES =
+            List.of("audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "audio/aac", "audio/flac");
+    private static final List<String> SAFE_VIDEO_MIME_TYPES =
+            List.of("video/mp4", "video/webm", "video/quicktime", "video/ogg", "video/mpeg");
+    private static final Map<String, String> MIME_EXTENSIONS = Map.ofEntries(
+            Map.entry("image/jpeg", "jpg"),
+            Map.entry("image/png", "png"),
+            Map.entry("image/gif", "gif"),
+            Map.entry("image/webp", "webp"),
+            Map.entry("audio/mpeg", "mp3"),
+            Map.entry("audio/mp4", "m4a"),
+            Map.entry("audio/wav", "wav"),
+            Map.entry("audio/ogg", "ogg"),
+            Map.entry("video/mp4", "mp4"),
+            Map.entry("video/webm", "webm"),
+            Map.entry("video/quicktime", "mov"),
+            Map.entry("application/pdf", "pdf"));
 
     private final ChatAttachmentMapper chatAttachmentMapper;
     private final ChatSessionMapper chatSessionMapper;
-    private final DocumentFileStorageResolver storageResolver;
+    private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
     private final ChatAttachmentPreviewTokenService previewTokenService;
 
@@ -87,16 +113,17 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         try {
             tempFile = Files.createTempFile("chat-att-", "." + extension);
             file.transferTo(tempFile);
-            DocumentFileStorage storage = storageResolver.resolve(
+            AiFileStorage storage = storageResolver.resolve(
                     aiProperties.getRag().getDocumentStorage().getType());
             String relativeName = "chat/" + session.getId() + "/" + entity.getId() + "." + extension;
             entity.setStorageType(storage.type());
-            entity.setStoragePath(storage.store(tempFile, relativeName));
+            entity.setStoragePath(storage.store(tempFile, relativeName, entity.getMimeType()));
             chatAttachmentMapper.updateById(entity);
         } catch (IOException e) {
             chatAttachmentMapper.deleteById(entity.getId());
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
         } catch (RuntimeException e) {
+            deleteStoredFile(entity);
             chatAttachmentMapper.deleteById(entity.getId());
             throw e instanceof AiBusinessException aiBusinessException
                     ? aiBusinessException
@@ -105,6 +132,49 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             deleteQuietly(tempFile);
         }
         return entity;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ChatAttachmentEntity storeGenerated(
+            String tenantId, String sessionId, Path source, String fileName, String mimeType) {
+        long size = fileSize(source);
+        long maxBytes =
+                aiProperties.getChat().getAttachment().getGeneratedMedia().getMaxFileSizeMb() * 1024L * 1024L;
+        if (size > maxBytes) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, fileName);
+        }
+        String normalizedMimeType = normalizeMimeType(mimeType);
+        String normalizedFileName = normalizeFileName(fileName);
+        String extension = resolveGeneratedExtension(normalizedFileName, normalizedMimeType);
+
+        ChatAttachmentEntity entity = new ChatAttachmentEntity();
+        entity.setId(IdUtil.getSnowflakeNextIdStr());
+        entity.setTenantId(tenantId);
+        entity.setSessionId(sessionId);
+        entity.setFileName(StringUtils.defaultIfBlank(normalizedFileName, entity.getId() + "." + extension));
+        entity.setFileType(extension);
+        entity.setMimeType(normalizedMimeType);
+        entity.setSizeBytes(size);
+        entity.setCategory(resolveGeneratedCategory(normalizedMimeType));
+        entity.setCreatedAt(LocalDateTime.now());
+        chatAttachmentMapper.insert(entity);
+
+        try {
+            AiFileStorage storage = storageResolver.resolve(
+                    aiProperties.getRag().getDocumentStorage().getType());
+            String relativeName = "chat/" + sessionId + "/" + entity.getId() + "." + extension;
+            entity.setStorageType(storage.type());
+            entity.setStoragePath(storage.store(source, relativeName, normalizedMimeType));
+            chatAttachmentMapper.updateById(entity);
+            return entity;
+        } catch (RuntimeException e) {
+            deleteStoredFile(entity);
+            chatAttachmentMapper.deleteById(entity.getId());
+            throw e instanceof AiBusinessException aiBusinessException
+                    ? aiBusinessException
+                    : new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
+        }
     }
 
     @Override
@@ -173,6 +243,16 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     }
 
     @Override
+    public AiFileResource openContent(ChatAttachmentEntity entity) {
+        return storageResolver.resolve(entity.getStorageType()).open(entity.getStoragePath());
+    }
+
+    @Override
+    public Optional<String> temporaryReadUrl(ChatAttachmentEntity entity, Duration ttl) {
+        return storageResolver.resolve(entity.getStorageType()).temporaryReadUrl(entity.getStoragePath(), ttl);
+    }
+
+    @Override
     public ChatAttachmentView toView(ChatAttachmentEntity entity) {
         return ChatAttachmentView.of(entity, previewTokenService.generatePreviewUrl(entity));
     }
@@ -199,6 +279,30 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             deleteStoredFile(attachment);
         }
         chatAttachmentMapper.delete(query);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void discardGenerated(String sessionId, Collection<String> attachmentIds) {
+        if (attachmentIds == null || attachmentIds.isEmpty()) {
+            return;
+        }
+        LambdaQueryWrapper<ChatAttachmentEntity> query = new LambdaQueryWrapper<ChatAttachmentEntity>()
+                .eq(ChatAttachmentEntity::getSessionId, sessionId)
+                .isNull(ChatAttachmentEntity::getMessageId)
+                .in(ChatAttachmentEntity::getId, attachmentIds);
+        List<ChatAttachmentEntity> attachments = chatAttachmentMapper.selectList(query);
+        attachments.forEach(this::deleteStoredFile);
+        if (!attachments.isEmpty()) {
+            chatAttachmentMapper.delete(new LambdaQueryWrapper<ChatAttachmentEntity>()
+                    .eq(ChatAttachmentEntity::getSessionId, sessionId)
+                    .isNull(ChatAttachmentEntity::getMessageId)
+                    .in(
+                            ChatAttachmentEntity::getId,
+                            attachments.stream()
+                                    .map(ChatAttachmentEntity::getId)
+                                    .toList()));
+        }
     }
 
     // 按行记录的 storageType 路由删除（配置变更后旧附件仍可删）；失败仅告警不阻断
@@ -229,7 +333,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     }
 
     private static void validateSize(MultipartFile file, AiProperties.Chat.Attachment cfg) {
-        long maxBytes = cfg.getMaxFileSizeMb() * 1024 * 1024;
+        long maxBytes = cfg.getMaxFileSizeMb() * 1024L * 1024L;
         if (file.getSize() > maxBytes) {
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, file.getOriginalFilename());
         }
@@ -237,6 +341,48 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
     private static String resolveCategory(String extension, AiProperties.Chat.Attachment cfg) {
         return cfg.getImageTypes().contains(extension) ? CATEGORY_IMAGE : CATEGORY_DOCUMENT;
+    }
+
+    private static long fileSize(Path source) {
+        try {
+            return Files.size(source);
+        } catch (IOException e) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
+        }
+    }
+
+    private static String normalizeMimeType(String mimeType) {
+        String value = StringUtils.substringBefore(StringUtils.defaultString(mimeType), ";")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+        return StringUtils.defaultIfBlank(value, "application/octet-stream");
+    }
+
+    private static String normalizeFileName(String fileName) {
+        String value = StringUtils.defaultString(fileName).replace('\\', '/');
+        value = StringUtils.substringAfterLast("/" + value, "/").replaceAll("[\\p{Cntrl}]", "");
+        return StringUtils.left(value, 255);
+    }
+
+    private static String resolveGeneratedExtension(String fileName, String mimeType) {
+        String extension = StringUtils.substringAfterLast(fileName, ".").toLowerCase(Locale.ROOT);
+        if (extension.matches("[a-z0-9]{1,10}")) {
+            return extension;
+        }
+        return MIME_EXTENSIONS.getOrDefault(mimeType, "bin");
+    }
+
+    private static String resolveGeneratedCategory(String mimeType) {
+        if (SAFE_IMAGE_MIME_TYPES.contains(mimeType)) {
+            return CATEGORY_IMAGE;
+        }
+        if (SAFE_AUDIO_MIME_TYPES.contains(mimeType)) {
+            return CATEGORY_AUDIO;
+        }
+        if (SAFE_VIDEO_MIME_TYPES.contains(mimeType)) {
+            return CATEGORY_VIDEO;
+        }
+        return CATEGORY_FILE;
     }
 
     private static void deleteQuietly(Path tempFile) {

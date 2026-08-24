@@ -22,42 +22,40 @@ import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 /**
- * 文生图工具的行为测试：成功结果同时包含 URL 的 JSON 文本块（模型可转写进回复、前端工具组件可
- * {@code JSON.parse} 渲染）与官方图片块（多模态模型可直读、富渲染可复用）；官方错误结果原样透传、
- * 调用异常转为 ERROR 结果；绑定的模型名与调用参数按提供方约定透传官方工具（DashScope 尺寸用
- * {@code *}、OpenAI 用 {@code x}）。
+ * 文生图薄适配器行为测试：官方成功/错误结果原样透传，调用异常转为 ERROR；绑定模型名、URL
+ * 返回策略和尺寸分隔符按提供方约定传给 AgentScope 官方工具。
  *
  * @author Jin
  */
 class ImageGenerationToolTest {
 
     @Test
-    void shouldReturnJsonPayloadAndOfficialImageBlocksForDashscope() {
+    void shouldPassThroughOfficialImageBlocksForDashscope() {
         DashScopeMultiModalTool client = Mockito.mock(DashScopeMultiModalTool.class);
+        ToolResultBlock official = resultOf("https://img.example.com/1.png");
         when(client.dashscopeTextToImage(anyString(), anyString(), any(), eq("1024*1024"), eq(Boolean.FALSE)))
-                .thenReturn(Mono.just(resultOf("https://img.example.com/1.png")));
+                .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
         ToolResultBlock result = tool.generateImage("一只猫", "1024x1024", 1);
 
-        // 文本块携带 URL 的 JSON：前端工具组件 JSON.parse 后渲染图片
-        assertThat(textOf(result)).contains("\"images\"").contains("https://img.example.com/1.png");
-        // 官方图片块原样保留：多模态模型可直读生成图片
+        assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
         // 绑定的模型名与调用参数透传：模型名锁定、禁用 base64、尺寸分隔符归一化为 *
         verify(client).dashscopeTextToImage("一只猫", "wanx2.1-t2i-turbo", 1, "1024*1024", Boolean.FALSE);
     }
 
     @Test
-    void shouldReturnJsonPayloadAndOfficialImageBlocksForOpenai() {
+    void shouldPassThroughOfficialImageBlocksForOpenai() {
         OpenAIMultiModalTool client = Mockito.mock(OpenAIMultiModalTool.class);
+        ToolResultBlock official = resultOf("https://img.example.com/2.png");
         when(client.openaiTextToImage(anyString(), anyString(), any(), eq("1024x1024"), isNull(), isNull()))
-                .thenReturn(Mono.just(resultOf("https://img.example.com/2.png")));
+                .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(null, client, "dall-e-3");
 
         ToolResultBlock result = tool.generateImage("一只猫", "1024*1024", 2);
 
-        assertThat(textOf(result)).contains("\"images\"").contains("https://img.example.com/2.png");
+        assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
         // OpenAI 分隔符为 x；质量与响应格式交由默认值，不做二选一
         verify(client).openaiTextToImage("一只猫", "dall-e-3", 2, "1024x1024", null, null);

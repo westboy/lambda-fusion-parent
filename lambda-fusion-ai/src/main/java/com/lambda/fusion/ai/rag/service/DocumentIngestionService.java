@@ -8,9 +8,9 @@ import com.lambda.fusion.ai.rag.model.entity.KnowledgeDocumentEntity;
 import com.lambda.fusion.ai.rag.runtime.DocumentChunker;
 import com.lambda.fusion.ai.rag.runtime.IngestChunk;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorage;
-import com.lambda.fusion.ai.rag.storage.DocumentFileStorageResolver;
 import com.lambda.fusion.ai.runtime.document.DocumentTextExtractor;
+import com.lambda.fusion.ai.storage.AiFileStorage;
+import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -39,7 +39,7 @@ public class DocumentIngestionService {
 
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final SimpleKnowledgeAdapter simpleKnowledgeAdapter;
-    private final DocumentFileStorageResolver storageResolver;
+    private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
 
     /**
@@ -57,7 +57,7 @@ public class DocumentIngestionService {
                 return;
             }
             // 按 document 行记录的 storageType 路由（配置变更后老文档仍能命中其原始存储后端）
-            DocumentFileStorage storage = storageResolver.resolve(document.getStorageType());
+            AiFileStorage storage = storageResolver.resolve(document.getStorageType());
             tempFile = Files.createTempFile("kb-ingest-", "." + StringUtils.defaultString(document.getFileType()));
             try (OutputStream out = Files.newOutputStream(tempFile)) {
                 storage.download(document.getStoragePath(), out);

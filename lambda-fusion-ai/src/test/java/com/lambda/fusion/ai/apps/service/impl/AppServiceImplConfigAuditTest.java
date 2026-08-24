@@ -15,6 +15,7 @@ import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppConfigAuditEntity;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
+import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
 import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -48,6 +49,7 @@ class AppServiceImplConfigAuditTest {
                 appMapper,
                 auditMapper,
                 mock(LlmModelService.class),
+                mock(LlmProviderService.class),
                 mock(ApplicationEventPublisher.class),
                 mock(WorkspacePaths.class),
                 new AiProperties());

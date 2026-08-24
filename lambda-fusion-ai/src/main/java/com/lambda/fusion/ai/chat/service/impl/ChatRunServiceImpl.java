@@ -305,6 +305,16 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         if (targetStatus == ChatRunStatus.COMPLETED || !snapshot.text().isBlank() || toolCallJson != null) {
             assistant = messageService.saveAssistantMessage(session, snapshot.text(), toolCallJson);
         }
+        List<String> generatedAttachmentIds = command.generatedAttachmentIds() == null
+                ? List.of()
+                : command.generatedAttachmentIds().stream().distinct().toList();
+        if (!generatedAttachmentIds.isEmpty()) {
+            if (assistant == null) {
+                attachmentService.discardGenerated(session.getId(), generatedAttachmentIds);
+            } else {
+                attachmentService.bindToMessage(session, generatedAttachmentIds, assistant.getId());
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
         // 行已在上方 FOR UPDATE 锁内确认为非终态，notIn 终态前置条件属锁内双保险，正常不可能未命中；
         // 真发生时抛 IllegalStateException，由上游按永久性失败处理（放弃重试、释放实例）。

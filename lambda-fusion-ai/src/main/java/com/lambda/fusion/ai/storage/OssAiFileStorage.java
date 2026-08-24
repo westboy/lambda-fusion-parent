@@ -1,30 +1,23 @@
-package com.lambda.fusion.ai.rag.storage;
+package com.lambda.fusion.ai.storage;
 
 import com.lambda.cloud.oss.client.OssClient;
 import com.lambda.cloud.oss.manager.OssClientManager;
+import com.lambda.cloud.oss.model.OssObject;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.io.OutputStream;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.ObjectProvider;
 
-/**
- * OSS 文档原文件存储：走 lambda-cloud-starter-oss 的 {@link OssClientManager}（多客户端模型，
- * 与 lambda-fusion-oss 用法一致），objectKey = {@code {keyPrefix}{tenantId}/{kbId}/{documentId}.{ext}}。
- * starter 未注册客户端（{@code lambda.oss.clients} 为空）时，存储操作抛带明确提示的业务异常，
- * 需配置 OSS 客户端或改用 LOCAL。
- *
- * @author Jin
- */
-@Slf4j
+/** 基于 lambda-cloud-starter-oss 的 AI 文件存储。 */
 @RequiredArgsConstructor
 @SuppressFBWarnings("EI_EXPOSE_REP2")
-public class OssDocumentFileStorage implements DocumentFileStorage {
+public class OssAiFileStorage implements AiFileStorage {
 
     public static final String TYPE = "OSS";
 
@@ -37,8 +30,9 @@ public class OssDocumentFileStorage implements DocumentFileStorage {
     }
 
     @Override
-    public String store(Path source, String relativeName) {
+    public String store(Path source, String relativeName, String contentType) {
         String objectKey = keyPrefix() + relativeName;
+        // starter 的 InputStream 重载会先完整读入内存；媒体文件使用 File 重载保持有界内存。
         client().upload(source.toFile(), objectKey);
         return objectKey;
     }
@@ -49,20 +43,27 @@ public class OssDocumentFileStorage implements DocumentFileStorage {
     }
 
     @Override
-    public void download(String storagePath, OutputStream out) {
-        client().outStream(storagePath, out);
+    public AiFileResource open(String storagePath) {
+        OssObject object = client().getObject(storagePath);
+        return new AiFileResource(object.getContent(), object.getContentLength());
+    }
+
+    @Override
+    public Optional<String> temporaryReadUrl(String storagePath, Duration ttl) {
+        long seconds = Math.max(1, ttl.toSeconds());
+        int expiration = Math.toIntExact(Math.min(seconds, Integer.MAX_VALUE));
+        return Optional.of(client().getPrivateUrl(storagePath, expiration));
     }
 
     private String keyPrefix() {
         return aiProperties.getRag().getDocumentStorage().getOss().getKeyPrefix();
     }
 
-    // 客户端名为空走默认客户端；manager 缺失/为空说明 OSS 未配置
     private OssClient client() {
         OssClientManager manager = ossClientManagerProvider.getIfAvailable();
         if (manager == null || manager.isEmpty()) {
             throw new AiBusinessException(
-                    AiErrorCode.CONFIGURATION_ERROR, "OSS 客户端未配置(lambda.oss.clients)，知识库文件存储请配置 OSS 客户端或改用 LOCAL");
+                    AiErrorCode.CONFIGURATION_ERROR, "OSS客户端未配置(lambda.oss.clients)，请配置OSS客户端或改用LOCAL");
         }
         String clientName = aiProperties.getRag().getDocumentStorage().getOss().getClientName();
         return StringUtils.isBlank(clientName) ? manager.getDefault() : manager.get(clientName);
