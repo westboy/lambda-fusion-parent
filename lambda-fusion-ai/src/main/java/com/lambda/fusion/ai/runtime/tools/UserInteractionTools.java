@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.runtime.tools;
 
-import com.lambda.fusion.ai.runtime.annotaion.AiTool;
+import com.lambda.fusion.ai.runtime.annotaion.AiTools;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.ToolSuspendException;
@@ -17,7 +17,7 @@ import java.util.List;
  *
  * @author Jin
  */
-@AiTool
+@AiTools
 public class UserInteractionTools {
 
     /** 单选工具名。 */

@@ -1,7 +1,6 @@
 package com.lambda.fusion.authority;
 
 import cn.dev33.satoken.listener.SaTokenListener;
-import cn.dev33.satoken.strategy.SaJsonStrategy;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.lambda.cloud.mybatis.handler.EntityMetaFiller;
 import com.lambda.cloud.sse.listener.SseEventListener;
@@ -23,7 +22,6 @@ import com.lambda.fusion.authority.tenant.interceptor.TenantContextInterceptor;
 import com.lambda.fusion.authority.user.listener.UserOnlineLogListener;
 import com.lambda.fusion.authority.user.listener.UserSeeEventListener;
 import com.lambda.fusion.authority.user.service.UserOnlineLogService;
-import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.tree.filter.DefaultTreeDataFilter;
 import com.lambda.fusion.core.tree.filter.TreeDataFilter;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -36,11 +34,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.apache.ibatis.reflection.MetaObject;
-import org.jspecify.annotations.NonNull;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;

@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
 /**
  * 标注 {@code @Tool} 工具需 HITL 人工确认：调用前触发 {@code RequireUserConfirmEvent} 暂停，
  * 确认后恢复，由 {@code ToolkitAssembler} 扫描、{@code AgentFactory} 构建 ASK 规则。
- * 方法级（单工具）；类级整批确认用 {@link AiTool#requireConfirm()}；仅本地 @Tool 工具，MCP 后续。
+ * 方法级（单工具）；类级整批确认用 {@link AiTools#requireConfirm()}；仅本地 @Tool 工具，MCP 后续。
  *
  * @author Jin
  */

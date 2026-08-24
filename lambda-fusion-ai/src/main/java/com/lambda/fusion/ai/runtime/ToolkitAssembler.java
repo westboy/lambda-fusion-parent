@@ -3,7 +3,7 @@ package com.lambda.fusion.ai.runtime;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
-import com.lambda.fusion.ai.runtime.annotaion.AiTool;
+import com.lambda.fusion.ai.runtime.annotaion.AiTools;
 import com.lambda.fusion.ai.runtime.annotaion.RequireConfirm;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.tool.Tool;
@@ -58,7 +58,7 @@ public class ToolkitAssembler {
         Set<String> asks = new LinkedHashSet<>();
         for (String name : applicationContext.getBeanDefinitionNames()) {
             Class<?> type = applicationContext.getType(name);
-            if (type == null || !type.isAnnotationPresent(AiTool.class)) {
+            if (type == null || !type.isAnnotationPresent(AiTools.class)) {
                 continue;
             }
             try {
@@ -76,7 +76,7 @@ public class ToolkitAssembler {
 
     // 收集需确认的工具名：@AiTool(requireConfirm) 作用于该类所有 @Tool 方法，方法级 @RequireConfirm 单独生效
     private void collectAskToolNames(Class<?> type, Set<String> asks) {
-        boolean classLevel = type.getAnnotation(AiTool.class).requireConfirm();
+        boolean classLevel = type.getAnnotation(AiTools.class).requireConfirm();
         for (Method method : type.getMethods()) {
             Tool toolAnno = method.getAnnotation(Tool.class);
             if (toolAnno == null) {

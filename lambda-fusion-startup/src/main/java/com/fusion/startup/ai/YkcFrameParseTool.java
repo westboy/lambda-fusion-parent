@@ -10,7 +10,7 @@ import com.lambda.cloud.netty.protocol.engine.impl.ReflectionProtocolEngine;
 import com.lambda.cloud.netty.protocol.message.ProtocolPayloadRegistry;
 import com.lambda.cloud.netty.protocol.scanner.ProtocolPayloadScanner;
 import com.lambda.cloud.ykc.message.v16.YkcV16BasePayload;
-import com.lambda.fusion.ai.runtime.annotaion.AiTool;
+import com.lambda.fusion.ai.runtime.annotaion.AiTools;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.netty.buffer.ByteBuf;
@@ -37,7 +37,7 @@ import org.springframework.util.StringUtils;
  * @author zx
  */
 @Slf4j
-@AiTool
+@AiTools
 public class YkcFrameParseTool {
 
     /** 工具名。 */

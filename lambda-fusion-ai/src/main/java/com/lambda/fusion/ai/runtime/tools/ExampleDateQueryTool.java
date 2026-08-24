@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.runtime.tools;
 
-import com.lambda.fusion.ai.runtime.annotaion.AiTool;
+import com.lambda.fusion.ai.runtime.annotaion.AiTools;
 import com.lambda.fusion.ai.runtime.annotaion.RequireConfirm;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
  * @author Jin
  */
 @Slf4j
-@AiTool
+@AiTools
 public class ExampleDateQueryTool {
 
     /** 工具名。 */
