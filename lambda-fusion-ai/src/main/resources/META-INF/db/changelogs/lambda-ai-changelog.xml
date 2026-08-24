@@ -853,4 +853,21 @@
         </createIndex>
     </changeSet>
 
+    <!-- ========== 媒体生成能力：provider 能力开关 + 应用生成模型绑定 ========== -->
+    <changeSet id="lambda-ai-2026082100011" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_llm_provider" columnName="enable_media_gen"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_llm_provider">
+            <column name="enable_media_gen" type="tinyint(1)" defaultValueBoolean="false"
+                remarks="该Key是否开通图像/视频等媒体生成能力(由配置者声明)"/>
+        </addColumn>
+        <addColumn tableName="ai_app">
+            <column name="image_model_id" type="varchar(32)" remarks="图像生成模型ID(ai_llm_model;空=无生图能力)"/>
+            <column name="video_model_id" type="varchar(32)" remarks="视频生成模型ID(ai_llm_model;预留)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

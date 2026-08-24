@@ -1,10 +1,18 @@
 package com.lambda.fusion.ai.runtime;
 
+import com.lambda.fusion.ai.AiConstants.ModelType;
+import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
+import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
+import com.lambda.fusion.ai.llm.service.LlmModelService;
+import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
+import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
+import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
@@ -19,12 +27,13 @@ import java.util.Set;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
 /**
- * 工具集装配器：为每个应用构建 {@link Toolkit}，含全局 {@code @AiTool} 本地工具 Bean
- * 与应用绑定的 MCP 服务（每个独立装载，单个失败不影响其余）。
+ * 工具集装配器：为每个应用构建 {@link Toolkit}，含全局 {@code @AiTool} 本地工具 Bean、
+ * 应用绑定的生图工具（{@code IMAGE_GEN} 模型）与应用绑定的 MCP 服务（每个独立装载，单个失败不影响其余）。
  *
  * @author Jin
  */
@@ -36,6 +45,9 @@ public class ToolkitAssembler {
 
     private final ApplicationContext applicationContext;
     private final McpServerService mcpServerService;
+    private final LlmModelService llmModelService;
+    private final LlmProviderService llmProviderService;
+    private final KeyEncryptionService keyEncryptionService;
 
     /**
      * -- GETTER --
@@ -93,8 +105,53 @@ public class ToolkitAssembler {
         for (Object toolBean : localToolBeans) {
             toolkit.registerTool(toolBean);
         }
+        registerImageGenerationTool(toolkit, app);
         registerMcpServers(toolkit, app.getMcpServerIds());
         return toolkit;
+    }
+
+    /**
+     * 按应用绑定的 {@code IMAGE_GEN} 模型挂载文生图工具。绑定合法性已在配置入口强校验；
+     * 此处对后续配置变化（模型禁用、provider 关闭生成开关等）降级跳过并告警，不阻断对话构建。
+     */
+    private void registerImageGenerationTool(Toolkit toolkit, AppEntity app) {
+        if (StringUtils.isBlank(app.getImageModelId())) {
+            return;
+        }
+        try {
+            LlmModelEntity model = llmModelService.loadById(app.getImageModelId());
+            if (model.getModelType() != ModelType.IMAGE_GEN || Boolean.FALSE.equals(model.getEnabled())) {
+                log.warn("应用 {} 绑定的生图模型 {} 已禁用或类型不符，跳过挂载", app.getId(), app.getImageModelId());
+                return;
+            }
+            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
+            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
+                log.warn("应用 {} 生图模型所属 provider 未启用媒体生成，跳过挂载: {}", app.getId(), provider.getId());
+                return;
+            }
+            ImageGenerationTool tool = buildImageTool(provider, model.getModelName());
+            if (tool == null) {
+                log.warn("应用 {} 生图模型所属 provider 类型 {} 暂不支持生图，跳过挂载", app.getId(), provider.getProviderType());
+                return;
+            }
+            toolkit.registerTool(tool);
+            log.info("应用 {} 已挂载文生图工具: model={}", app.getId(), model.getModelName());
+        } catch (RuntimeException e) {
+            log.warn("应用 {} 生图工具挂载失败，跳过", app.getId(), e);
+        }
+    }
+
+    /** 按提供方类型解密 Key 并构建生图工具；不支持的类型返回 null。 */
+    private ImageGenerationTool buildImageTool(LlmProviderEntity provider, String modelName) {
+        String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
+        ProviderType type = ProviderType.of(provider.getProviderType());
+        if (type == ProviderType.DASHSCOPE) {
+            return ImageGenerationTool.dashscope(apiKey, modelName);
+        }
+        if (type == ProviderType.OPENAI) {
+            return ImageGenerationTool.openai(apiKey, provider.getBaseUrl(), modelName);
+        }
+        return null;
     }
 
     private void registerMcpServers(Toolkit toolkit, List<String> mcpServerIds) {

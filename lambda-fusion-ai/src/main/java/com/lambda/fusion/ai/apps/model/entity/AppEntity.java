@@ -43,6 +43,14 @@ public class AppEntity {
     @Schema(description = "绑定模型ID")
     private String modelId;
 
+    @TableField("image_model_id")
+    @Schema(description = "图像生成模型ID(IMAGE_GEN 型;空=无生图能力)")
+    private String imageModelId;
+
+    @TableField("video_model_id")
+    @Schema(description = "视频生成模型ID(VIDEO_GEN 型;预留,当前未挂载生成工具)")
+    private String videoModelId;
+
     @TableField("max_iters")
     @Schema(description = "ReAct 最大迭代数")
     private Integer maxIters;

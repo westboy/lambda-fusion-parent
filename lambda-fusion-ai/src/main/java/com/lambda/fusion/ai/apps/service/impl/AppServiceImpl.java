@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
 import com.lambda.fusion.ai.AiConstants.AppType;
+import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.RagMode;
 import com.lambda.fusion.ai.AiConstants.SandboxBackend;
 import com.lambda.fusion.ai.AiProperties;
@@ -19,6 +20,7 @@ import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
@@ -61,13 +63,17 @@ public class AppServiceImpl implements AppService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AppEntity create(CreateApp dto) {
-        llmModelService.loadById(dto.getModelId());
+        validateChatModel(dto.getModelId());
+        String imageModelId = validateMediaModel(dto.getImageModelId(), ModelType.IMAGE_GEN);
+        String videoModelId = validateMediaModel(dto.getVideoModelId(), ModelType.VIDEO_GEN);
         String appType = validateAppType(dto.getAppType());
         String sandboxBackend = validateSandboxBackend(dto.getSandboxBackend());
         validateRagMode(dto.getRagMode());
         validateAudience(dto.getAudience());
         ensureNameUnique(dto.getName(), null);
         AppEntity entity = getAppEntity(dto, appType, sandboxBackend);
+        entity.setImageModelId(imageModelId);
+        entity.setVideoModelId(videoModelId);
         appMapper.insert(entity);
         // create 的变更前快照即初始配置（insert 后 tenantId 已由租户插件回填到实体）。
         recordConfigAudit(entity, "CREATE", entity);
@@ -111,8 +117,15 @@ public class AppServiceImpl implements AppService {
         // 在任何字段变更前，先以查到的旧实体写变更前快照，保证回退可查。
         recordConfigAudit(entity, "UPDATE", entity);
         if (StringUtils.isNotBlank(dto.getModelId()) && !dto.getModelId().equals(entity.getModelId())) {
-            llmModelService.loadById(dto.getModelId());
+            validateChatModel(dto.getModelId());
             entity.setModelId(dto.getModelId());
+        }
+        if (dto.getImageModelId() != null) {
+            // null 不更新；空串显式解除绑定
+            entity.setImageModelId(validateMediaModel(dto.getImageModelId(), ModelType.IMAGE_GEN));
+        }
+        if (dto.getVideoModelId() != null) {
+            entity.setVideoModelId(validateMediaModel(dto.getVideoModelId(), ModelType.VIDEO_GEN));
         }
         if (StringUtils.isNotBlank(dto.getName()) && !dto.getName().equals(entity.getName())) {
             ensureNameUnique(dto.getName(), id);
@@ -301,6 +314,30 @@ public class AppServiceImpl implements AppService {
         if (exists) {
             throw new AiBusinessException(AiErrorCode.APP_NAME_EXISTS, name);
         }
+    }
+
+    // 对话主模型只能绑定 CHAT 型，防止误绑嵌入/生成模型导致运行时构建失败
+    private void validateChatModel(String modelId) {
+        LlmModelEntity model = llmModelService.loadById(modelId);
+        if (model.getModelType() != ModelType.CHAT) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "应用只能绑定对话模型: " + modelId);
+        }
+    }
+
+    /**
+     * 校验媒体生成模型绑定的合法性：模型须存在且类型匹配。空/空串视为未绑定（更新时用于解除绑定），
+     * 返回规范化后的绑定值（空返回 null）。
+     */
+    private String validateMediaModel(String modelId, ModelType expectedType) {
+        if (StringUtils.isBlank(modelId)) {
+            return null;
+        }
+        LlmModelEntity model = llmModelService.loadById(modelId);
+        if (model.getModelType() != expectedType) {
+            throw new AiBusinessException(
+                    AiErrorCode.INVALID_PARAMETER, "模型类型与绑定不符，期望 " + expectedType + ": " + modelId);
+        }
+        return modelId;
     }
 
     private String validateAppType(String appType) {

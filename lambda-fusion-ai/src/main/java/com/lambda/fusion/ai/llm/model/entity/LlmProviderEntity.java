@@ -38,6 +38,10 @@ public class LlmProviderEntity {
     @Schema(description = "是否启用")
     private Boolean enabled;
 
+    @TableField("enable_media_gen")
+    @Schema(description = "该Key是否开通图像/视频等媒体生成能力(由配置者声明;运行时据此挂载生成工具)")
+    private Boolean enableMediaGen;
+
     @TableField("remark")
     @Schema(description = "备注")
     private String remark;

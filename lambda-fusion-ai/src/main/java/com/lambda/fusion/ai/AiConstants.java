@@ -16,7 +16,11 @@ public interface AiConstants {
     enum ModelType implements DictEnum<Integer> {
         CHAT(1, "对话模型"),
 
-        EMBEDDING(2, "嵌入模型");
+        EMBEDDING(2, "嵌入模型"),
+
+        IMAGE_GEN(3, "图像生成模型"),
+
+        VIDEO_GEN(4, "视频生成模型");
 
         @EnumValue
         private final Integer code;

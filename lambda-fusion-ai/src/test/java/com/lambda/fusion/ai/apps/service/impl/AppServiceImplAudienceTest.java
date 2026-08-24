@@ -3,11 +3,13 @@ package com.lambda.fusion.ai.apps.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
+import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.mapper.AppConfigAuditMapper;
 import com.lambda.fusion.ai.apps.mapper.AppMapper;
@@ -51,6 +53,10 @@ class AppServiceImplAudienceTest {
         properties.getAudience().getBRoles().add("ROLE_B");
         properties.getAudience().getCRoles().add("ROLE_C");
         llmModelService = mock(LlmModelService.class);
+        // 绑定校验：应用绑定/回填视图都会按 modelId 查模型，统一返回 CHAT 型
+        LlmModelEntity chatModel = new LlmModelEntity();
+        chatModel.setModelType(ModelType.CHAT);
+        when(llmModelService.loadById(anyString())).thenReturn(chatModel);
         user = mock(UserDetails.class);
         when(user.getUsername()).thenReturn("user-1");
         service = new AppServiceImpl(
