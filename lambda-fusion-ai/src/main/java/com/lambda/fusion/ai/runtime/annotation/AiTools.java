@@ -1,4 +1,4 @@
-package com.lambda.fusion.ai.runtime.annotaion;
+package com.lambda.fusion.ai.runtime.annotation;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;

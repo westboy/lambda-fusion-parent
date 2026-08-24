@@ -10,7 +10,7 @@ import com.lambda.cloud.netty.protocol.engine.impl.ReflectionProtocolEngine;
 import com.lambda.cloud.netty.protocol.message.ProtocolPayloadRegistry;
 import com.lambda.cloud.netty.protocol.scanner.ProtocolPayloadScanner;
 import com.lambda.cloud.ykc.message.v16.YkcV16BasePayload;
-import com.lambda.fusion.ai.runtime.annotaion.AiTools;
+import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.netty.buffer.ByteBuf;

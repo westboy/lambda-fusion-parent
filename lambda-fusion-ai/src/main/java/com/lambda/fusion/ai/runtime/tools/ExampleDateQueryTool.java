@@ -1,7 +1,7 @@
 package com.lambda.fusion.ai.runtime.tools;
 
-import com.lambda.fusion.ai.runtime.annotaion.AiTools;
-import com.lambda.fusion.ai.runtime.annotaion.RequireConfirm;
+import com.lambda.fusion.ai.runtime.annotation.AiTools;
+import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.time.ZoneId;
