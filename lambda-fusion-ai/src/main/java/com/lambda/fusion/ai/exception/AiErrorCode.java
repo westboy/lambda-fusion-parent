@@ -80,6 +80,8 @@ public enum AiErrorCode implements ErrorCode {
 
     APP_UNPUBLISHED(30758, "应用已下线"),
 
+    APP_MEDIA_BINDING_INVALID(30759, "媒体模型绑定不可用，请检查模型/提供方启用状态、媒体生成开关和 AgentScope 官方工具支持范围"),
+
     KB_NOT_FOUND(30801, "知识库不存在"),
 
     KB_NAME_EXISTS(30802, "知识库名称已存在"),

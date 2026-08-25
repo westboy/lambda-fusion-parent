@@ -159,6 +159,7 @@ class ChatRunCoordinatorResumeTest {
                 reasoningOpen,
                 tools,
                 pendingTools,
+                List.of(),
                 List.of());
     }
 

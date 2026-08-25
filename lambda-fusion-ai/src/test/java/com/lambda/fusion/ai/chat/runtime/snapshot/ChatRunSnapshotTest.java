@@ -27,6 +27,7 @@ class ChatRunSnapshotTest {
                         "{\"password\":\"hidden\",\"value\":1}",
                         "complete")),
                 List.of(),
+                List.of(),
                 List.of());
 
         ChatRunSnapshot.ToolCall tool = snapshot.tools().getFirst();
@@ -53,6 +54,7 @@ class ChatRunSnapshotTest {
                 false,
                 List.of(new ChatRunSnapshot.ToolCall("tool-1", "search", "{}", "result", "complete")),
                 List.of(new ChatRunSnapshot.ToolCall("tool-2", "confirm", "ignored", "ignored", "complete")),
+                List.of(),
                 List.of());
 
         String json = ChatRunSnapshotCodec.encode(original);
@@ -83,6 +85,7 @@ class ChatRunSnapshotTest {
                 false,
                 List.of(),
                 java.util.Arrays.asList((ChatRunSnapshot.ToolCall) null),
+                List.of(),
                 List.of());
 
         assertThat(snapshot.pendingTools()).isEmpty();

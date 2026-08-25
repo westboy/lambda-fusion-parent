@@ -73,6 +73,7 @@ class ChatRunCoordinatorStopTest {
                 false,
                 List.of(),
                 List.of(new ChatRunSnapshot.ToolCall("call-1", "dangerous", "", "", "asking")),
+                List.of(),
                 List.of())));
         ChatSessionEntity session = new ChatSessionEntity();
         session.setTenantId("tenant-1");

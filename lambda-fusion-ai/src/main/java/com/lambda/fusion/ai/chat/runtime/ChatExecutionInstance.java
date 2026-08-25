@@ -21,16 +21,15 @@ import com.lambda.fusion.ai.chat.runtime.validator.ToolInputValidator;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.message.Msg;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ScheduledExecutorService;
@@ -78,7 +77,6 @@ public final class ChatExecutionInstance {
     private AgentEventMapper eventMapper;
     private boolean awaitingInteraction;
     private List<AguiEvent> pendingInteractionEvents;
-    private final Set<String> generatedAttachmentIds = new LinkedHashSet<>();
 
     /**
      * 创建执行实例。
@@ -112,7 +110,6 @@ public final class ChatExecutionInstance {
         this.session = session;
         this.agentExecutionAdapter = agentExecutionAdapter;
         this.accumulator = accumulator;
-        this.generatedAttachmentIds.addAll(ToolResultMediaReference.attachmentIds(accumulator.buildSnapshot()));
         this.chatExecutionFinalizer = new ChatExecutionFinalizer(runService, eventStore, properties);
         this.agentStreamLifecycle = new AgentStreamLifecycle(run.getId(), scheduler, properties);
         this.eventMapper = new AgentEventMapper(
@@ -169,7 +166,7 @@ public final class ChatExecutionInstance {
         }
         try {
             beginConfirmedPhase();
-            startPhase(confirmMessage);
+            startPhase(confirmMessage, null);
         } catch (RuntimeException startFailure) {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
@@ -212,7 +209,7 @@ public final class ChatExecutionInstance {
         }
         try {
             beginConfirmedPhase();
-            startPhase(inputMessage);
+            startPhase(inputMessage, null);
         } catch (RuntimeException startFailure) {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
@@ -283,7 +280,8 @@ public final class ChatExecutionInstance {
      *
      * @param message 阶段输入消息
      */
-    public synchronized void startPhase(Msg message) {
+    /** 启动阶段；首阶段可携带服务端已校验的媒体生成调用，确认/输入续跑不携带。 */
+    public synchronized void startPhase(Msg message, MediaGenerationInvocation mediaGeneration) {
         if (terminal || isRunning()) {
             return;
         }
@@ -298,7 +296,7 @@ public final class ChatExecutionInstance {
         agentStreamLifecycle.scheduleInteractionTimeout(() -> runInTenant(this::onInteractionTimeout));
         Disposable next;
         try {
-            next = agentExecutionAdapter.stream(message)
+            next = agentExecutionAdapter.stream(message, mediaGeneration)
                     .doFinally(signal -> runInTenant(this::onSourceTerminated))
                     .subscribe(
                             event -> runInTenant(() -> onEvent(event)),
@@ -357,7 +355,7 @@ public final class ChatExecutionInstance {
             finalizeCompleted();
             return;
         }
-        ToolResultMediaReference.attachmentId(event).ifPresent(generatedAttachmentIds::add);
+        ToolResultMediaReference.attachmentId(event).ifPresent(accumulator::addGeneratedAttachmentId);
         List<AguiEvent> events = eventMapper.map(event);
         if (AgentEventMapper.isInteractionBoundary(event)) {
             if (awaitingInteraction) {
@@ -568,13 +566,7 @@ public final class ChatExecutionInstance {
                 log.warn("Run终结前内容关闭事件写入失败，仍继续提交业务终态: runId={}", run.getId(), closeEventFailure);
             }
             chatExecutionFinalizer.commitTerminal(
-                    run,
-                    accumulator.buildSnapshot(),
-                    List.copyOf(generatedAttachmentIds),
-                    status,
-                    reason,
-                    errorCode,
-                    errorMessage);
+                    run, accumulator.buildSnapshot(), status, reason, errorCode, errorMessage);
             // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
             // 否则等待 onSourceTerminated 在源流排空后完成它。
             if (isSourceTerminated()) {

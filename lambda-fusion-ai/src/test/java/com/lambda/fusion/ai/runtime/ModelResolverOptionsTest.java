@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
@@ -53,12 +54,14 @@ class ModelResolverOptionsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"openai", "dashscope", "ollama"})
+    @ValueSource(
+            strings = {"openai", "dashscope", "ollama", "anthropic", "gemini", "deepseek", "glm", "kimi", "minimax"})
     void appliesConfiguredContextWindowToProviderModel(String providerType) {
         LlmModelEntity model = new LlmModelEntity();
         model.setId("model-1");
         model.setProviderId("provider-1");
         model.setModelName("test-model");
+        model.setModelType(ModelType.CHAT);
         model.setContextWindowTokens(262_144);
         model.setEnabled(true);
 

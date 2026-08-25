@@ -2,25 +2,27 @@ package com.lambda.fusion.ai.runtime;
 
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
+import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
-import com.lambda.fusion.ai.apps.service.MediaGenerationCapabilityFactory;
-import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
-import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
-import com.lambda.fusion.ai.llm.service.LlmModelService;
-import com.lambda.fusion.ai.llm.service.LlmProviderService;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver.Binding;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
+import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import jakarta.annotation.PostConstruct;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -29,7 +31,6 @@ import java.util.Set;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
@@ -47,9 +48,9 @@ public class ToolkitAssembler {
 
     private final ApplicationContext applicationContext;
     private final McpServerService mcpServerService;
-    private final LlmModelService llmModelService;
-    private final LlmProviderService llmProviderService;
+    private final MediaGenerationBindingResolver mediaBindingResolver;
     private final KeyEncryptionService keyEncryptionService;
+    private final AiProperties aiProperties;
 
     /**
      * -- GETTER --
@@ -103,93 +104,53 @@ public class ToolkitAssembler {
     }
 
     public Toolkit build(AppEntity app) {
-        Toolkit toolkit = new Toolkit();
+        Duration timeout = Duration.ofSeconds(aiProperties.getChat().getRun().getMaxRunDurationSeconds());
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+                .executionConfig(ExecutionConfig.builder()
+                        .timeout(timeout)
+                        .maxAttempts(1)
+                        .build())
+                .build());
         for (Object toolBean : localToolBeans) {
             toolkit.registerTool(toolBean);
         }
-        registerImageGenerationTool(toolkit, app);
-        registerVideoGenerationTool(toolkit, app);
+        registerMediaGenerationTools(toolkit, app);
         registerMcpServers(toolkit, app.getMcpServerIds());
         return toolkit;
     }
 
-    /**
-     * 按应用绑定的 {@code IMAGE_GEN} 模型挂载文生图工具。绑定合法性已在配置入口强校验；
-     * 此处对后续配置变化（模型禁用、provider 关闭生成开关等）降级跳过并告警，不阻断对话构建。
-     */
-    private void registerImageGenerationTool(Toolkit toolkit, AppEntity app) {
-        if (StringUtils.isBlank(app.getImageModelId())) {
-            return;
-        }
-        try {
-            LlmModelEntity model = llmModelService.loadById(app.getImageModelId());
-            if (model.getModelType() != ModelType.IMAGE_GEN || Boolean.FALSE.equals(model.getEnabled())) {
-                log.warn("应用 {} 绑定的生图模型 {} 已禁用或类型不符，跳过挂载", app.getId(), app.getImageModelId());
-                return;
+    /** 安全视图与此处共用同一绑定解析器；单个失效绑定只降级该能力。 */
+    private void registerMediaGenerationTools(Toolkit toolkit, AppEntity app) {
+        for (ModelType type : List.of(ModelType.IMAGE_GEN, ModelType.VIDEO_GEN, ModelType.AUDIO_GEN)) {
+            try {
+                mediaBindingResolver
+                        .resolve(app, type)
+                        .map(this::buildMediaTool)
+                        .ifPresent(tool -> {
+                            toolkit.registerTool(tool);
+                            log.info("应用 {} 已挂载媒体生成工具: type={}", app.getId(), type);
+                        });
+            } catch (RuntimeException e) {
+                log.warn("应用 {} 媒体生成工具挂载失败，跳过: type={}", app.getId(), type, e);
             }
-            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
-            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
-                log.warn("应用 {} 生图模型所属 provider 未启用媒体生成，跳过挂载: {}", app.getId(), provider.getId());
-                return;
-            }
-            ImageGenerationTool tool = buildImageTool(provider, model.getModelName());
-            if (tool == null) {
-                log.warn("应用 {} 生图模型所属 provider 类型 {} 暂不支持生图，跳过挂载", app.getId(), provider.getProviderType());
-                return;
-            }
-            toolkit.registerTool(tool);
-            log.info("应用 {} 已挂载文生图工具: model={}", app.getId(), model.getModelName());
-        } catch (RuntimeException e) {
-            log.warn("应用 {} 生图工具挂载失败，跳过", app.getId(), e);
         }
     }
 
-    /** 按提供方类型解密 Key 并构建生图工具；不支持的类型返回 null。 */
-    private ImageGenerationTool buildImageTool(LlmProviderEntity provider, String modelName) {
-        ProviderType type = ProviderType.of(provider.getProviderType());
-        if (!MediaGenerationCapabilityFactory.supports(ModelType.IMAGE_GEN, type, modelName)) {
-            return null;
-        }
-        String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
-        if (type == ProviderType.DASHSCOPE) {
-            return ImageGenerationTool.dashscope(apiKey, modelName);
-        }
-        if (type == ProviderType.OPENAI) {
-            return ImageGenerationTool.openai(apiKey, provider.getBaseUrl(), modelName);
-        }
-        return null;
-    }
-
-    /**
-     * 按应用绑定的 {@code VIDEO_GEN} 模型挂载文生视频工具。AgentScope 2.0.1 仅提供 DashScope
-     * 视频生成实现；其他 provider 类型与失效配置均安全跳过。
-     */
-    private void registerVideoGenerationTool(Toolkit toolkit, AppEntity app) {
-        if (StringUtils.isBlank(app.getVideoModelId())) {
-            return;
-        }
-        try {
-            LlmModelEntity model = llmModelService.loadById(app.getVideoModelId());
-            if (model.getModelType() != ModelType.VIDEO_GEN || Boolean.FALSE.equals(model.getEnabled())) {
-                log.warn("应用 {} 绑定的视频模型 {} 已禁用或类型不符，跳过挂载", app.getId(), app.getVideoModelId());
-                return;
-            }
-            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
-            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
-                log.warn("应用 {} 视频模型所属 provider 未启用媒体生成，跳过挂载: {}", app.getId(), provider.getId());
-                return;
-            }
-            ProviderType providerType = ProviderType.of(provider.getProviderType());
-            if (!MediaGenerationCapabilityFactory.supports(ModelType.VIDEO_GEN, providerType)) {
-                log.warn("应用 {} 视频模型所属 provider 类型 {} 暂不支持视频生成，跳过挂载", app.getId(), provider.getProviderType());
-                return;
-            }
-            String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
-            toolkit.registerTool(VideoGenerationTool.dashscope(apiKey, model.getModelName()));
-            log.info("应用 {} 已挂载文生视频工具: model={}", app.getId(), model.getModelName());
-        } catch (RuntimeException e) {
-            log.warn("应用 {} 视频生成工具挂载失败，跳过", app.getId(), e);
-        }
+    /** 只负责解密凭据并为统一工具名创建官方能力薄适配器。 */
+    private Object buildMediaTool(Binding binding) {
+        String apiKey = keyEncryptionService.decrypt(binding.provider().getApiKeyEncrypted());
+        String modelName = binding.model().getModelName();
+        return switch (binding.model().getModelType()) {
+            case IMAGE_GEN ->
+                binding.providerType() == ProviderType.DASHSCOPE
+                        ? ImageGenerationTool.dashscope(apiKey, modelName)
+                        : ImageGenerationTool.openai(apiKey, binding.provider().getBaseUrl(), modelName);
+            case VIDEO_GEN -> VideoGenerationTool.dashscope(apiKey, modelName);
+            case AUDIO_GEN -> AudioGenerationTool.dashscope(apiKey, modelName);
+            default ->
+                throw new IllegalArgumentException(
+                        "不是媒体生成模型: " + binding.model().getModelType());
+        };
     }
 
     private void registerMcpServers(Toolkit toolkit, List<String> mcpServerIds) {

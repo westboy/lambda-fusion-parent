@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.runtime;
 
+import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
@@ -11,10 +12,9 @@ import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
-import io.agentscope.extensions.model.ollama.OllamaChatModel;
+import io.agentscope.core.model.ModelCreationContext;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.extensions.model.ollama.options.OllamaOptions;
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +40,9 @@ public class ModelResolver implements Function<String, Model> {
     @Override
     public Model apply(String modelId) {
         LlmModelEntity model = llmModelService.loadById(modelId);
+        if (model.getModelType() != ModelType.CHAT) {
+            throw new AiBusinessException(AiErrorCode.LLM_MODEL_TYPE_NOT_SUPPORTED, model.getModelType());
+        }
         if (Boolean.FALSE.equals(model.getEnabled())) {
             throw new AiBusinessException(AiErrorCode.LLM_MODEL_DISABLED, modelId);
         }
@@ -57,44 +60,17 @@ public class ModelResolver implements Function<String, Model> {
         }
         String apiKey = keyEncryptionService.decrypt(provider.getApiKeyEncrypted());
         GenerateOptions defaultOptions = resolveDefaultGenerateOptions(model);
-        switch (type) {
-            case DASHSCOPE: {
-                DashScopeChatModel.Builder builder = DashScopeChatModel.builder()
-                        .apiKey(apiKey)
-                        .modelName(model.getModelName())
-                        .baseUrl(provider.getBaseUrl())
-                        .defaultOptions(defaultOptions)
-                        .stream(true);
-                if (model.getContextWindowTokens() != null) {
-                    builder.contextWindowSize(model.getContextWindowTokens());
-                }
-                return builder.build();
-            }
-            case OPENAI: {
-                OpenAIChatModel.Builder builder = OpenAIChatModel.builder()
-                        .apiKey(apiKey)
-                        .modelName(model.getModelName())
-                        .baseUrl(provider.getBaseUrl())
-                        .generateOptions(defaultOptions)
-                        .stream(true);
-                if (model.getContextWindowTokens() != null) {
-                    builder.contextWindowSize(model.getContextWindowTokens());
-                }
-                return builder.build();
-            }
-            case OLLAMA: {
-                OllamaChatModel.Builder builder = OllamaChatModel.builder()
-                        .modelName(model.getModelName())
-                        .baseUrl(provider.getBaseUrl())
-                        .defaultOptions(OllamaOptions.fromGenerateOptions(defaultOptions));
-                if (model.getContextWindowTokens() != null) {
-                    builder.contextWindowSize(model.getContextWindowTokens());
-                }
-                return builder.build();
-            }
-            default:
-                throw new AiBusinessException(AiErrorCode.LLM_PROVIDER_TYPE_NOT_SUPPORTED, provider.getProviderType());
+        ModelCreationContext.Builder context =
+                ModelCreationContext.builder().apiKey(apiKey).baseUrl(provider.getBaseUrl()).stream(true);
+        if (type == ProviderType.OLLAMA) {
+            context.component(OllamaOptions.class, OllamaOptions.fromGenerateOptions(defaultOptions));
+        } else {
+            context.component(GenerateOptions.class, defaultOptions);
         }
+        if (model.getContextWindowTokens() != null) {
+            context.option("contextWindowSize", model.getContextWindowTokens());
+        }
+        return ModelRegistry.resolve(type.getCode() + ":" + model.getModelName(), context.build());
     }
 
     /**

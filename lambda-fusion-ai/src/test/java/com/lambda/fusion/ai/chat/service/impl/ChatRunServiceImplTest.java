@@ -28,6 +28,7 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
+import com.lambda.fusion.ai.chat.service.MediaGenerationRequestValidator;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import java.util.List;
@@ -58,8 +59,16 @@ class ChatRunServiceImplTest {
     private final ChatMessageService messageService = mock(ChatMessageService.class);
     private final ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
     private final AppService appService = mock(AppService.class);
+    private final MediaGenerationRequestValidator mediaGenerationRequestValidator =
+            mock(MediaGenerationRequestValidator.class);
     private final ChatRunServiceImpl service = new ChatRunServiceImpl(
-            runMapper, sessionMapper, sessionService, messageService, attachmentService, appService);
+            runMapper,
+            sessionMapper,
+            sessionService,
+            messageService,
+            attachmentService,
+            appService,
+            mediaGenerationRequestValidator);
 
     @Test
     void shouldCreateRunningRunOnceAndMarkIdempotentReplayAsLoaded() {
@@ -109,13 +118,7 @@ class ChatRunServiceImplTest {
         var result = service.finalizeExecution(
                 identity,
                 new ChatRunFinalizationCommand(
-                        ChatRunStatus.COMPLETED,
-                        ChatRunFinishReason.SUCCESS,
-                        snapshot("partial"),
-                        null,
-                        List.of(),
-                        null,
-                        null));
+                        ChatRunStatus.COMPLETED, ChatRunFinishReason.SUCCESS, snapshot("partial"), null, null, null));
 
         assertThat(result.committed()).isFalse();
         assertThat(result.status()).isEqualTo(ChatRunStatus.STOPPED.name());
@@ -144,9 +147,8 @@ class ChatRunServiceImplTest {
                 new ChatRunFinalizationCommand(
                         ChatRunStatus.COMPLETED,
                         ChatRunFinishReason.SUCCESS,
-                        snapshot("answer"),
+                        snapshot("answer", List.of("123456")),
                         null,
-                        List.of("123456"),
                         null,
                         null));
 
@@ -308,10 +310,28 @@ class ChatRunServiceImplTest {
                 false,
                 List.of(),
                 List.of(new ChatRunSnapshot.ToolCall(toolCallId, "demo_tool", "", "", "asking")),
+                List.of(),
                 List.of());
     }
 
     private static ChatRunSnapshot snapshot(String text) {
-        return new ChatRunSnapshot("run-1", "phase-1", 1, text, "", "message-1", null, false, false, null, null, null);
+        return snapshot(text, null);
+    }
+
+    private static ChatRunSnapshot snapshot(String text, List<String> generatedAttachmentIds) {
+        return new ChatRunSnapshot(
+                "run-1",
+                "phase-1",
+                1,
+                text,
+                "",
+                "message-1",
+                null,
+                false,
+                false,
+                null,
+                null,
+                null,
+                generatedAttachmentIds);
     }
 }

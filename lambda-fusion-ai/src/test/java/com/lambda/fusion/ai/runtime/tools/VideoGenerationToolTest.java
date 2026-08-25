@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.runtime.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -8,13 +9,11 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.dashscope.tool.DashScopeMultiModalTool;
-import java.util.stream.Collectors;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
@@ -44,7 +43,8 @@ class VideoGenerationToolTest {
                 .thenReturn(Mono.just(official));
         VideoGenerationTool tool = new VideoGenerationTool(client, "wan2.6-t2v");
 
-        ToolResultBlock result = tool.generateVideo("海边日落", null, null, "1280x720", 5, "single", true, false, 42);
+        ToolResultBlock result = tool.generateVideo("海边日落", null, null, "1280x720", 5, "single", true, false, 42, null)
+                .block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).singleElement().isInstanceOf(VideoBlock.class);
@@ -60,30 +60,24 @@ class VideoGenerationToolTest {
                 .thenReturn(Mono.just(official));
 
         ToolResultBlock result = new VideoGenerationTool(client, "wan2.6-t2v")
-                .generateVideo("测试", null, null, null, null, null, null, null, null);
+                .generateVideo("测试", null, null, null, null, null, null, null, null, null)
+                .block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
     }
 
     @Test
-    void shouldConvertClientExceptionToErrorResult() {
+    void shouldLeaveClientExceptionToAgentScopeToolExecutor() {
         DashScopeMultiModalTool client = Mockito.mock(DashScopeMultiModalTool.class);
         when(client.dashscopeTextToVideo(
                         anyString(), anyString(), any(), any(), isNull(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("调用超时"));
 
-        ToolResultBlock result = new VideoGenerationTool(client, "wan2.6-t2v")
-                .generateVideo("测试", null, null, null, null, null, null, null, null);
+        VideoGenerationTool tool = new VideoGenerationTool(client, "wan2.6-t2v");
 
-        assertThat(result.getState()).isEqualTo(ToolResultState.ERROR);
-        assertThat(textOf(result)).contains("视频生成失败：").contains("调用超时");
-    }
-
-    private static String textOf(ToolResultBlock result) {
-        return result.getOutput().stream()
-                .filter(TextBlock.class::isInstance)
-                .map(TextBlock.class::cast)
-                .map(TextBlock::getText)
-                .collect(Collectors.joining("\n"));
+        assertThatThrownBy(() -> tool.generateVideo("测试", null, null, null, null, null, null, null, null, null)
+                        .block(Duration.ofSeconds(5)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("调用超时");
     }
 }

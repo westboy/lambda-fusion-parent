@@ -33,6 +33,9 @@ public class CreateApp {
     @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空=无视频生成)")
     private String videoModelId;
 
+    @Schema(description = "音频生成模型ID(AUDIO_GEN 型;空=无语音生成)")
+    private String audioModelId;
+
     @Schema(description = "ReAct 最大迭代数")
     private Integer maxIters;
 

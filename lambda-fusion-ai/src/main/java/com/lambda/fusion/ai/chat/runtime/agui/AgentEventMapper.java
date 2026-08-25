@@ -17,6 +17,7 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -34,15 +35,12 @@ import org.apache.commons.lang3.StringUtils;
  * AgentScope 细粒度事件到官方 AG-UI 事件的薄映射器。
  *
  * <p>本类只处理协议事件配对与工具结果缓冲，不解释业务 Run 状态，也不生成另一套快照增量。运行中快照直接投影本类输出的
- * {@link AguiEvent}。纯文本工具结果保持原字符串；包含数据块时输出版本化 JSON 信封，{@code content} 保留 AgentScope
- * {@link ContentBlock} 的原生多态结构。
+ * {@link AguiEvent}。工具数据块沿用 AgentScope 官方 AG-UI 适配器语义：序列化为紧凑 JSON，多个块以换行分隔；
+ * 不再另包一层平台私有结果信封。
  *
  * @author Jin
  */
 public final class AgentEventMapper {
-
-    private static final String TOOL_RESULT_ENVELOPE_SCHEMA = "lambda-fusion/tool-result";
-    private static final int TOOL_RESULT_ENVELOPE_VERSION = 1;
 
     private final String threadId;
     private final String runId;
@@ -320,7 +318,6 @@ public final class AgentEventMapper {
 
         private final Set<String> startedToolCalls = new HashSet<>();
         private final Map<String, StringBuilder> resultBuffers = new HashMap<>();
-        private final Map<String, List<ContentBlock>> resultContent = new HashMap<>();
 
         boolean markStarted(String toolCallId) {
             resultBuffers.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
@@ -334,30 +331,30 @@ public final class AgentEventMapper {
         }
 
         void appendResult(String toolCallId, ContentBlock content) {
-            if (content != null) {
-                resultContent
-                        .computeIfAbsent(toolCallId, ignored -> new ArrayList<>())
-                        .add(content);
+            if (content == null) {
+                return;
             }
+            StringBuilder result = resultBuffers.computeIfAbsent(toolCallId, ignored -> new StringBuilder());
+            if (!result.isEmpty()) {
+                result.append('\n');
+            }
+            result.append(serialize(content));
         }
 
         String result(String toolCallId) {
             StringBuilder result = resultBuffers.get(toolCallId);
-            String text = result == null ? "" : result.toString();
-            List<ContentBlock> content = resultContent.get(toolCallId);
-            if (content == null || content.isEmpty()) {
-                return text;
-            }
-            return JsonUtils.getJsonCodec()
-                    .toJson(new ToolResultEnvelope(
-                            TOOL_RESULT_ENVELOPE_SCHEMA, TOOL_RESULT_ENVELOPE_VERSION, text, content));
+            return result == null ? "" : result.toString();
         }
-    }
 
-    private record ToolResultEnvelope(String schema, int version, String text, List<ContentBlock> content) {
-
-        private ToolResultEnvelope {
-            content = List.copyOf(content);
+        private static String serialize(ContentBlock content) {
+            if (content instanceof TextBlock text) {
+                return text.getText();
+            }
+            try {
+                return JsonUtils.getJsonCodec().toJson(content);
+            } catch (RuntimeException serializationFailure) {
+                return content.toString();
+            }
         }
     }
 }

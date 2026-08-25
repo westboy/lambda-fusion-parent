@@ -1,10 +1,11 @@
 package com.lambda.fusion.ai.runtime.tools;
 
+import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.extensions.model.dashscope.tool.DashScopeMultiModalTool;
-import java.time.Duration;
+import reactor.core.publisher.Mono;
 
 /**
  * 应用绑定的文生视频薄适配器。AgentScope 2.0.1 仅在 DashScope 官方多模态工具中提供视频生成；
@@ -17,9 +18,6 @@ public final class VideoGenerationTool {
 
     /** 工具名。 */
     public static final String TOOL_NAME = "text_to_video";
-
-    /** 视频任务可能耗时数分钟；官方调用本身会阻塞直到任务成功或失败。 */
-    private static final Duration CALL_TIMEOUT = Duration.ofMinutes(10);
 
     private final DashScopeMultiModalTool dashscopeTool;
     private final String modelName;
@@ -41,7 +39,7 @@ public final class VideoGenerationTool {
      * @return AgentScope 官方视频结果；失败时为 ERROR 状态结果
      */
     @Tool(name = TOOL_NAME, description = "Generate a video from a text prompt and return an official video block.")
-    public ToolResultBlock generateVideo(
+    public Mono<ToolResultBlock> generateVideo(
             @ToolParam(name = "prompt", description = "The text prompt describing the video") String prompt,
             @ToolParam(name = "negative_prompt", description = "Elements to avoid", required = false)
                     String negativePrompt,
@@ -57,25 +55,31 @@ public final class VideoGenerationTool {
                     Boolean promptExtend,
             @ToolParam(name = "watermark", description = "Whether to include a watermark", required = false)
                     Boolean watermark,
-            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed) {
-        try {
-            ToolResultBlock result = dashscopeTool
-                    .dashscopeTextToVideo(
-                            prompt,
-                            modelName,
-                            negativePrompt,
-                            audioUrl,
-                            normalizeSize(size),
-                            duration,
-                            shotType,
-                            promptExtend,
-                            watermark,
-                            seed)
-                    .block(CALL_TIMEOUT);
-            return result != null ? result : ToolResultBlock.error("视频生成接口无响应");
-        } catch (RuntimeException e) {
-            return ToolResultBlock.error("视频生成失败：" + e.getMessage());
+            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed,
+            MediaGenerationInvocation invocation) {
+        if (invocation != null) {
+            invocation.claimExecution(TOOL_NAME);
+            prompt = invocation.getPrompt();
+            negativePrompt = invocation.getNegativePrompt();
+            audioUrl = null;
+            size = invocation.getSize();
+            duration = invocation.getDuration();
+            shotType = invocation.getShotType();
+            promptExtend = invocation.getPromptExtend();
+            watermark = invocation.getWatermark();
+            seed = invocation.getSeed();
         }
+        return dashscopeTool.dashscopeTextToVideo(
+                prompt,
+                modelName,
+                negativePrompt,
+                audioUrl,
+                normalizeSize(size),
+                duration,
+                shotType,
+                promptExtend,
+                watermark,
+                seed);
     }
 
     /** DashScope 使用 {@code *} 分隔视频宽高，前端和模型可统一提交更常见的 {@code x}。 */

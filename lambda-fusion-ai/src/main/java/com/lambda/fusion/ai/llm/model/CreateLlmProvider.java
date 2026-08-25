@@ -12,7 +12,7 @@ public class CreateLlmProvider {
     @NotBlank(message = "提供方名称不能为空")
     private String name;
 
-    @Schema(description = "提供方类型: dashscope/openai/ollama")
+    @Schema(description = "AgentScope 提供方类型")
     @NotBlank(message = "提供方类型不能为空")
     private String providerType;
 

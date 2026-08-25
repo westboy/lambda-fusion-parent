@@ -16,8 +16,12 @@ import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
@@ -39,17 +43,20 @@ class ToolResultMediaMaterializerTest {
         ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
         ChatAttachmentEntity stored = attachment("123456", "generated.png", "image/png");
         AtomicReference<byte[]> storedBytes = new AtomicReference<>();
-        when(attachmentService.storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString()))
+        when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), anyString()))
                 .thenAnswer(invocation -> {
-                    storedBytes.set(Files.readAllBytes(invocation.getArgument(2)));
+                    storedBytes.set(Files.readAllBytes(invocation.getArgument(1)));
                     return stored;
                 });
         ToolResultMediaMaterializer materializer =
                 new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
         byte[] expected = "generated-image".getBytes();
-        ToolResultDataDeltaEvent event = event(ImageBlock.builder()
-                .source(new Base64Source("image/png", Base64.getEncoder().encodeToString(expected)))
-                .build());
+        ToolResultDataDeltaEvent event = event(
+                ImageGenerationTool.TOOL_NAME,
+                ImageBlock.builder()
+                        .source(new Base64Source(
+                                "image/png", Base64.getEncoder().encodeToString(expected)))
+                        .build());
 
         AgentEvent result = materializer
                 .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
@@ -76,17 +83,18 @@ class ToolResultMediaMaterializerTest {
         ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
         ToolResultMediaMaterializer materializer =
                 new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
-        ToolResultDataDeltaEvent event = event(ImageBlock.builder()
-                .source(new URLSource("http://127.0.0.1/generated.png", "image/png"))
-                .build());
+        ToolResultDataDeltaEvent event = event(
+                ImageGenerationTool.TOOL_NAME,
+                ImageBlock.builder()
+                        .source(new URLSource("http://127.0.0.1/generated.png", "image/png"))
+                        .build());
 
         assertThatThrownBy(() -> materializer
                         .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
                         .block(Duration.ofSeconds(5)))
                 .isInstanceOfSatisfying(AiBusinessException.class, error -> assertThat(error.getCode())
                         .isEqualTo(AiErrorCode.TOOL_RESULT_MEDIA_MATERIALIZATION_FAILED.getCode()));
-        verify(attachmentService, never())
-                .storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString());
+        verify(attachmentService, never()).storeGenerated(anyString(), any(Path.class), anyString(), anyString());
     }
 
     @Test
@@ -94,13 +102,16 @@ class ToolResultMediaMaterializerTest {
         AiProperties properties = properties();
         ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
         ChatAttachmentEntity stored = attachment("video-1", "generated.mp4", "video/mp4");
-        when(attachmentService.storeGenerated(anyString(), anyString(), any(Path.class), anyString(), anyString()))
+        when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), anyString()))
                 .thenReturn(stored);
         ToolResultMediaMaterializer materializer =
                 new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
-        ToolResultDataDeltaEvent event = event(VideoBlock.builder()
-                .source(new Base64Source("video/mp4", Base64.getEncoder().encodeToString("video".getBytes())))
-                .build());
+        ToolResultDataDeltaEvent event = event(
+                VideoGenerationTool.TOOL_NAME,
+                VideoBlock.builder()
+                        .source(new Base64Source(
+                                "video/mp4", Base64.getEncoder().encodeToString("video".getBytes())))
+                        .build());
 
         AgentEvent result = materializer
                 .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
@@ -114,12 +125,36 @@ class ToolResultMediaMaterializerTest {
                                     .isInstanceOfSatisfying(URLSource.class, source -> assertThat(source.getMimeType())
                                             .isEqualTo("video/mp4"));
                         }));
-        verify(attachmentService)
-                .storeGenerated(eq("tenant-1"), eq("session-1"), any(Path.class), anyString(), eq("video/mp4"));
+        verify(attachmentService).storeGenerated(eq("session-1"), any(Path.class), anyString(), eq("video/mp4"));
     }
 
-    private static ToolResultDataDeltaEvent event(ContentBlock block) {
-        return new ToolResultDataDeltaEvent("reply-1", "tool-1", "generate_image", block);
+    @Test
+    void shouldMaterializeOfficialAudioBlockThroughTheSharedStoragePath() {
+        AiProperties properties = properties();
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), eq("audio/mpeg")))
+                .thenReturn(attachment("audio-1", "generated.mp3", "audio/mpeg"));
+        ToolResultMediaMaterializer materializer =
+                new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        ToolResultDataDeltaEvent event = event(
+                AudioGenerationTool.TOOL_NAME,
+                AudioBlock.builder()
+                        .source(new Base64Source(
+                                "audio/mpeg", Base64.getEncoder().encodeToString("audio".getBytes())))
+                        .build());
+
+        AgentEvent result = materializer
+                .materialize(event, new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"))
+                .block(Duration.ofSeconds(5));
+
+        assertThat(result)
+                .isInstanceOfSatisfying(ToolResultDataDeltaEvent.class, transformed -> assertThat(transformed.getData())
+                        .isInstanceOfSatisfying(DataBlock.class, data -> assertThat(data.getId())
+                                .isEqualTo("attachment:audio-1")));
+    }
+
+    private static ToolResultDataDeltaEvent event(String toolName, ContentBlock block) {
+        return new ToolResultDataDeltaEvent("reply-1", "tool-1", toolName, block);
     }
 
     private static AiProperties properties() {

@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.runtime.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,10 +12,10 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.extensions.model.dashscope.tool.DashScopeMultiModalTool;
 import io.agentscope.extensions.model.openai.tool.OpenAIMultiModalTool;
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
 /**
- * 文生图薄适配器行为测试：官方成功/错误结果原样透传，调用异常转为 ERROR；绑定模型名、URL
+ * 文生图薄适配器行为测试：官方成功/错误结果原样透传，调用异常交还 AgentScope；绑定模型名、URL
  * 返回策略和尺寸分隔符按提供方约定传给 AgentScope 官方工具。
  *
  * @author Jin
@@ -37,7 +38,8 @@ class ImageGenerationToolTest {
                 .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        ToolResultBlock result = tool.generateImage("一只猫", "1024x1024", 1);
+        ToolResultBlock result =
+                tool.generateImage("一只猫", "1024x1024", 1, null, null).block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
@@ -49,16 +51,17 @@ class ImageGenerationToolTest {
     void shouldPassThroughOfficialImageBlocksForOpenai() {
         OpenAIMultiModalTool client = Mockito.mock(OpenAIMultiModalTool.class);
         ToolResultBlock official = resultOf("https://img.example.com/2.png");
-        when(client.openaiTextToImage(anyString(), anyString(), any(), eq("1024x1024"), isNull(), isNull()))
+        when(client.openaiTextToImage(anyString(), anyString(), any(), eq("1024x1024"), isNull(), eq("url")))
                 .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(null, client, "dall-e-3");
 
-        ToolResultBlock result = tool.generateImage("一只猫", "1024*1024", 2);
+        ToolResultBlock result =
+                tool.generateImage("一只猫", "1024*1024", 1, null, null).block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
-        // OpenAI 分隔符为 x；质量与响应格式交由默认值，不做二选一
-        verify(client).openaiTextToImage("一只猫", "dall-e-3", 2, "1024x1024", null, null);
+        // OpenAI 分隔符为 x；强制 URL 响应，避免 Base64 进入 Agent 上下文
+        verify(client).openaiTextToImage("一只猫", "dall-e-3", 1, "1024x1024", null, "url");
     }
 
     @Test
@@ -69,7 +72,8 @@ class ImageGenerationToolTest {
                 .thenReturn(Mono.just(officialError));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        ToolResultBlock result = tool.generateImage("一只猫", null, null);
+        ToolResultBlock result =
+                tool.generateImage("一只猫", null, null, null, null).block(Duration.ofSeconds(5));
 
         // 官方 ERROR 结果原样透传，保留官方错误文本供模型转告
         assertThat(result).isSameAs(officialError);
@@ -77,17 +81,16 @@ class ImageGenerationToolTest {
     }
 
     @Test
-    void shouldWrapClientExceptionAsErrorResult() {
+    void shouldLeaveClientExceptionToAgentScopeToolExecutor() {
         DashScopeMultiModalTool client = Mockito.mock(DashScopeMultiModalTool.class);
         when(client.dashscopeTextToImage(anyString(), anyString(), any(), isNull(), eq(Boolean.FALSE)))
                 .thenThrow(new IllegalStateException("调用超时"));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        ToolResultBlock result = tool.generateImage("一只猫", null, null);
-
-        // 异常转为 ERROR 结果而非抛出：模型如实转告用户，不中断对话流程
-        assertThat(result.getState()).isEqualTo(ToolResultState.ERROR);
-        assertThat(textOf(result)).contains("图片生成失败：").contains("调用超时");
+        assertThatThrownBy(
+                        () -> tool.generateImage("一只猫", null, null, null, null).block(Duration.ofSeconds(5)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("调用超时");
     }
 
     /** 构造含单张 URL 图片的成功工具结果。 */

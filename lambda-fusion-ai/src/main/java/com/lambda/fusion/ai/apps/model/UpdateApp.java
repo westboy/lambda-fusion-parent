@@ -30,6 +30,9 @@ public class UpdateApp {
     @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空串=解除绑定)")
     private String videoModelId;
 
+    @Schema(description = "音频生成模型ID(AUDIO_GEN 型;空串=解除绑定)")
+    private String audioModelId;
+
     @Schema(description = "ReAct 最大迭代数")
     private Integer maxIters;
 

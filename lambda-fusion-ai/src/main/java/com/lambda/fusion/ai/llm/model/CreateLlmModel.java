@@ -24,7 +24,7 @@ public class CreateLlmModel {
     @NotBlank(message = "模型实际名称不能为空")
     private String modelName;
 
-    @Schema(description = "模型类型: 1=CHAT, 2=EMBEDDING")
+    @Schema(description = "模型类型: CHAT/EMBEDDING/IMAGE_GEN/VIDEO_GEN/AUDIO_GEN")
     @NotNull(message = "模型类型不能为空")
     private ModelType modelType;
 

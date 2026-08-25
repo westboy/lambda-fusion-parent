@@ -12,6 +12,7 @@ import com.lambda.fusion.ai.rag.runtime.KnowledgeRetrievalTool;
 import com.lambda.fusion.ai.rag.runtime.KnowledgeRetriever;
 import com.lambda.fusion.ai.rag.runtime.RagMiddleware;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
+import com.lambda.fusion.ai.runtime.media.MediaGenerationRoutingMiddleware;
 import com.lambda.fusion.ai.runtime.sandbox.SandboxSpecResolver;
 import com.lambda.fusion.ai.runtime.state.StateStoreProvider;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
@@ -37,6 +38,7 @@ import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -162,16 +164,19 @@ public class AgentFactory {
      * {@link RagMiddleware}（对话实时检索注入）；绑定变更经 {@code ConfigChangedEvent} 重建 agent。
      */
     private List<MiddlewareBase> resolveMiddlewares(AppEntity app) {
+        List<MiddlewareBase> middlewares = new ArrayList<>();
+        middlewares.add(new MediaGenerationRoutingMiddleware());
         RagMode ragMode = resolveRagMode(app);
         if (ragMode != RagMode.GENERIC && ragMode != RagMode.BOTH) {
-            return List.of();
+            return List.copyOf(middlewares);
         }
         KnowledgeRetriever retriever = retrieverProvider.getIfAvailable();
         if (retriever == null) {
-            return List.of();
+            return List.copyOf(middlewares);
         }
-        return List.of(new RagMiddleware(
+        middlewares.add(new RagMiddleware(
                 retriever, app.getKnowledgeBaseIds(), aiProperties.getRag().getMaxInjectChars()));
+        return List.copyOf(middlewares);
     }
 
     /**

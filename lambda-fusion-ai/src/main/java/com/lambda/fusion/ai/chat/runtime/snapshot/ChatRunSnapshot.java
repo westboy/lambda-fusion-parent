@@ -17,6 +17,7 @@ import java.util.List;
  * @param tools 工具调用状态
  * @param pendingTools 待确认工具调用
  * @param pendingInputs 待用户输入的挂起工具调用
+ * @param generatedAttachmentIds 当前运行已物化的生成附件 ID
  * @author Jin
  */
 public record ChatRunSnapshot(
@@ -31,7 +32,8 @@ public record ChatRunSnapshot(
         boolean reasoningOpen,
         List<ToolCall> tools,
         List<ToolCall> pendingTools,
-        List<PendingInput> pendingInputs) {
+        List<PendingInput> pendingInputs,
+        List<String> generatedAttachmentIds) {
 
     /** 归一化可空文本和工具调用集合。 */
     public ChatRunSnapshot {
@@ -40,6 +42,7 @@ public record ChatRunSnapshot(
         tools = ChatRunSnapshotSanitizer.sanitizeTools(tools);
         pendingTools = ChatRunSnapshotSanitizer.sanitizePendingTools(pendingTools);
         pendingInputs = ChatRunSnapshotSanitizer.sanitizePendingInputs(pendingInputs);
+        generatedAttachmentIds = ChatRunSnapshotSanitizer.sanitizeAttachmentIds(generatedAttachmentIds);
     }
 
     /**
@@ -52,7 +55,8 @@ public record ChatRunSnapshot(
      */
     public static ChatRunSnapshot empty(String runId, String aguiRunId, int phaseNo) {
         return new ChatRunSnapshot(
-                runId, aguiRunId, phaseNo, "", "", null, null, false, false, List.of(), List.of(), List.of());
+                runId, aguiRunId, phaseNo, "", "", null, null, false, false, List.of(), List.of(), List.of(),
+                List.of());
     }
 
     /**
@@ -75,7 +79,8 @@ public record ChatRunSnapshot(
                 false,
                 tools,
                 List.of(),
-                List.of());
+                List.of(),
+                generatedAttachmentIds);
     }
 
     /** 判断当前是否存在未决交互（待确认或待输入）。 */

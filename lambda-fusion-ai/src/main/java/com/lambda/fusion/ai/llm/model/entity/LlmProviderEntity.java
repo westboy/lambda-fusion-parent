@@ -4,8 +4,11 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.lambda.fusion.ai.AiConstants.ModelType;
+import com.lambda.fusion.ai.AiConstants.ProviderType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
+import java.util.Set;
 import lombok.Data;
 
 @Data
@@ -22,7 +25,7 @@ public class LlmProviderEntity {
     private String name;
 
     @TableField("provider_type")
-    @Schema(description = "提供方类型: dashscope/openai/ollama")
+    @Schema(description = "AgentScope 提供方类型")
     private String providerType;
 
     @TableField("base_url")
@@ -53,4 +56,10 @@ public class LlmProviderEntity {
     @TableField("updated_at")
     @Schema(description = "更新时间")
     private LocalDateTime updatedAt;
+
+    @Schema(description = "该提供方在系统中已接通的模型类型")
+    public Set<ModelType> getSupportedModelTypes() {
+        ProviderType type = ProviderType.of(providerType);
+        return type == null ? Set.of() : type.getSupportedModelTypes();
+    }
 }

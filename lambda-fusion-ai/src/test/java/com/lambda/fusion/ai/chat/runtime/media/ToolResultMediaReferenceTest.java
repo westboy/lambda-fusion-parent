@@ -2,37 +2,27 @@ package com.lambda.fusion.ai.chat.runtime.media;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
-import java.util.List;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.URLSource;
 import org.junit.jupiter.api.Test;
 
 class ToolResultMediaReferenceTest {
 
     @Test
-    void shouldRestoreOnlyPlatformAttachmentReferencesFromSnapshot() {
-        String result =
-                """
-                {"schema":"lambda-fusion/tool-result","version":1,"text":"",
-                 "content":[
-                   {"type":"data","id":"attachment:123","source":{"type":"url","url":"/preview"}},
-                   {"type":"data","id":"provider-id","source":{"type":"url","url":"https://example.com"}},
-                   {"type":"data","id":"attachment:456","source":{"type":"url","url":"/preview"}}
-                 ]}
-                """;
-        ChatRunSnapshot snapshot = new ChatRunSnapshot(
-                "run-1",
-                "agui-1",
-                1,
-                "",
-                "",
-                null,
-                null,
-                false,
-                false,
-                List.of(new ChatRunSnapshot.ToolCall("tool-1", "generate", "{}", result, "complete")),
-                List.of(),
-                List.of());
+    void shouldExtractOnlyPlatformAttachmentReferenceFromLiveEvent() {
+        ToolResultDataDeltaEvent platformEvent = event("attachment:123");
+        ToolResultDataDeltaEvent providerEvent = event("provider-id");
 
-        assertThat(ToolResultMediaReference.attachmentIds(snapshot)).containsExactly("123", "456");
+        assertThat(ToolResultMediaReference.attachmentId(platformEvent)).contains("123");
+        assertThat(ToolResultMediaReference.attachmentId(providerEvent)).isEmpty();
+    }
+
+    private static ToolResultDataDeltaEvent event(String dataId) {
+        DataBlock data = DataBlock.builder()
+                .id(dataId)
+                .source(new URLSource("/preview", "image/png"))
+                .build();
+        return new ToolResultDataDeltaEvent("reply-1", "tool-1", "text_to_image", data);
     }
 }

@@ -8,7 +8,7 @@
 
 | 能力 | 包 | 端点 | 说明 |
 | --- | --- | --- | --- |
-| LLM 提供方/模型 | `llm` | `/v1/ai/llm-providers` `/v1/ai/llm-models` | DB 驱动，API Key AES-GCM 加密；dashscope/openai/ollama |
+| LLM 提供方/模型 | `llm` | `/v1/ai/llm-providers` `/v1/ai/llm-models` | DB 驱动，API Key AES-GCM 加密；使用 AgentScope Provider SPI |
 | 智能应用 | `apps` | `/v1/ai/apps` `/v1/ai/apps/available` | CHAT / WORKSPACE 两型，平台全局 |
 | 对话会话 | `chat` | `/v1/ai/sessions` | SSE 流式聊天 + 主动出站 |
 | MCP 服务 | `mcp` | `/v1/ai/mcp-servers` | stdio/sse/http/streamable_http |
@@ -94,15 +94,15 @@
 ## 能力详解
 
 ### LLM 提供方与模型
-提供方类型 `dashscope`/`openai`/`ollama`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`；API Key AES-GCM 加密存储；`ModelResolver` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
+提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
 
 ### 智能应用
-应用字段：`modelId` `imageModelId` `videoModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
+应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
 
 ### 媒体生成
-- `ToolkitAssembler` 根据应用绑定的 `IMAGE_GEN` / `VIDEO_GEN` 模型挂载薄适配工具：模型名由应用锁定，生成调用和媒体块结果复用 AgentScope 2.0.1 官方 `DashScopeMultiModalTool` / `OpenAIMultiModalTool`。
-- 聊天安全视图的 `mediaGenerationCapabilities` 仅返回模型展示名、工具名及模型级尺寸/数量/时长白名单，不泄露实际模型名、provider、服务地址或凭据。DashScope 支持文生图与文生视频；OpenAI 当前只开放官方扩展已经实现的 DALL-E URL 响应协议。
-- 官方 `ImageBlock` / `VideoBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS），事件和历史消息均返回平台签名预览地址，避免把供应商临时 URL 或 Base64 持久化到聊天记录。
+- `ToolkitAssembler` 根据应用绑定的 `IMAGE_GEN` / `VIDEO_GEN` / `AUDIO_GEN` 模型挂载薄适配工具：模型名由应用锁定，生成调用和媒体块结果复用 AgentScope 2.0.1 官方 `DashScopeMultiModalTool` / `OpenAIMultiModalTool`。
+- 聊天安全视图的 `mediaGenerationCapabilities` 仅返回模型展示名、推荐参数与可输入范围，不泄露实际模型名、provider、服务地址或凭据。前端以结构化 `mediaGeneration` 字段提交用户参数，服务端按应用绑定校验并强制路由到对应官方工具。
+- 官方 `ImageBlock` / `VideoBlock` / `AudioBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS），事件和历史消息均返回平台签名预览地址，避免把供应商临时 URL 或 Base64 持久化到聊天记录。
 
 ### MCP 服务
 传输 `stdio`/`sse`/`http`/`streamable_http`；`ToolkitAssembler` 按应用装载，单个失败不影响其余；`POST /v1/ai/mcp-servers/{id}/test` 测连通性。
@@ -306,7 +306,7 @@ POST /v1/ai/apps   { "appType":"WORKSPACE", "selfEvolve":true, "sandboxBackend":
 | 上下文透传 | `runtime/gateway/RuntimeProperty.java` |
 | Workspace | `runtime/workspace/` |
 | RAG | `rag/` 包 |
-| 媒体生成工具 | `runtime/tools/ImageGenerationTool.java` / `runtime/tools/VideoGenerationTool.java` |
+| 媒体生成工具 | `runtime/tools/ImageGenerationTool.java` / `runtime/tools/VideoGenerationTool.java` / `runtime/tools/AudioGenerationTool.java` |
 | 工具媒体物化 | `chat/runtime/media/` |
 | AI 文件存储 | `storage/` |
 | 子代理 | `subagent/` 包 |

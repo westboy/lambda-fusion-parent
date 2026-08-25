@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.runtime.snapshot;
 import com.lambda.fusion.ai.AiConstants.ChatRunToolStatus;
 import io.agentscope.core.util.JsonUtils;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -67,6 +68,19 @@ public class ChatRunSnapshotSanitizer {
                                 safe(input.inputKind()),
                                 safe(input.responseSchemaJson())))
                         .toList();
+    }
+
+    /** 规整生成附件 ID：只保留平台数字 ID，保持首次出现顺序并去重。 */
+    public static List<String> sanitizeAttachmentIds(List<String> attachmentIds) {
+        if (attachmentIds == null || attachmentIds.isEmpty()) {
+            return List.of();
+        }
+        var sanitized = new LinkedHashSet<String>();
+        attachmentIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(id -> id.matches("[0-9]{1,32}"))
+                .forEach(sanitized::add);
+        return List.copyOf(sanitized);
     }
 
     /**

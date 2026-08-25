@@ -14,8 +14,8 @@ import com.lambda.fusion.ai.apps.mapper.AppMapper;
 import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppConfigAuditEntity;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
-import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
 import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -36,6 +36,7 @@ class AppServiceImplConfigAuditTest {
 
     private AppMapper appMapper;
     private AppConfigAuditMapper auditMapper;
+    private MediaGenerationBindingResolver mediaBindingResolver;
     private AppServiceImpl service;
     private UserDetails operator;
 
@@ -43,13 +44,14 @@ class AppServiceImplConfigAuditTest {
     void setUp() {
         appMapper = mock(AppMapper.class);
         auditMapper = mock(AppConfigAuditMapper.class);
+        mediaBindingResolver = mock(MediaGenerationBindingResolver.class);
         operator = mock(UserDetails.class);
         when(operator.getUsername()).thenReturn("dev-1");
         service = new AppServiceImpl(
                 appMapper,
                 auditMapper,
                 mock(LlmModelService.class),
-                mock(LlmProviderService.class),
+                mediaBindingResolver,
                 mock(ApplicationEventPublisher.class),
                 mock(WorkspacePaths.class),
                 new AiProperties());
@@ -121,6 +123,31 @@ class AppServiceImplConfigAuditTest {
                     .isInstanceOf(com.lambda.fusion.ai.exception.AiBusinessException.class);
         }
         verify(auditMapper, never()).insert(any(AppConfigAuditEntity.class));
+    }
+
+    @Test
+    void shouldClearAllOptionalMediaBindings() {
+        AppEntity existing = existingApp();
+        existing.setImageModelId("image-1");
+        existing.setVideoModelId("video-1");
+        existing.setAudioModelId("audio-1");
+        when(appMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+        UpdateApp dto = new UpdateApp();
+        dto.setImageModelId("");
+        dto.setVideoModelId("");
+        dto.setAudioModelId("");
+
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(operator);
+            service.update("app-1", dto);
+        }
+
+        ArgumentCaptor<AppEntity> captor = ArgumentCaptor.forClass(AppEntity.class);
+        verify(appMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getImageModelId()).isNull();
+        assertThat(captor.getValue().getVideoModelId()).isNull();
+        assertThat(captor.getValue().getAudioModelId()).isNull();
+        verify(mediaBindingResolver, never()).requireExecutable(any(), any());
     }
 
     private static AppEntity existingApp() {

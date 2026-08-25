@@ -10,7 +10,7 @@ public class UpdateLlmProvider {
     @Schema(description = "提供方名称")
     private String name;
 
-    @Schema(description = "提供方类型: dashscope/openai/ollama")
+    @Schema(description = "AgentScope 提供方类型")
     private String providerType;
 
     @Schema(description = "服务地址")

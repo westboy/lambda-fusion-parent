@@ -40,7 +40,7 @@ public class ChatServiceImpl implements ChatService {
         Assert.isTrue(message.isContentOrAttachmentPresent(), "消息内容与附件不能同时为空");
         RunContext context = chatRunService.createOrLoad(sessionId, message);
         if (context.created()) {
-            chatExecutionService.start(context.run(), context.session());
+            chatExecutionService.start(context.run(), context.session(), context.mediaGeneration());
         }
         return openRunEventStream(context.run(), context.session());
     }

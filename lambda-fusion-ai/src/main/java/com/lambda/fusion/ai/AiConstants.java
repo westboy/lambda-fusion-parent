@@ -20,7 +20,9 @@ public interface AiConstants {
 
         IMAGE_GEN(3, "图像生成模型"),
 
-        VIDEO_GEN(4, "视频生成模型");
+        VIDEO_GEN(4, "视频生成模型"),
+
+        AUDIO_GEN(5, "音频生成模型");
 
         @EnumValue
         private final Integer code;
@@ -29,22 +31,49 @@ public interface AiConstants {
     }
 
     /**
-     * LLM 提供方类型。决定运行时构建哪种 AgentScope ChatModel 客户端。
+     * AgentScope 提供方及本系统已接通的模型能力。该集合同时用于配置校验和管理端模型类型选项，避免各层重复维护
+     * provider/modelType 组合。
      *
      * @author Jin
      */
     @Getter
     @AllArgsConstructor
     enum ProviderType {
-        DASHSCOPE("dashscope", "通义千问 DashScope"),
+        DASHSCOPE(
+                "dashscope",
+                "通义千问 DashScope",
+                Set.of(
+                        ModelType.CHAT,
+                        ModelType.EMBEDDING,
+                        ModelType.IMAGE_GEN,
+                        ModelType.VIDEO_GEN,
+                        ModelType.AUDIO_GEN)),
 
-        OPENAI("openai", "OpenAI 兼容"),
+        OPENAI("openai", "OpenAI", Set.of(ModelType.CHAT, ModelType.EMBEDDING, ModelType.IMAGE_GEN)),
 
-        OLLAMA("ollama", "Ollama 本地部署");
+        OLLAMA("ollama", "Ollama 本地部署", Set.of(ModelType.CHAT, ModelType.EMBEDDING)),
+
+        ANTHROPIC("anthropic", "Anthropic", Set.of(ModelType.CHAT)),
+
+        GEMINI("gemini", "Google Gemini", Set.of(ModelType.CHAT)),
+
+        DEEPSEEK("deepseek", "DeepSeek", Set.of(ModelType.CHAT)),
+
+        GLM("glm", "智谱 GLM", Set.of(ModelType.CHAT)),
+
+        KIMI("kimi", "月之暗面 Kimi", Set.of(ModelType.CHAT)),
+
+        MINIMAX("minimax", "MiniMax", Set.of(ModelType.CHAT));
 
         private final String code;
 
         private final String label;
+
+        private final Set<ModelType> supportedModelTypes;
+
+        public boolean supports(ModelType modelType) {
+            return modelType != null && supportedModelTypes.contains(modelType);
+        }
 
         public static ProviderType of(String code) {
             if (code == null) {

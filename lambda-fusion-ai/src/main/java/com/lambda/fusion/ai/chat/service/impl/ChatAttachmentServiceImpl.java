@@ -136,8 +136,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ChatAttachmentEntity storeGenerated(
-            String tenantId, String sessionId, Path source, String fileName, String mimeType) {
+    public ChatAttachmentEntity storeGenerated(String sessionId, Path source, String fileName, String mimeType) {
         long size = fileSize(source);
         long maxBytes =
                 aiProperties.getChat().getAttachment().getGeneratedMedia().getMaxFileSizeMb() * 1024L * 1024L;
@@ -150,7 +149,6 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
         ChatAttachmentEntity entity = new ChatAttachmentEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
-        entity.setTenantId(tenantId);
         entity.setSessionId(sessionId);
         entity.setFileName(StringUtils.defaultIfBlank(normalizedFileName, entity.getId() + "." + extension));
         entity.setFileType(extension);

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -76,10 +77,10 @@ class ChatRunInstanceDrainTest {
         stubTerminalCommit();
         // 源流：先发根 AGENT_END，随后保持打开（模拟记忆尾部），由测试手动 complete。
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
 
         long beforeStart = System.currentTimeMillis();
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
         source.tryEmitNext(agentEnd());
 
         // 根 AGENT_END：业务终态已提交，但源流未终止，drainedSignal 不应完成，且未审计。
@@ -100,9 +101,9 @@ class ChatRunInstanceDrainTest {
         instance = newInstance(run(ChatRunStatus.RUNNING));
         stubTerminalCommit();
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
 
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
         source.tryEmitNext(agentEnd());
 
         // 业务终态后的记忆/维护尾部失败：Run 保持 COMPLETED，不改为 FAILED；源流终止仍完成排空。
@@ -126,11 +127,11 @@ class ChatRunInstanceDrainTest {
     void shouldExposeAwaitingConfirmationOnlyAfterSourceDrains() {
         instance = newInstance(run(ChatRunStatus.RUNNING));
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
         when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
                 .thenReturn(true);
 
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
         source.tryEmitNext(requireConfirm("call-1"));
         source.tryEmitNext(agentEnd());
 
@@ -157,14 +158,14 @@ class ChatRunInstanceDrainTest {
     void shouldKeepPersistedConfirmationWhenLocalInterruptPublishFails() {
         instance = newInstance(run(ChatRunStatus.RUNNING));
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
         when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
                 .thenReturn(true);
         doThrow(new IllegalStateException("local buffer unavailable"))
                 .when(eventStore)
                 .appendAll(anyString(), anyString(), any());
 
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
         source.tryEmitNext(requireConfirm("call-1"));
         source.tryEmitNext(agentEnd());
         source.tryEmitComplete();
@@ -181,11 +182,11 @@ class ChatRunInstanceDrainTest {
         properties.getChat().getRun().setSnapshotIntervalSeconds(1);
         instance = newInstance(run(ChatRunStatus.RUNNING), properties);
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
         when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
                 .thenReturn(true);
 
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
         source.tryEmitNext(new TextBlockDeltaEvent("reply-1", "block-1", "partial"));
 
         verify(runService, timeout(2_500)).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class));
@@ -199,9 +200,10 @@ class ChatRunInstanceDrainTest {
         instance = newInstance(run(ChatRunStatus.RUNNING), properties);
         stubTerminalCommit();
         CountDownLatch cancelled = new CountDownLatch(1);
-        when(adapter.stream(any(Msg.class))).thenReturn(Flux.<AgentEvent>never().doOnCancel(cancelled::countDown));
+        when(adapter.stream(any(Msg.class), isNull()))
+                .thenReturn(Flux.<AgentEvent>never().doOnCancel(cancelled::countDown));
 
-        instance.startPhase(userMsg());
+        instance.startPhase(userMsg(), null);
 
         verify(adapter, timeout(2_000)).interrupt();
         assertThat(cancelled.await(3, TimeUnit.SECONDS)).isTrue();

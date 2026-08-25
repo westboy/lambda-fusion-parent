@@ -14,7 +14,6 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 
@@ -59,7 +58,6 @@ public final class ChatExecutionFinalizer {
     public void commitTerminal(
             ChatRunEntity run,
             ChatRunSnapshot snapshot,
-            List<String> generatedAttachmentIds,
             ChatRunStatus status,
             ChatRunFinishReason reason,
             ChatRunFailureCode errorCode,
@@ -71,15 +69,7 @@ public final class ChatExecutionFinalizer {
                                 .map(ChatExecutionFinalizer::toPersistedToolCall)
                                 .toList());
         ChatRunFinalizationResult result = runService.finalizeExecution(
-                run,
-                new ChatRunFinalizationCommand(
-                        status,
-                        reason,
-                        snapshot,
-                        toolJson,
-                        List.copyOf(generatedAttachmentIds),
-                        errorCode,
-                        errorMessage));
+                run, new ChatRunFinalizationCommand(status, reason, snapshot, toolJson, errorCode, errorMessage));
         run.setStatus(result.status());
         run.setFinishReason(result.finishReason());
         run.setErrorCode(result.errorCode());

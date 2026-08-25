@@ -19,7 +19,7 @@ public class UpdateLlmModel {
     @Schema(description = "模型实际名称")
     private String modelName;
 
-    @Schema(description = "模型类型: 1=CHAT, 2=EMBEDDING")
+    @Schema(description = "模型类型: CHAT/EMBEDDING/IMAGE_GEN/VIDEO_GEN/AUDIO_GEN")
     private ModelType modelType;
 
     @Schema(description = "默认温度")

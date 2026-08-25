@@ -870,4 +870,16 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-ai-202608250001" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_app" columnName="audio_model_id"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_app">
+            <column name="audio_model_id" type="varchar(32)"
+                remarks="音频生成模型ID(ai_llm_model;空=无语音生成能力)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

@@ -29,6 +29,7 @@ public final class ChatExecutionSnapshotBuilder {
     private final Map<String, ChatRunSnapshot.ToolCall> tools = new LinkedHashMap<>();
     private List<ChatRunSnapshot.ToolCall> pendingTools;
     private List<ChatRunSnapshot.PendingInput> pendingInputs;
+    private final java.util.LinkedHashSet<String> generatedAttachmentIds = new java.util.LinkedHashSet<>();
 
     /**
      * 根据已有快照创建累加器。
@@ -50,6 +51,7 @@ public final class ChatExecutionSnapshotBuilder {
         }
         pendingTools = snapshot.pendingTools();
         pendingInputs = snapshot.pendingInputs();
+        generatedAttachmentIds.addAll(snapshot.generatedAttachmentIds());
     }
 
     /**
@@ -94,6 +96,13 @@ public final class ChatExecutionSnapshotBuilder {
     public void closeOpenMessages() {
         closeText();
         closeReasoning();
+    }
+
+    /** 记录已物化生成附件，使生命周期恢复不再反向解析工具结果展示文本。 */
+    public void addGeneratedAttachmentId(String attachmentId) {
+        if (attachmentId != null) {
+            generatedAttachmentIds.add(attachmentId);
+        }
     }
 
     /** 关闭当前文本消息。 */
@@ -254,7 +263,8 @@ public final class ChatExecutionSnapshotBuilder {
                 reasoningOpen,
                 List.copyOf(tools.values()),
                 pendingTools,
-                pendingInputs);
+                pendingInputs,
+                List.copyOf(generatedAttachmentIds));
     }
 
     /** 判断当前是否处于待交互状态（存在待确认或待用户输入投影）。 */

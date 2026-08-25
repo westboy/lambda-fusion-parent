@@ -54,8 +54,8 @@ class AgentExecutionAdapterTest {
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
         Msg message = userMessage();
 
-        adapter.stream(message).blockLast();
-        adapter.stream(message).blockLast();
+        adapter.stream(message, null).blockLast();
+        adapter.stream(message, null).blockLast();
 
         ArgumentCaptor<RuntimeContext> contextCaptor = ArgumentCaptor.forClass(RuntimeContext.class);
         verify(agent, times(2)).streamEvents(any(Msg.class), contextCaptor.capture());
@@ -86,7 +86,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.<AgentEvent>just(event));
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", subagentGateway);
 
-        adapter.stream(userMessage()).blockLast();
+        adapter.stream(userMessage(), null).blockLast();
 
         // 父会话归属使用业务 ChatSession.id，而非 Gateway 派生的 gw-* 状态槽。
         verify(subagentGateway).recordExposure(event, "app-1", "tenant-1", "user-1", "session-1");
@@ -100,7 +100,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.empty());
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        adapter.stream(userMessage()).blockLast();
+        adapter.stream(userMessage(), null).blockLast();
 
         verify(distributedStore, never()).sandboxExecutionGuard();
     }
@@ -118,7 +118,8 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
+        List<AgentEvent> events =
+                adapter.stream(userMessage(), null).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -137,7 +138,8 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
+        List<AgentEvent> events =
+                adapter.stream(userMessage(), null).collectList().block();
 
         assertThat(events).extracting(AgentEvent::getType).containsExactly(AgentEventType.AGENT_END);
         assertThat(memoryTailSubscribed).isTrue();
@@ -166,7 +168,8 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
+        List<AgentEvent> events =
+                adapter.stream(userMessage(), null).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -190,7 +193,8 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
+        List<AgentEvent> events =
+                adapter.stream(userMessage(), null).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -213,7 +217,8 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
 
-        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
+        List<AgentEvent> events =
+                adapter.stream(userMessage(), null).collectList().block();
 
         assertThat(events).hasSize(3);
         assertThat(tailSubscribed).isTrue();

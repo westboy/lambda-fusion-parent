@@ -5,12 +5,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.lambda.fusion.ai.AiConstants.ModelType;
+import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
+import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
@@ -41,9 +44,9 @@ class ToolkitAssemblerImageToolTest {
         assembler = new ToolkitAssembler(
                 mock(ApplicationContext.class),
                 mock(McpServerService.class),
-                llmModelService,
-                llmProviderService,
-                keyEncryptionService);
+                new MediaGenerationBindingResolver(llmModelService, llmProviderService),
+                keyEncryptionService,
+                new AiProperties());
     }
 
     @Test
@@ -110,6 +113,15 @@ class ToolkitAssemblerImageToolTest {
         stubMediaModel("video-1", ModelType.VIDEO_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "video-compatible");
 
         assertThat(assembler.build(app(null, "video-1")).getToolNames()).doesNotContain(VideoGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldRegisterAudioToolForSupportedDashscopeTtsBinding() {
+        stubMediaModel("audio-1", ModelType.AUDIO_GEN, Boolean.TRUE, "dashscope", Boolean.TRUE, "qwen3-tts-flash");
+        AppEntity app = app(null, null);
+        app.setAudioModelId("audio-1");
+
+        assertThat(assembler.build(app).getToolNames()).contains(AudioGenerationTool.TOOL_NAME);
     }
 
     private void stubMediaModel(

@@ -31,7 +31,7 @@ public class LlmModelEntity {
     private String modelName;
 
     @TableField("model_type")
-    @Schema(description = "模型类型: 1=CHAT, 2=EMBEDDING")
+    @Schema(description = "模型类型: CHAT|EMBEDDING|IMAGE_GEN|VIDEO_GEN|AUDIO_GEN")
     private ModelType modelType;
 
     @TableField("default_temperature")

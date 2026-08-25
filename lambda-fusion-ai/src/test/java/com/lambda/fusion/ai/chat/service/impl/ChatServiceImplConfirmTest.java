@@ -46,7 +46,7 @@ class ChatServiceImplConfirmTest {
 
         assertThat(chatService.streamChat("session-1", message)).isNotNull();
 
-        verify(chatExecutionService).start(run, session);
+        verify(chatExecutionService).start(run, session, null);
     }
 
     @Test
@@ -59,7 +59,7 @@ class ChatServiceImplConfirmTest {
 
         assertThat(chatService.streamChat("session-1", message)).isNotNull();
 
-        verify(chatExecutionService, never()).start(any(), any());
+        verify(chatExecutionService, never()).start(any(), any(), any());
     }
 
     @Test

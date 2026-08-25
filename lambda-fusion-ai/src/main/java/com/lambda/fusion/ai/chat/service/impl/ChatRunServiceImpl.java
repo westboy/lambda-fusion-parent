@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lambda.fusion.ai.AiConstants.ChatRunFailureCode;
 import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
+import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
@@ -13,6 +14,7 @@ import com.lambda.fusion.ai.chat.model.ChatRun;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationCommand;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
 import com.lambda.fusion.ai.chat.model.ConfirmTransition;
+import com.lambda.fusion.ai.chat.model.MediaGenerationRequest;
 import com.lambda.fusion.ai.chat.model.RunContext;
 import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
@@ -25,8 +27,10 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
+import com.lambda.fusion.ai.chat.service.MediaGenerationRequestValidator;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import com.lambda.fusion.core.service.AbstractCrudService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.nio.charset.StandardCharsets;
@@ -68,6 +72,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
     private final ChatMessageService messageService;
     private final ChatAttachmentService attachmentService;
     private final AppService appService;
+    private final MediaGenerationRequestValidator mediaGenerationRequestValidator;
     /**
      * 幂等创建或加载运行：同一 {@code clientRequestId} 复用已有记录并校验 {@code requestHash} 一致，
      * 否则在会话无活动运行时创建新 Run、保存用户消息并绑定附件。
@@ -89,7 +94,9 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             requireSameRequest(existing, requestHash);
             return new RunContext(existing, session, false);
         }
-        appService.loadAvailable(session.getAppId());
+        AppEntity app = appService.loadAvailable(session.getAppId());
+        MediaGenerationInvocation mediaGeneration =
+                mediaGenerationRequestValidator.validate(app, message.getContent(), message.getMediaGeneration());
         // 同一会话只允许一个活动运行，避免多个执行上下文竞争状态槽。
         ChatRunEntity active = findActive(sessionId);
         if (active != null) {
@@ -126,7 +133,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .eq(ChatSessionEntity::getId, sessionId)
                         .set(ChatSessionEntity::getLastMessageAt, now)
                         .set(ChatSessionEntity::getUpdatedAt, now));
-        return new RunContext(run, session, true);
+        return new RunContext(run, session, true, mediaGeneration);
     }
 
     /** 查询当前用户拥有的会话下唯一活跃 Run。 */
@@ -305,9 +312,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         if (targetStatus == ChatRunStatus.COMPLETED || !snapshot.text().isBlank() || toolCallJson != null) {
             assistant = messageService.saveAssistantMessage(session, snapshot.text(), toolCallJson);
         }
-        List<String> generatedAttachmentIds = command.generatedAttachmentIds() == null
-                ? List.of()
-                : command.generatedAttachmentIds().stream().distinct().toList();
+        List<String> generatedAttachmentIds = snapshot.generatedAttachmentIds();
         if (!generatedAttachmentIds.isEmpty()) {
             if (assistant == null) {
                 attachmentService.discardGenerated(session.getId(), generatedAttachmentIds);
@@ -417,7 +422,30 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         StringBuilder canonical = new StringBuilder();
         appendHashPart(canonical, StringUtils.defaultString(message.getContent()));
         attachments.forEach(attachment -> appendHashPart(canonical, attachment));
+        appendMediaGenerationHash(canonical, message.getMediaGeneration());
         return sha256(canonical.toString());
+    }
+
+    /** 将结构化媒体参数逐字段纳入幂等摘要，避免同请求 ID 被不同生成参数复用。 */
+    private static void appendMediaGenerationHash(StringBuilder target, MediaGenerationRequest media) {
+        if (media == null) {
+            appendHashPart(target, "media:none");
+            return;
+        }
+        appendHashPart(target, "media:" + StringUtils.defaultString(media.getKind()));
+        appendHashPart(target, Objects.toString(media.getWidth(), ""));
+        appendHashPart(target, Objects.toString(media.getHeight(), ""));
+        appendHashPart(target, Objects.toString(media.getCount(), ""));
+        appendHashPart(target, Objects.toString(media.getDuration(), ""));
+        appendHashPart(target, StringUtils.defaultString(media.getQuality()));
+        appendHashPart(target, StringUtils.defaultString(media.getNegativePrompt()));
+        appendHashPart(target, StringUtils.defaultString(media.getShotType()));
+        appendHashPart(target, Objects.toString(media.getPromptExtend(), ""));
+        appendHashPart(target, Objects.toString(media.getWatermark(), ""));
+        appendHashPart(target, Objects.toString(media.getSeed(), ""));
+        appendHashPart(target, StringUtils.defaultString(media.getVoice()));
+        appendHashPart(target, StringUtils.defaultString(media.getLanguage()));
+        appendHashPart(target, Objects.toString(media.getSampleRate(), ""));
     }
 
     /** 以 {@code 长度:值} 形式追加一段，防止不同分段拼接出相同哈希。 */

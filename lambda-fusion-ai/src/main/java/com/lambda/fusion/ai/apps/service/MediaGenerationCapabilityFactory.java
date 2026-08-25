@@ -21,17 +21,16 @@ public final class MediaGenerationCapabilityFactory {
 
     private static final String IMAGE = "image";
     private static final String VIDEO = "video";
-    private static final String IMAGE_TOOL_NAME = "text_to_image";
-    private static final String VIDEO_TOOL_NAME = "text_to_video";
+    private static final String AUDIO = "audio";
 
     private MediaGenerationCapabilityFactory() {}
 
     /** 返回指定模型类型和提供方组合是否有已实现的运行时工具。 */
     public static boolean supports(ModelType modelType, ProviderType providerType) {
-        if (modelType == ModelType.IMAGE_GEN) {
-            return providerType == ProviderType.DASHSCOPE || providerType == ProviderType.OPENAI;
-        }
-        return modelType == ModelType.VIDEO_GEN && providerType == ProviderType.DASHSCOPE;
+        boolean mediaType = modelType == ModelType.IMAGE_GEN
+                || modelType == ModelType.VIDEO_GEN
+                || modelType == ModelType.AUDIO_GEN;
+        return mediaType && providerType != null && providerType.supports(modelType);
     }
 
     /**
@@ -42,9 +41,13 @@ public final class MediaGenerationCapabilityFactory {
         if (!supports(modelType, providerType)) {
             return false;
         }
-        return modelType != ModelType.IMAGE_GEN
-                || providerType != ProviderType.OPENAI
-                || !normalizedModelName(modelName).contains("gpt-image");
+        String normalizedName = normalizedModelName(modelName);
+        if (modelType == ModelType.IMAGE_GEN && providerType == ProviderType.OPENAI) {
+            return !normalizedName.contains("gpt-image");
+        }
+        // VIDEO_GEN / AUDIO_GEN 已由显式模型类型表达用途；DashScope 官方工具负责消费实际模型名。
+        // 这里不再用名称片段充当第二套类型系统，避免合法的新模型或别名被静默隐藏。
+        return true;
     }
 
     /** 构造已通过启用状态校验的模型能力；不支持的组合返回 {@code null}。 */
@@ -52,14 +55,16 @@ public final class MediaGenerationCapabilityFactory {
         if (model == null || !supports(model.getModelType(), providerType, model.getModelName())) {
             return null;
         }
-        if (model.getModelType() == ModelType.VIDEO_GEN) {
-            return videoCapability(model);
-        }
-        return imageCapability(model, providerType);
+        return switch (model.getModelType()) {
+            case IMAGE_GEN -> imageCapability(model, providerType);
+            case VIDEO_GEN -> videoCapability(model);
+            case AUDIO_GEN -> audioCapability(model);
+            default -> null;
+        };
     }
 
     private static MediaGenerationCapability imageCapability(LlmModelEntity model, ProviderType providerType) {
-        MediaGenerationCapability capability = base(model, IMAGE, IMAGE_TOOL_NAME);
+        MediaGenerationCapability capability = base(model, IMAGE);
         if (providerType == ProviderType.DASHSCOPE) {
             applyDashscopeImageProfile(capability, normalizedModelName(model));
             return capability;
@@ -73,6 +78,7 @@ public final class MediaGenerationCapabilityFactory {
                     option("16:9", "1K", "1792x1024"),
                     option("9:16", "1K", "1024x1792")));
             capability.setCounts(List.of(1));
+            capability.setQualities(List.of("standard", "hd"));
         } else if (modelName.contains("dall-e-2")) {
             capability.setSizes(List.of(
                     option("auto", "auto", null),
@@ -80,18 +86,42 @@ public final class MediaGenerationCapabilityFactory {
                     option("1:1", "512", "512x512"),
                     option("1:1", "1K", "1024x1024")));
             capability.setCounts(integerRange(1, 10));
+            capability.setQualities(List.of("standard"));
         } else {
-            // OpenAI 兼容端点可能有完全不同的尺寸约束，保守地只交给模型默认值。
+            // OpenAI 兼容端点的约束无法由模型别名可靠推导；官方工具会原样透传 size / n，
+            // 因此只提供默认预设，同时允许用户显式输入，最终由目标端点校验。
             capability.setSizes(List.of(option("auto", "auto", null)));
-            capability.setCounts(List.of(1));
+            allowUnboundedCustomSize(capability);
         }
         return capability;
     }
 
     private static MediaGenerationCapability videoCapability(LlmModelEntity model) {
-        MediaGenerationCapability capability = base(model, VIDEO, VIDEO_TOOL_NAME);
-        capability.setCounts(List.of(1));
+        MediaGenerationCapability capability = base(model, VIDEO);
         applyDashscopeVideoProfile(capability, normalizedModelName(model));
+        return capability;
+    }
+
+    private static MediaGenerationCapability audioCapability(LlmModelEntity model) {
+        MediaGenerationCapability capability = base(model, AUDIO);
+        String modelName = normalizedModelName(model);
+        if (modelName.startsWith("qwen3-tts") || modelName.startsWith("qwen-tts")) {
+            capability.setVoices(List.of("Cherry", "Serena"));
+            capability.setLanguages(List.of(
+                    "Auto",
+                    "Chinese",
+                    "English",
+                    "German",
+                    "Italian",
+                    "Portuguese",
+                    "Spanish",
+                    "Japanese",
+                    "Korean",
+                    "French",
+                    "Russian"));
+        } else {
+            capability.setSampleRates(List.of(8000, 16000, 22050, 24000));
+        }
         return capability;
     }
 
@@ -107,6 +137,7 @@ public final class MediaGenerationCapabilityFactory {
             return;
         }
         if (modelName.contains("wan2.6-t2i") || modelName.contains("wan2.5-t2i")) {
+            allowCustomSize(capability, 512, 4096);
             capability.setSizes(List.of(
                     option("1:1", "1K", "1280x1280"),
                     option("3:4", "1K", "1104x1472"),
@@ -119,6 +150,7 @@ public final class MediaGenerationCapabilityFactory {
         if (modelName.contains("wan2.2-t2i")
                 || modelName.contains("wanx2.1-t2i")
                 || modelName.contains("wanx2.0-t2i")) {
+            allowCustomSize(capability, 512, 4096);
             capability.setSizes(List.of(
                     option("auto", "auto", null),
                     option("1:1", "1K", "1024x1024"),
@@ -130,6 +162,7 @@ public final class MediaGenerationCapabilityFactory {
             return;
         }
         if (modelName.contains("qwen-image-3.0") || modelName.contains("qwen-image-2.0")) {
+            allowCustomSize(capability, 512, 4096);
             capability.setSizes(List.of(
                     option("auto", "auto", null),
                     option("1:1", "2K", "2048x2048"),
@@ -153,7 +186,7 @@ public final class MediaGenerationCapabilityFactory {
             return;
         }
         capability.setSizes(List.of(option("auto", "auto", null)));
-        capability.setCounts(List.of(1));
+        allowUnboundedCustomSize(capability);
     }
 
     private static void applyDashscopeVideoProfile(MediaGenerationCapability capability, String modelName) {
@@ -236,12 +269,21 @@ public final class MediaGenerationCapabilityFactory {
         return StringUtils.defaultString(modelName).toLowerCase(Locale.ROOT);
     }
 
-    private static MediaGenerationCapability base(LlmModelEntity model, String kind, String toolName) {
+    private static MediaGenerationCapability base(LlmModelEntity model, String kind) {
         MediaGenerationCapability capability = new MediaGenerationCapability();
         capability.setKind(kind);
-        capability.setToolName(toolName);
         capability.setModelLabel(StringUtils.defaultIfBlank(model.getName(), "应用绑定模型"));
         return capability;
+    }
+
+    private static void allowCustomSize(MediaGenerationCapability capability, int minDimension, int maxDimension) {
+        capability.setCustomSizeAllowed(true);
+        capability.setMinDimension(minDimension);
+        capability.setMaxDimension(maxDimension);
+    }
+
+    private static void allowUnboundedCustomSize(MediaGenerationCapability capability) {
+        capability.setCustomSizeAllowed(true);
     }
 
     private static MediaGenerationSizeOption option(String aspectRatio, String resolution, String size) {

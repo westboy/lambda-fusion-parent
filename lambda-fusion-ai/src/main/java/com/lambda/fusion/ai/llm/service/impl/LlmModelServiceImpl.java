@@ -3,6 +3,8 @@ package com.lambda.fusion.ai.llm.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.fusion.ai.AiConstants.ModelType;
+import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.mapper.LlmModelMapper;
@@ -10,6 +12,7 @@ import com.lambda.fusion.ai.llm.model.CreateLlmModel;
 import com.lambda.fusion.ai.llm.model.LlmModelPage;
 import com.lambda.fusion.ai.llm.model.UpdateLlmModel;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
+import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
@@ -43,7 +46,7 @@ public class LlmModelServiceImpl implements LlmModelService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public LlmModelEntity create(CreateLlmModel dto) {
-        llmProviderService.loadById(dto.getProviderId());
+        validateProviderSupports(dto.getProviderId(), dto.getModelType());
         ensureNameUnique(dto.getName(), null);
         LlmModelEntity entity = new LlmModelEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
@@ -67,9 +70,11 @@ public class LlmModelServiceImpl implements LlmModelService {
     @Transactional(rollbackFor = Exception.class)
     public void update(String id, UpdateLlmModel dto) {
         LlmModelEntity entity = requireExists(id);
-        if (StringUtils.isNotBlank(dto.getProviderId()) && !dto.getProviderId().equals(entity.getProviderId())) {
-            llmProviderService.loadById(dto.getProviderId());
-            entity.setProviderId(dto.getProviderId());
+        String targetProviderId = StringUtils.defaultIfBlank(dto.getProviderId(), entity.getProviderId());
+        ModelType targetModelType = dto.getModelType() == null ? entity.getModelType() : dto.getModelType();
+        validateProviderSupports(targetProviderId, targetModelType);
+        if (!targetProviderId.equals(entity.getProviderId())) {
+            entity.setProviderId(targetProviderId);
         }
         if (StringUtils.isNotBlank(dto.getName()) && !dto.getName().equals(entity.getName())) {
             ensureNameUnique(dto.getName(), id);
@@ -129,6 +134,17 @@ public class LlmModelServiceImpl implements LlmModelService {
                 .ne(excludeId != null, LlmModelEntity::getId, excludeId));
         if (exists) {
             throw new AiBusinessException(AiErrorCode.LLM_MODEL_NAME_EXISTS, name);
+        }
+    }
+
+    private void validateProviderSupports(String providerId, ModelType modelType) {
+        LlmProviderEntity provider = llmProviderService.loadById(providerId);
+        ProviderType providerType = ProviderType.of(provider.getProviderType());
+        if (providerType == null) {
+            throw new AiBusinessException(AiErrorCode.LLM_PROVIDER_TYPE_NOT_SUPPORTED, provider.getProviderType());
+        }
+        if (!providerType.supports(modelType)) {
+            throw new AiBusinessException(AiErrorCode.LLM_MODEL_TYPE_NOT_SUPPORTED, modelType);
         }
     }
 }

@@ -126,7 +126,7 @@ class ChatRunCoordinatorStartTest {
                         anyString(), anyString(), any(AguiEvent.class), anyString(), anyString()))
                 .thenReturn(new ChatRunEvent(1L, "RUN_FINISHED", "{}"));
 
-        coordinator.start(first, session);
+        coordinator.start(first, session, null);
         verify(agent, timeout(1000)).streamEvents(any(Msg.class), any(RuntimeContext.class));
 
         assertThat(firstSource.tryEmitNext(new AgentEndEvent("reply-1")).isSuccess())
@@ -135,7 +135,7 @@ class ChatRunCoordinatorStartTest {
         assertThat(first.getStatus()).isEqualTo(ChatRunStatus.COMPLETED.name());
 
         // firstSource 未 complete，模拟 MemoryFlush / MemoryMaintenance 仍在运行。
-        coordinator.start(second, session);
+        coordinator.start(second, session, null);
 
         verify(agent, timeout(1000).times(2)).streamEvents(any(Msg.class), any(RuntimeContext.class));
         assertThat(second.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());

@@ -8,6 +8,7 @@ import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
+import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -87,21 +88,18 @@ public final class AgentExecutionAdapter {
         this.mediaMaterializer = mediaMaterializer;
     }
 
-    /**
-     * 启动 Agent 事件流。每次调用都创建独立的 {@link RuntimeContext}，并直接调用
-     * {@link HarnessAgent#streamEvents}。
-     *
-     * @param message 输入消息
-     * @return Agent 事件流
-     */
-    public Flux<AgentEvent> stream(Msg message) {
-        RuntimeContext context = RuntimeContext.builder()
+    /** 启动事件流，并按类型把服务端媒体调用注入 AgentScope RuntimeContext。 */
+    public Flux<AgentEvent> stream(Msg message, MediaGenerationInvocation mediaGeneration) {
+        RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
                 .userId(userId)
                 .sessionId(sessionId)
                 .put(RuntimeProperty.KEY_TENANT_ID, tenantId)
                 .put(RuntimeProperty.KEY_APP_ID, appId)
-                .put(RuntimeProperty.KEY_LF_SESSION_ID, sessionId)
-                .build();
+                .put(RuntimeProperty.KEY_LF_SESSION_ID, sessionId);
+        if (mediaGeneration != null) {
+            contextBuilder.put(MediaGenerationInvocation.class, mediaGeneration);
+        }
+        RuntimeContext context = contextBuilder.build();
         Flux<AgentEvent> source = agent.streamEvents(message, context);
         if (subagentGateway != null) {
             source = source.doOnNext(this::recordSubagentExposure);

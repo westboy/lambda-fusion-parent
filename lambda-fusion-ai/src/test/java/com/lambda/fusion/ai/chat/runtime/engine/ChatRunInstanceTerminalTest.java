@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -56,10 +57,10 @@ class ChatRunInstanceTerminalTest {
     void shouldFinalizeCompletedOnceOnRootAgentEnd() {
         instance = newInstance(run(ChatRunStatus.RUNNING, snapshot("", false, false)));
         stubTerminalCommit();
-        when(adapter.stream(any(Msg.class))).thenReturn(Flux.just(agentEnd(null)));
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(Flux.just(agentEnd(null)));
 
         instance.startPhase(
-                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build());
+                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build(), null);
 
         ChatRunFinalizationCommand command = captureFinalize();
         assertThat(command.targetStatus()).isEqualTo(ChatRunStatus.COMPLETED);
@@ -74,10 +75,10 @@ class ChatRunInstanceTerminalTest {
         stubTerminalCommit();
         when(runService.checkpoint(eq(run), any(ChatRunSnapshot.class))).thenReturn(true);
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
-        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(adapter.stream(any(Msg.class), isNull())).thenReturn(source.asFlux());
 
         instance.startPhase(
-                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build());
+                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build(), null);
         assertThat(instance.requestStop()).isTrue();
         source.tryEmitNext(agentEnd(null));
 
@@ -92,10 +93,11 @@ class ChatRunInstanceTerminalTest {
     void shouldNotFinalizeOnChildAgentEnd() {
         instance = newInstance(run(ChatRunStatus.RUNNING, snapshot("", false, false)));
         // 子 Agent 的 AGENT_END 带 source，不得终结父 Run；流随后保持运行。
-        when(adapter.stream(any(Msg.class))).thenReturn(Flux.concat(Flux.just(agentEnd("sub-agent")), Flux.never()));
+        when(adapter.stream(any(Msg.class), isNull()))
+                .thenReturn(Flux.concat(Flux.just(agentEnd("sub-agent")), Flux.never()));
 
         instance.startPhase(
-                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build());
+                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build(), null);
 
         verify(runService, never()).finalizeExecution(any(), any());
         assertThat(instance.isRunning()).isTrue();
@@ -120,7 +122,8 @@ class ChatRunInstanceTerminalTest {
     void shouldClosePersistedSnapshotWhenInterpreterHasNoInMemoryMessages() {
         // 恢复实例：解释器为空（无内存消息 ID），但持久化快照处于打开状态。
         ChatRunSnapshot openSnapshot = new ChatRunSnapshot(
-                "run-1", "agui-1", 1, "partial", "", "m-text", null, true, false, List.of(), List.of(), List.of());
+                "run-1", "agui-1", 1, "partial", "", "m-text", null, true, false, List.of(), List.of(), List.of(),
+                List.of());
         ChatRunEntity run = run(ChatRunStatus.RUNNING, openSnapshot);
         instance = newInstance(run);
         stubTerminalCommit();
@@ -213,6 +216,7 @@ class ChatRunInstanceTerminalTest {
                 reasoningOpen ? "m-reason" : null,
                 textOpen,
                 reasoningOpen,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of());

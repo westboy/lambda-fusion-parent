@@ -39,7 +39,7 @@ class AgentEventMapperTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldMapToolResultDataToVersionedContentBlockEnvelope() {
+    void shouldMapToolResultDataToOfficialNewlineDelimitedContentBlocks() {
         AgentEventMapper mapper = new AgentEventMapper("thread-1", "run-1", true);
         mapper.map(new ToolResultStartEvent("reply-1", "tool-1", "generate_media"));
         mapper.map(new ToolResultTextDeltaEvent("reply-1", "tool-1", "generate_media", "generated"));
@@ -89,13 +89,12 @@ class AgentEventMapperTest {
         List<AguiEvent> events =
                 mapper.map(new ToolResultEndEvent("reply-1", "tool-1", "generate_media", ToolResultState.SUCCESS));
         AguiEvent.ToolCallResult result = (AguiEvent.ToolCallResult) events.getLast();
-        Map<String, Object> envelope = JsonUtils.getJsonCodec().fromJson(result.content(), Map.class);
-        List<Map<String, Object>> content = (List<Map<String, Object>>) envelope.get("content");
+        List<String> lines = result.content().lines().toList();
+        List<Map<String, Object>> content = lines.subList(1, lines.size()).stream()
+                .map(line -> (Map<String, Object>) JsonUtils.getJsonCodec().fromJson(line, Map.class))
+                .toList();
 
-        assertThat(envelope)
-                .containsEntry("schema", "lambda-fusion/tool-result")
-                .containsEntry("version", 1)
-                .containsEntry("text", "generated");
+        assertThat(lines.getFirst()).isEqualTo("generated");
         assertThat(content).extracting(block -> block.get("type")).containsExactly("image", "audio", "video", "data");
         assertThat((Map<String, Object>) content.get(0).get("source"))
                 .containsEntry("type", "url")

@@ -1,11 +1,12 @@
 package com.lambda.fusion.ai.runtime.tools;
 
+import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.extensions.model.dashscope.tool.DashScopeMultiModalTool;
 import io.agentscope.extensions.model.openai.tool.OpenAIMultiModalTool;
-import java.time.Duration;
+import reactor.core.publisher.Mono;
 
 /**
  * 应用绑定的文生图薄适配器：调用 AgentScope 官方多模态工具并原样返回官方媒体块。
@@ -20,9 +21,6 @@ public final class ImageGenerationTool {
 
     /** 工具名。 */
     public static final String TOOL_NAME = "text_to_image";
-
-    /** 生图 SDK 调用上限：任务型生图接口耗时可达数十秒，超时按失败处理。 */
-    private static final Duration CALL_TIMEOUT = Duration.ofSeconds(180);
 
     private final DashScopeMultiModalTool dashscopeTool;
     private final OpenAIMultiModalTool openaiTool;
@@ -70,27 +68,25 @@ public final class ImageGenerationTool {
     @Tool(
             name = TOOL_NAME,
             description = "Generate one or more images from a text prompt and return official image blocks.")
-    public ToolResultBlock generateImage(
+    public Mono<ToolResultBlock> generateImage(
             @ToolParam(name = "prompt", description = "The text prompt describing the image to generate") String prompt,
             @ToolParam(name = "size", description = "Image size, e.g. '1024*1024' or '1024x1024'", required = false)
                     String size,
-            @ToolParam(name = "n", description = "Number of images to generate", required = false) Integer n) {
-        try {
-            ToolResultBlock result;
-            if (dashscopeTool != null) {
-                result = dashscopeTool
-                        .dashscopeTextToImage(prompt, modelName, n, normalizeSize(size, '*'), Boolean.FALSE)
-                        .block(CALL_TIMEOUT);
-            } else {
-                result = openaiTool
-                        .openaiTextToImage(prompt, modelName, n, normalizeSize(size, 'x'), null, null)
-                        .block(CALL_TIMEOUT);
-            }
-            // 成功和官方 ERROR 结果均原样透传；null 才转换为平台可读错误。
-            return result != null ? result : ToolResultBlock.error("生图接口无响应");
-        } catch (RuntimeException e) {
-            return ToolResultBlock.error("图片生成失败：" + e.getMessage());
+            @ToolParam(name = "n", description = "Number of images to generate", required = false) Integer n,
+            @ToolParam(name = "quality", description = "Image quality, e.g. standard or hd", required = false)
+                    String quality,
+            MediaGenerationInvocation invocation) {
+        if (invocation != null) {
+            invocation.claimExecution(TOOL_NAME);
+            prompt = invocation.getPrompt();
+            size = invocation.getSize();
+            n = invocation.getCount();
+            quality = invocation.getQuality();
         }
+        if (dashscopeTool != null) {
+            return dashscopeTool.dashscopeTextToImage(prompt, modelName, n, normalizeSize(size, '*'), Boolean.FALSE);
+        }
+        return openaiTool.openaiTextToImage(prompt, modelName, n, normalizeSize(size, 'x'), quality, "url");
     }
 
     /** 尺寸分隔符归一化：DashScope 用 {@code *}、OpenAI 用 {@code x}，统一到目标分隔符。 */

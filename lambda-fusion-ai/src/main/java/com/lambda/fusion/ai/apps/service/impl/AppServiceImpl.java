@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
 import com.lambda.fusion.ai.AiConstants.AppType;
 import com.lambda.fusion.ai.AiConstants.ModelType;
-import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.AiConstants.RagMode;
 import com.lambda.fusion.ai.AiConstants.SandboxBackend;
 import com.lambda.fusion.ai.AiProperties;
@@ -20,13 +19,11 @@ import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppConfigAuditEntity;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
-import com.lambda.fusion.ai.apps.service.MediaGenerationCapabilityFactory;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
-import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
-import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -52,7 +49,7 @@ public class AppServiceImpl implements AppService {
     private final AppMapper appMapper;
     private final AppConfigAuditMapper appConfigAuditMapper;
     private final LlmModelService llmModelService;
-    private final LlmProviderService llmProviderService;
+    private final MediaGenerationBindingResolver mediaBindingResolver;
     private final ApplicationEventPublisher eventPublisher;
     private final WorkspacePaths workspacePaths;
     private final AiProperties aiProperties;
@@ -73,6 +70,7 @@ public class AppServiceImpl implements AppService {
         validateChatModel(dto.getModelId());
         String imageModelId = validateMediaModel(dto.getImageModelId(), ModelType.IMAGE_GEN);
         String videoModelId = validateMediaModel(dto.getVideoModelId(), ModelType.VIDEO_GEN);
+        String audioModelId = validateMediaModel(dto.getAudioModelId(), ModelType.AUDIO_GEN);
         String appType = validateAppType(dto.getAppType());
         String sandboxBackend = validateSandboxBackend(dto.getSandboxBackend());
         validateRagMode(dto.getRagMode());
@@ -81,6 +79,7 @@ public class AppServiceImpl implements AppService {
         AppEntity entity = getAppEntity(dto, appType, sandboxBackend);
         entity.setImageModelId(imageModelId);
         entity.setVideoModelId(videoModelId);
+        entity.setAudioModelId(audioModelId);
         appMapper.insert(entity);
         // create 的变更前快照即初始配置（insert 后 tenantId 已由租户插件回填到实体）。
         recordConfigAudit(entity, "CREATE", entity);
@@ -133,6 +132,9 @@ public class AppServiceImpl implements AppService {
         }
         if (dto.getVideoModelId() != null) {
             entity.setVideoModelId(validateMediaModel(dto.getVideoModelId(), ModelType.VIDEO_GEN));
+        }
+        if (dto.getAudioModelId() != null) {
+            entity.setAudioModelId(validateMediaModel(dto.getAudioModelId(), ModelType.AUDIO_GEN));
         }
         if (StringUtils.isNotBlank(dto.getName()) && !dto.getName().equals(entity.getName())) {
             ensureNameUnique(dto.getName(), id);
@@ -270,38 +272,23 @@ public class AppServiceImpl implements AppService {
      */
     private AvailableApp toAvailableView(AppEntity app) {
         AvailableApp view = AppService.toAvailableView(app);
-        List<MediaGenerationCapability> capabilities = new ArrayList<>(2);
-        addMediaCapability(capabilities, app, app.getImageModelId(), ModelType.IMAGE_GEN);
-        addMediaCapability(capabilities, app, app.getVideoModelId(), ModelType.VIDEO_GEN);
+        List<MediaGenerationCapability> capabilities = new ArrayList<>(3);
+        addMediaCapability(capabilities, app, ModelType.IMAGE_GEN);
+        addMediaCapability(capabilities, app, ModelType.VIDEO_GEN);
+        addMediaCapability(capabilities, app, ModelType.AUDIO_GEN);
         view.setMediaGenerationCapabilities(List.copyOf(capabilities));
-        view.setSupportsImageGeneration(
-                capabilities.stream().anyMatch(capability -> "image".equals(capability.getKind())));
-        view.setSupportsVideoGeneration(
-                capabilities.stream().anyMatch(capability -> "video".equals(capability.getKind())));
         return view;
     }
 
     private void addMediaCapability(
-            List<MediaGenerationCapability> capabilities, AppEntity app, String modelId, ModelType expectedType) {
-        if (StringUtils.isBlank(modelId)) {
-            return;
-        }
+            List<MediaGenerationCapability> capabilities, AppEntity app, ModelType expectedType) {
         try {
-            LlmModelEntity model = llmModelService.loadById(modelId);
-            if (model.getModelType() != expectedType || Boolean.FALSE.equals(model.getEnabled())) {
-                return;
-            }
-            LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
-            if (Boolean.FALSE.equals(provider.getEnabled()) || !Boolean.TRUE.equals(provider.getEnableMediaGen())) {
-                return;
-            }
-            ProviderType providerType = ProviderType.of(provider.getProviderType());
-            MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
-            if (capability != null) {
-                capabilities.add(capability);
-            }
+            mediaBindingResolver
+                    .resolve(app, expectedType)
+                    .map(MediaGenerationBindingResolver.Binding::capability)
+                    .ifPresent(capabilities::add);
         } catch (RuntimeException e) {
-            log.warn("回填应用媒体生成能力失败: appId={}, modelId={}, expectedType={}", app.getId(), modelId, expectedType, e);
+            log.warn("回填应用媒体生成能力失败: appId={}, expectedType={}", app.getId(), expectedType, e);
         }
     }
 
@@ -372,19 +359,12 @@ public class AppServiceImpl implements AppService {
         }
     }
 
-    /**
-     * 校验媒体生成模型绑定的合法性：模型须存在且类型匹配。空/空串视为未绑定（更新时用于解除绑定），
-     * 返回规范化后的绑定值（空返回 null）。
-     */
+    /** 校验媒体绑定可由当前 AgentScope 官方工具执行；空串用于显式解除绑定。 */
     private String validateMediaModel(String modelId, ModelType expectedType) {
         if (StringUtils.isBlank(modelId)) {
             return null;
         }
-        LlmModelEntity model = llmModelService.loadById(modelId);
-        if (model.getModelType() != expectedType) {
-            throw new AiBusinessException(
-                    AiErrorCode.INVALID_PARAMETER, "模型类型与绑定不符，期望 " + expectedType + ": " + modelId);
-        }
+        mediaBindingResolver.requireExecutable(modelId, expectedType);
         return modelId;
     }
 

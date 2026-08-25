@@ -33,12 +33,6 @@ public class AvailableApp {
     @Schema(description = "绑定模型是否支持视觉(图片输入)")
     private Boolean supportsVision;
 
-    @Schema(description = "应用是否已绑定可用的图片生成模型")
-    private Boolean supportsImageGeneration;
-
-    @Schema(description = "应用是否已绑定可用的视频生成模型")
-    private Boolean supportsVideoGeneration;
-
     @Schema(description = "已启用的媒体生成能力及服务端批准参数")
     private List<MediaGenerationCapability> mediaGenerationCapabilities = List.of();
 }

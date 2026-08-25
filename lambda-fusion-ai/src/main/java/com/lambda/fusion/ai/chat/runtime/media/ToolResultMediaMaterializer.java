@@ -6,6 +6,9 @@ import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.core.utils.TenantUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.event.AgentEvent;
@@ -79,7 +82,7 @@ public class ToolResultMediaMaterializer {
 
     /** 异步物化单个工具结果媒体事件；其他事件原样透传。 */
     public Mono<AgentEvent> materialize(AgentEvent event, Context context) {
-        if (!(event instanceof ToolResultDataDeltaEvent dataEvent) || sourceOf(dataEvent.getData()) == null) {
+        if (!(event instanceof ToolResultDataDeltaEvent dataEvent) || sourceOfGeneratedMedia(dataEvent) == null) {
             return Mono.just(event);
         }
         return Mono.fromCallable(
@@ -91,10 +94,10 @@ public class ToolResultMediaMaterializer {
         PreparedMedia prepared = null;
         try {
             ContentBlock original = event.getData();
-            Source source = sourceOf(original);
+            Source source = sourceOfGeneratedMedia(event);
             prepared = prepare(source, original);
             ChatAttachmentEntity attachment = attachmentService.storeGenerated(
-                    context.tenantId(), context.sessionId(), prepared.path(), prepared.fileName(), prepared.mimeType());
+                    context.sessionId(), prepared.path(), prepared.fileName(), prepared.mimeType());
             String url = StringUtils.defaultIfBlank(
                     previewTokenService.generatePreviewUrl(attachment),
                     AUTHENTICATED_DOWNLOAD_PATH.formatted(attachment.getId()));
@@ -293,15 +296,15 @@ public class ToolResultMediaMaterializer {
         return first == 0 || (first == 100 && second >= 64 && second <= 127);
     }
 
-    private static Source sourceOf(ContentBlock block) {
-        if (block == null) {
+    private static Source sourceOfGeneratedMedia(ToolResultDataDeltaEvent event) {
+        ContentBlock block = event.getData();
+        if (block == null || event.getToolCallName() == null) {
             return null;
         }
-        return switch (block) {
-            case ImageBlock image -> image.getSource();
-            case AudioBlock audio -> audio.getSource();
-            case VideoBlock video -> video.getSource();
-            case DataBlock data -> data.getSource();
+        return switch (event.getToolCallName()) {
+            case ImageGenerationTool.TOOL_NAME -> block instanceof ImageBlock image ? image.getSource() : null;
+            case VideoGenerationTool.TOOL_NAME -> block instanceof VideoBlock video ? video.getSource() : null;
+            case AudioGenerationTool.TOOL_NAME -> block instanceof AudioBlock audio ? audio.getSource() : null;
             default -> null;
         };
     }

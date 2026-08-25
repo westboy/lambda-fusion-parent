@@ -27,8 +27,7 @@ public interface ChatAttachmentService {
     ChatAttachmentEntity upload(String sessionId, MultipartFile file);
 
     /** 将可信工具输出物化为未绑定的对话附件；调用方负责删除传入的临时文件。 */
-    ChatAttachmentEntity storeGenerated(
-            String tenantId, String sessionId, Path source, String fileName, String mimeType);
+    ChatAttachmentEntity storeGenerated(String sessionId, Path source, String fileName, String mimeType);
 
     /** 通过所属会话校验附件归属；附件不存在或不属于当前用户时抛出 {@code ATTACHMENT_NOT_FOUND}。 */
     ChatAttachmentEntity loadOwned(String attachmentId);

@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.apps.model.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -43,13 +44,17 @@ public class AppEntity {
     @Schema(description = "绑定模型ID")
     private String modelId;
 
-    @TableField("image_model_id")
+    @TableField(value = "image_model_id", updateStrategy = FieldStrategy.ALWAYS)
     @Schema(description = "图像生成模型ID(IMAGE_GEN 型;空=无生图能力)")
     private String imageModelId;
 
-    @TableField("video_model_id")
+    @TableField(value = "video_model_id", updateStrategy = FieldStrategy.ALWAYS)
     @Schema(description = "视频生成模型ID(VIDEO_GEN 型;空=无视频生成能力)")
     private String videoModelId;
+
+    @TableField(value = "audio_model_id", updateStrategy = FieldStrategy.ALWAYS)
+    @Schema(description = "音频生成模型ID(AUDIO_GEN 型;空=无语音生成能力)")
+    private String audioModelId;
 
     @TableField("max_iters")
     @Schema(description = "ReAct 最大迭代数")

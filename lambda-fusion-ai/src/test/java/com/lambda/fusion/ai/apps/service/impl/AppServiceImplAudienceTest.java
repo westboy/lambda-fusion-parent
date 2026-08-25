@@ -17,6 +17,7 @@ import com.lambda.fusion.ai.apps.model.AvailableApp;
 import com.lambda.fusion.ai.apps.model.CreateApp;
 import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
@@ -67,7 +68,7 @@ class AppServiceImplAudienceTest {
                 appMapper,
                 mock(AppConfigAuditMapper.class),
                 llmModelService,
-                llmProviderService,
+                new MediaGenerationBindingResolver(llmModelService, llmProviderService),
                 mock(ApplicationEventPublisher.class),
                 mock(WorkspacePaths.class),
                 properties);
@@ -122,14 +123,17 @@ class AppServiceImplAudienceTest {
         stored.setModelId("m-1");
         stored.setImageModelId("image-1");
         stored.setVideoModelId("video-1");
+        stored.setAudioModelId("audio-1");
         when(appMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(stored);
         LlmModelEntity chatModel = new LlmModelEntity();
         chatModel.setSupportsVision(Boolean.TRUE);
         when(llmModelService.loadById("m-1")).thenReturn(chatModel);
         LlmModelEntity imageModel = mediaModel("image-1", ModelType.IMAGE_GEN, "海报模型", "wanx-v1");
         LlmModelEntity videoModel = mediaModel("video-1", ModelType.VIDEO_GEN, "视频模型", "wan2.6-t2v");
+        LlmModelEntity audioModel = mediaModel("audio-1", ModelType.AUDIO_GEN, "语音模型", "qwen3-tts-flash");
         when(llmModelService.loadById("image-1")).thenReturn(imageModel);
         when(llmModelService.loadById("video-1")).thenReturn(videoModel);
+        when(llmModelService.loadById("audio-1")).thenReturn(audioModel);
         LlmProviderEntity provider = new LlmProviderEntity();
         provider.setId("p-1");
         provider.setProviderType("dashscope");
@@ -143,11 +147,9 @@ class AppServiceImplAudienceTest {
 
             assertThat(view.getId()).isEqualTo("a1");
             assertThat(view.getSupportsVision()).isTrue();
-            assertThat(view.getSupportsImageGeneration()).isTrue();
-            assertThat(view.getSupportsVideoGeneration()).isTrue();
             assertThat(view.getMediaGenerationCapabilities())
                     .extracting(capability -> capability.getKind() + ":" + capability.getModelLabel())
-                    .containsExactly("image:海报模型", "video:视频模型");
+                    .containsExactly("image:海报模型", "video:视频模型", "audio:语音模型");
         }
     }
 
