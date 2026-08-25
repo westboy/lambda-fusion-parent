@@ -17,7 +17,7 @@ class ProviderTypeCapabilityTest {
     }
 
     @Test
-    void keepsCapabilitiesAlignedWithIntegratedAgentScopeTools() {
+    void distinguishesVendorCatalogFromIntegratedAgentScopeRuntime() {
         assertThat(ProviderType.DASHSCOPE.getSupportedModelTypes()).containsExactlyInAnyOrder(ModelType.values());
         assertThat(ProviderType.OPENAI.getSupportedModelTypes())
                 .containsExactlyInAnyOrder(ModelType.CHAT, ModelType.EMBEDDING, ModelType.IMAGE_GEN);
@@ -25,5 +25,11 @@ class ProviderTypeCapabilityTest {
                 .containsExactlyInAnyOrder(ModelType.CHAT, ModelType.EMBEDDING);
         assertThat(ProviderType.KIMI.supports(ModelType.CHAT)).isTrue();
         assertThat(ProviderType.KIMI.supports(ModelType.IMAGE_GEN)).isFalse();
+        assertThat(ProviderType.MINIMAX.getSupportedModelTypes())
+                .containsExactlyInAnyOrder(
+                        ModelType.CHAT, ModelType.IMAGE_GEN, ModelType.VIDEO_GEN, ModelType.AUDIO_GEN);
+        assertThat(ProviderType.MINIMAX.getRuntimeModelTypes()).containsExactly(ModelType.CHAT);
+        assertThat(ProviderType.MINIMAX.supports(ModelType.VIDEO_GEN)).isTrue();
+        assertThat(ProviderType.MINIMAX.supportsRuntime(ModelType.VIDEO_GEN)).isFalse();
     }
 }

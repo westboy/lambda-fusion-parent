@@ -57,9 +57,15 @@ public class LlmProviderEntity {
     @Schema(description = "更新时间")
     private LocalDateTime updatedAt;
 
-    @Schema(description = "该提供方在系统中已接通的模型类型")
+    @Schema(description = "该厂商可配置的模型类型")
     public Set<ModelType> getSupportedModelTypes() {
         ProviderType type = ProviderType.of(providerType);
         return type == null ? Set.of() : type.getSupportedModelTypes();
+    }
+
+    @Schema(description = "该提供方当前已由 AgentScope 运行时接通的模型类型")
+    public Set<ModelType> getRuntimeModelTypes() {
+        ProviderType type = ProviderType.of(providerType);
+        return type == null ? Set.of() : type.getRuntimeModelTypes();
     }
 }

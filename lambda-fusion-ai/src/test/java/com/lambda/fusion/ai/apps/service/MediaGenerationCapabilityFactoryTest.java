@@ -115,6 +115,17 @@ class MediaGenerationCapabilityFactoryTest {
     }
 
     @Test
+    void shouldNotTreatConfigurableMiniMaxMediaModelsAsAgentScopeRuntimeTools() {
+        LlmModelEntity model = model(ModelType.VIDEO_GEN, "MiniMax 视频", "video-01");
+
+        assertThat(ProviderType.MINIMAX.supports(ModelType.VIDEO_GEN)).isTrue();
+        assertThat(MediaGenerationCapabilityFactory.create(model, ProviderType.MINIMAX))
+                .isNull();
+        assertThat(MediaGenerationCapabilityFactory.supports(ModelType.VIDEO_GEN, ProviderType.MINIMAX))
+                .isFalse();
+    }
+
+    @Test
     void shouldNotExposeGptImageThroughTheDallEOnlyOfficialTool() {
         LlmModelEntity model = model(ModelType.IMAGE_GEN, "GPT 图片", "gpt-image-1");
 

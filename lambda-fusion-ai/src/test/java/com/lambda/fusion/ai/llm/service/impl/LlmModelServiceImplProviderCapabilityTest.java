@@ -16,6 +16,7 @@ import com.lambda.fusion.ai.llm.model.UpdateLlmModel;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
+import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -64,6 +65,21 @@ class LlmModelServiceImplProviderCapabilityTest {
 
         verify(llmModelMapper, never()).updateById(any(LlmModelEntity.class));
         verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void acceptsMiniMaxMediaModelsInTheVendorCatalog() {
+        when(llmProviderService.loadById("minimax-provider")).thenReturn(provider("minimax-provider", "minimax"));
+        CreateLlmModel dto = new CreateLlmModel();
+        dto.setProviderId("minimax-provider");
+        dto.setName("MiniMax 视频");
+        dto.setModelName("video-01");
+        dto.setModelType(ModelType.VIDEO_GEN);
+
+        service.create(dto);
+
+        verify(llmModelMapper).insert(any(LlmModelEntity.class));
+        verify(eventPublisher).publishEvent(any(ConfigChangedEvent.class));
     }
 
     private static LlmProviderEntity provider(String id, String providerType) {

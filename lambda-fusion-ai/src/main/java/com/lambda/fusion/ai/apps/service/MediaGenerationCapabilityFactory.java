@@ -30,7 +30,7 @@ public final class MediaGenerationCapabilityFactory {
         boolean mediaType = modelType == ModelType.IMAGE_GEN
                 || modelType == ModelType.VIDEO_GEN
                 || modelType == ModelType.AUDIO_GEN;
-        return mediaType && providerType != null && providerType.supports(modelType);
+        return mediaType && providerType != null && providerType.supportsRuntime(modelType);
     }
 
     /**
