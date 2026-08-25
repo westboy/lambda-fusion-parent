@@ -23,7 +23,6 @@ import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEvent;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
-import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
@@ -44,7 +43,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 /** Run 启动调度测试。 */
@@ -70,10 +68,6 @@ class ChatRunCoordinatorStartTest {
         AppService appService = mock(AppService.class);
         AgentFactory agentFactory = mock(AgentFactory.class);
         HarnessAgent agent = mock(HarnessAgent.class);
-        ToolResultMediaMaterializer mediaMaterializer = mock(ToolResultMediaMaterializer.class);
-        when(mediaMaterializer.materialize(any(), any()))
-                .thenAnswer(invocation -> Mono.just(invocation.<AgentEvent>getArgument(0)));
-
         AiProperties properties = new AiProperties();
         ChatExecutionInstanceFactory instanceFactory = new ChatExecutionInstanceFactory(
                 runService,
@@ -81,7 +75,6 @@ class ChatRunCoordinatorStartTest {
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
                 mock(ObjectProvider.class),
-                mediaMaterializer,
                 properties);
         coordinator = new ChatExecutionService(
                 runService,

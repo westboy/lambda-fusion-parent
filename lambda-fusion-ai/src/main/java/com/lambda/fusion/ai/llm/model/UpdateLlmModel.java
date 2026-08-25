@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.llm.model;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
@@ -21,6 +22,9 @@ public class UpdateLlmModel {
 
     @Schema(description = "模型类型: CHAT/EMBEDDING/IMAGE_GEN/VIDEO_GEN/AUDIO_GEN")
     private ModelType modelType;
+
+    @Schema(description = "媒体创作操作；切换为非媒体模型时由服务端清空")
+    private MediaGenerationOperation mediaOperation;
 
     @Schema(description = "默认温度")
     private BigDecimal defaultTemperature;

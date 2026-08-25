@@ -1,21 +1,25 @@
 package com.lambda.fusion.ai.runtime;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver.Binding;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
+import com.lambda.fusion.ai.runtime.media.MaterializingMediaTool;
 import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
@@ -50,6 +54,7 @@ public class ToolkitAssembler {
     private final McpServerService mcpServerService;
     private final MediaGenerationBindingResolver mediaBindingResolver;
     private final KeyEncryptionService keyEncryptionService;
+    private final ToolResultMediaMaterializer mediaMaterializer;
     private final AiProperties aiProperties;
 
     /**
@@ -128,7 +133,7 @@ public class ToolkitAssembler {
                         .map(this::buildMediaTool)
                         .ifPresent(tool -> {
                             toolkit.registerTool(tool);
-                            log.info("应用 {} 已挂载媒体生成工具: type={}", app.getId(), type);
+                            log.info("应用 {} 已挂载媒体生成工具: operation={}", app.getId(), tool.getName());
                         });
             } catch (RuntimeException e) {
                 log.warn("应用 {} 媒体生成工具挂载失败，跳过: type={}", app.getId(), type, e);
@@ -137,20 +142,55 @@ public class ToolkitAssembler {
     }
 
     /** 只负责解密凭据并为统一工具名创建官方能力薄适配器。 */
-    private Object buildMediaTool(Binding binding) {
+    private AgentTool buildMediaTool(Binding binding) {
         String apiKey = keyEncryptionService.decrypt(binding.provider().getApiKeyEncrypted());
         String modelName = binding.model().getModelName();
-        return switch (binding.model().getModelType()) {
-            case IMAGE_GEN ->
-                binding.providerType() == ProviderType.DASHSCOPE
-                        ? ImageGenerationTool.dashscope(apiKey, modelName)
-                        : ImageGenerationTool.openai(apiKey, binding.provider().getBaseUrl(), modelName);
-            case VIDEO_GEN -> VideoGenerationTool.dashscope(apiKey, modelName);
-            case AUDIO_GEN -> AudioGenerationTool.dashscope(apiKey, modelName);
-            default ->
-                throw new IllegalArgumentException(
-                        "不是媒体生成模型: " + binding.model().getModelType());
-        };
+        MediaGenerationOperation operation = binding.model().getMediaOperation();
+        Object adapter =
+                switch (operation) {
+                    case TEXT_TO_IMAGE ->
+                        switch (binding.providerType()) {
+                            case DASHSCOPE -> ImageGenerationTool.dashscope(apiKey, modelName);
+                            case OPENAI ->
+                                ImageGenerationTool.openai(
+                                        apiKey, binding.provider().getBaseUrl(), modelName);
+                            default -> throw unsupportedMediaBinding(binding);
+                        };
+                    case TEXT_TO_VIDEO, IMAGE_TO_VIDEO, FIRST_LAST_FRAME_TO_VIDEO -> {
+                        if (binding.providerType() != ProviderType.DASHSCOPE) {
+                            throw unsupportedMediaBinding(binding);
+                        }
+                        yield VideoGenerationTool.dashscope(apiKey, modelName);
+                    }
+                    case TEXT_TO_SPEECH -> {
+                        if (binding.providerType() != ProviderType.DASHSCOPE) {
+                            throw unsupportedMediaBinding(binding);
+                        }
+                        yield AudioGenerationTool.dashscope(apiKey, modelName);
+                    }
+                };
+        return materializingTool(adapter, operation.getToolName());
+    }
+
+    /**
+     * 让 AgentScope 从薄适配器的 {@code @Tool} 方法生成权威 Schema，再只装饰该方法的执行结果。
+     * AgentScope 2.0.1 对普通对象尚不支持按方法注册，因此使用临时 Toolkit 完成官方反射转换。
+     */
+    private AgentTool materializingTool(Object adapter, String toolName) {
+        Toolkit schemaToolkit = new Toolkit();
+        schemaToolkit.registerTool(adapter);
+        AgentTool delegate = schemaToolkit.getTool(toolName);
+        if (delegate == null) {
+            throw new IllegalArgumentException("AgentScope 未注册媒体工具: " + toolName);
+        }
+        return new MaterializingMediaTool(delegate, mediaMaterializer);
+    }
+
+    private static IllegalArgumentException unsupportedMediaBinding(Binding binding) {
+        return new IllegalArgumentException("没有匹配的 AgentScope 媒体工具: provider="
+                + binding.providerType()
+                + ", operation="
+                + binding.model().getMediaOperation());
     }
 
     private void registerMcpServers(Toolkit toolkit, List<String> mcpServerIds) {

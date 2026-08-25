@@ -41,10 +41,6 @@ public class LlmProviderEntity {
     @Schema(description = "是否启用")
     private Boolean enabled;
 
-    @TableField("enable_media_gen")
-    @Schema(description = "该Key是否开通图像/视频等媒体生成能力(由配置者声明;运行时据此挂载生成工具)")
-    private Boolean enableMediaGen;
-
     @TableField("remark")
     @Schema(description = "备注")
     private String remark;
@@ -67,5 +63,17 @@ public class LlmProviderEntity {
     public Set<ModelType> getRuntimeModelTypes() {
         ProviderType type = ProviderType.of(providerType);
         return type == null ? Set.of() : type.getRuntimeModelTypes();
+    }
+
+    @Schema(description = "该厂商可配置的媒体创作操作")
+    public Set<com.lambda.fusion.ai.AiConstants.MediaGenerationOperation> getSupportedMediaOperations() {
+        ProviderType type = ProviderType.of(providerType);
+        return type == null ? Set.of() : type.getSupportedMediaOperations();
+    }
+
+    @Schema(description = "该提供方当前已由 AgentScope 官方工具接通的媒体创作操作")
+    public Set<com.lambda.fusion.ai.AiConstants.MediaGenerationOperation> getRuntimeMediaOperations() {
+        ProviderType type = ProviderType.of(providerType);
+        return type == null ? Set.of() : type.getRuntimeMediaOperations();
     }
 }

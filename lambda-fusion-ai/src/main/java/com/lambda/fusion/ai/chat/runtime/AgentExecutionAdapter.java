@@ -3,17 +3,22 @@ package com.lambda.fusion.ai.chat.runtime;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.agui.AgentEventMapper;
-import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCall;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolCallState;
@@ -48,7 +53,6 @@ public final class AgentExecutionAdapter {
     private final String appId;
     private final String tenantId;
     private final FusionSubagentGateway subagentGateway;
-    private final ToolResultMediaMaterializer mediaMaterializer;
 
     /**
      * 创建 Agent 执行适配器。
@@ -58,26 +62,12 @@ public final class AgentExecutionAdapter {
      * @param session 会话实体
      * @param tenantId 已归一化的租户标识
      */
-    public AgentExecutionAdapter(HarnessAgent agent, ChatRunEntity run, ChatSessionEntity session, String tenantId) {
-        this(agent, run, session, tenantId, null, null);
-    }
-
     public AgentExecutionAdapter(
             HarnessAgent agent,
             ChatRunEntity run,
             ChatSessionEntity session,
             String tenantId,
             FusionSubagentGateway subagentGateway) {
-        this(agent, run, session, tenantId, subagentGateway, null);
-    }
-
-    public AgentExecutionAdapter(
-            HarnessAgent agent,
-            ChatRunEntity run,
-            ChatSessionEntity session,
-            String tenantId,
-            FusionSubagentGateway subagentGateway,
-            ToolResultMediaMaterializer mediaMaterializer) {
         this.agent = Objects.requireNonNull(agent, "agent");
         this.runId = Objects.requireNonNull(run.getId(), "run.id");
         this.sessionId = Objects.requireNonNull(run.getSessionId(), "run.sessionId");
@@ -85,31 +75,72 @@ public final class AgentExecutionAdapter {
         this.appId = Objects.requireNonNull(session.getAppId(), "session.appId");
         this.tenantId = Objects.requireNonNull(tenantId, "tenantId");
         this.subagentGateway = subagentGateway;
-        this.mediaMaterializer = mediaMaterializer;
     }
 
-    /** 启动事件流，并按类型把服务端媒体调用注入 AgentScope RuntimeContext。 */
-    public Flux<AgentEvent> stream(Msg message, MediaGenerationInvocation mediaGeneration) {
+    /** 启动事件流；显式媒体请求直接执行 AgentScope 工具，普通消息仍交给 Agent 自主编排。 */
+    public Flux<AgentEvent> stream(Msg message, ToolUseBlock mediaToolCall) {
+        ExplicitToolCall explicitCall =
+                mediaToolCall == null ? null : new ExplicitToolCall(message, mediaToolCall, agent.getName()).marked();
         RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
                 .userId(userId)
                 .sessionId(sessionId)
+                .put(RuntimeProperty.KEY_RUN_ID, runId)
                 .put(RuntimeProperty.KEY_TENANT_ID, tenantId)
                 .put(RuntimeProperty.KEY_APP_ID, appId)
                 .put(RuntimeProperty.KEY_LF_SESSION_ID, sessionId);
-        if (mediaGeneration != null) {
-            contextBuilder.put(MediaGenerationInvocation.class, mediaGeneration);
+        if (explicitCall != null) {
+            contextBuilder.put(ExplicitToolCall.class, explicitCall);
         }
         RuntimeContext context = contextBuilder.build();
-        Flux<AgentEvent> source = agent.streamEvents(message, context);
+        Flux<AgentEvent> source = explicitCall == null
+                ? agent.streamEvents(message, context)
+                : streamExplicitMediaTool(explicitCall, context);
         if (subagentGateway != null) {
             source = source.doOnNext(this::recordSubagentExposure);
         }
-        if (mediaMaterializer != null) {
-            ToolResultMediaMaterializer.Context mediaContext =
-                    new ToolResultMediaMaterializer.Context(runId, sessionId, tenantId);
-            source = source.concatMap(event -> mediaMaterializer.materialize(event, mediaContext), 1);
-        }
         return endAtHitlPhaseBoundary(source);
+    }
+
+    /**
+     * 执行页面明确选择的媒体工具。工具查找、参数 Schema 校验、预置参数合并、调用追踪和异常结果转换
+     * 全部委托 AgentScope {@link io.agentscope.core.tool.Toolkit}；这里只编排官方事件并维护同一会话记忆。
+     */
+    private Flux<AgentEvent> streamExplicitMediaTool(ExplicitToolCall explicitCall, RuntimeContext context) {
+        ToolUseBlock toolCall = explicitCall.toolCall();
+        Flux<AgentEvent> source = agent.streamEvents(List.of(), context);
+        return Flux.defer(() -> {
+            AtomicBoolean callAnnounced = new AtomicBoolean();
+            AtomicBoolean toolFailed = new AtomicBoolean();
+            return source.concatMap(
+                            event -> {
+                                if (event instanceof ToolResultEndEvent result
+                                        && toolCall.getId().equals(result.getToolCallId())
+                                        && result.getState() == ToolResultState.ERROR) {
+                                    toolFailed.set(true);
+                                }
+                                if (event instanceof AgentEndEvent && event.getSource() == null && toolFailed.get()) {
+                                    return Flux.error(new IllegalStateException("媒体工具执行失败: " + toolCall.getName()));
+                                }
+                                if (event instanceof AgentStartEvent start
+                                        && event.getSource() == null
+                                        && callAnnounced.compareAndSet(false, true)) {
+                                    return Flux.just(
+                                            event,
+                                            new ToolCallStartEvent(
+                                                    start.getReplyId(), toolCall.getId(), toolCall.getName()),
+                                            new ToolCallDeltaEvent(
+                                                    start.getReplyId(),
+                                                    toolCall.getId(),
+                                                    toolCall.getName(),
+                                                    toolCall.getContent()),
+                                            new ToolCallEndEvent(
+                                                    start.getReplyId(), toolCall.getId(), toolCall.getName()));
+                                }
+                                return Flux.just(event);
+                            },
+                            1)
+                    .cast(AgentEvent.class);
+        });
     }
 
     /**

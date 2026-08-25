@@ -25,9 +25,6 @@ public class CreateLlmProvider {
     @Schema(description = "是否启用")
     private Boolean enabled = Boolean.TRUE;
 
-    @Schema(description = "该Key是否开通图像/视频等媒体生成能力")
-    private Boolean enableMediaGen = Boolean.FALSE;
-
     @Schema(description = "备注")
     private String remark;
 }

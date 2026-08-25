@@ -60,6 +60,8 @@ public enum AiErrorCode implements ErrorCode {
 
     LLM_MODEL_TYPE_NOT_SUPPORTED(30414, "不支持的模型类型"),
 
+    LLM_MEDIA_OPERATION_INVALID(30415, "媒体创作操作无效"),
+
     LLM_ENCRYPTION_KEY_NOT_CONFIGURED(30421, "未配置API Key加密密钥(lambda.fusion.ai.security.encryption-key)"),
 
     LLM_API_KEY_DECRYPT_FAILED(30422, "API Key解密失败"),
@@ -80,7 +82,7 @@ public enum AiErrorCode implements ErrorCode {
 
     APP_UNPUBLISHED(30758, "应用已下线"),
 
-    APP_MEDIA_BINDING_INVALID(30759, "媒体模型绑定不可用，请检查模型/提供方启用状态、媒体生成开关和 AgentScope 官方工具支持范围"),
+    APP_MEDIA_BINDING_INVALID(30759, "媒体模型绑定不可用，请检查模型、提供方启用状态和 AgentScope 官方工具支持范围"),
 
     KB_NOT_FOUND(30801, "知识库不存在"),
 

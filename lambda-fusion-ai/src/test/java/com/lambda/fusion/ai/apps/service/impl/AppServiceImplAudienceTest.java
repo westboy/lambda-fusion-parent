@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.mapper.AppConfigAuditMapper;
@@ -138,7 +139,6 @@ class AppServiceImplAudienceTest {
         provider.setId("p-1");
         provider.setProviderType("dashscope");
         provider.setEnabled(Boolean.TRUE);
-        provider.setEnableMediaGen(Boolean.TRUE);
         when(llmProviderService.loadById("p-1")).thenReturn(provider);
 
         try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
@@ -177,6 +177,13 @@ class AppServiceImplAudienceTest {
         LlmModelEntity model = new LlmModelEntity();
         model.setId(id);
         model.setModelType(type);
+        model.setMediaOperation(
+                switch (type) {
+                    case IMAGE_GEN -> MediaGenerationOperation.TEXT_TO_IMAGE;
+                    case VIDEO_GEN -> MediaGenerationOperation.TEXT_TO_VIDEO;
+                    case AUDIO_GEN -> MediaGenerationOperation.TEXT_TO_SPEECH;
+                    default -> null;
+                });
         model.setName(name);
         model.setModelName(modelName);
         model.setProviderId("p-1");

@@ -24,9 +24,9 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolUseBlock;
 import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Optional;
@@ -96,16 +96,15 @@ public class ChatExecutionService {
         this.registry = new ChatExecutionInstanceRegistry(instanceFactory, properties);
     }
 
-    /** 启动本次请求刚创建的运行，并把已校验媒体参数作为调用级上下文传给 AgentScope。 */
-    public void start(ChatRunEntity run, ChatSessionEntity session, MediaGenerationInvocation mediaGeneration) {
+    /** 启动本次请求刚创建的运行；显式媒体请求携带服务端构造的 AgentScope 工具调用。 */
+    public void start(ChatRunEntity run, ChatSessionEntity session, ToolUseBlock mediaToolCall) {
         TenantUtils.withTenant(session.getTenantId(), () -> {
-            startInTenantContext(run, session, mediaGeneration);
+            startInTenantContext(run, session, mediaToolCall);
             return null;
         });
     }
 
-    private void startInTenantContext(
-            ChatRunEntity run, ChatSessionEntity session, MediaGenerationInvocation mediaGeneration) {
+    private void startInTenantContext(ChatRunEntity run, ChatSessionEntity session, ToolUseBlock mediaToolCall) {
         if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())) {
             return;
         }
@@ -125,7 +124,7 @@ public class ChatExecutionService {
         // 只把实际订阅移出请求线程；不等待上一轮的记忆整理、Workspace 审计等后处理。
         ChatExecutionInstance execution = selected.get();
         try {
-            scheduler.execute(() -> execution.runInTenant(() -> startExecution(execution, mediaGeneration)));
+            scheduler.execute(() -> execution.runInTenant(() -> startExecution(execution, mediaToolCall)));
         } catch (RuntimeException scheduleFailure) {
             execution.finalizeFailed(
                     ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(scheduleFailure));
@@ -316,7 +315,7 @@ public class ChatExecutionService {
      *
      * @param execution 已注册的执行实例
      */
-    private void startExecution(ChatExecutionInstance execution, MediaGenerationInvocation mediaGeneration) {
+    private void startExecution(ChatExecutionInstance execution, ToolUseBlock mediaToolCall) {
         ChatRunEntity run = execution.run();
         try {
             ChatMessageEntity userMessage = messageService
@@ -326,7 +325,7 @@ public class ChatExecutionService {
             AppEntity app = appService.loadById(execution.session().getAppId());
             Msg msg = attachmentMessageBuilder.buildUserMsg(
                     execution.session(), app, userMessage.getContent(), attachments);
-            execution.startPhase(msg, mediaGeneration);
+            execution.startPhase(msg, mediaToolCall);
         } catch (RuntimeException startFailure) {
             execution.finalizeFailed(
                     ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));

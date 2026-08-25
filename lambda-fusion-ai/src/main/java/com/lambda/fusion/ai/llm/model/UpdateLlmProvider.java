@@ -22,9 +22,6 @@ public class UpdateLlmProvider {
     @Schema(description = "是否启用")
     private Boolean enabled;
 
-    @Schema(description = "该Key是否开通图像/视频等媒体生成能力")
-    private Boolean enableMediaGen;
-
     @Schema(description = "备注")
     private String remark;
 }

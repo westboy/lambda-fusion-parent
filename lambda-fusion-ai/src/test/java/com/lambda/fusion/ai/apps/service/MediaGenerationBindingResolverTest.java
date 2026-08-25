@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
@@ -34,7 +35,7 @@ class MediaGenerationBindingResolverTest {
     void shouldResolveAnEnabledDashscopeVideoBinding() {
         when(modelService.loadById("video-1"))
                 .thenReturn(model("video-1", ModelType.VIDEO_GEN, "custom-video-alias", "provider-1"));
-        when(providerService.loadById("provider-1")).thenReturn(provider("dashscope", true, true));
+        when(providerService.loadById("provider-1")).thenReturn(provider("dashscope", true));
 
         var binding = resolver.requireExecutable("video-1", ModelType.VIDEO_GEN);
 
@@ -46,7 +47,7 @@ class MediaGenerationBindingResolverTest {
     void shouldRejectVideoBindingsWithoutAnOfficialProviderTool() {
         when(modelService.loadById("video-1"))
                 .thenReturn(model("video-1", ModelType.VIDEO_GEN, "doubao-seed-2.1-turbo", "provider-1"));
-        when(providerService.loadById("provider-1")).thenReturn(provider("openai", true, true));
+        when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
 
         assertThatThrownBy(() -> resolver.requireExecutable("video-1", ModelType.VIDEO_GEN))
                 .isInstanceOf(AiBusinessException.class)
@@ -55,10 +56,31 @@ class MediaGenerationBindingResolverTest {
     }
 
     @Test
-    void shouldRejectBindingsWhenTheProviderMediaSwitchIsOff() {
+    void shouldRejectOpenAiImageModelsOutsideOfficialDallEProtocol() {
+        when(modelService.loadById("image-1"))
+                .thenReturn(model("image-1", ModelType.IMAGE_GEN, "gpt-image-1", "provider-1"));
+        when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
+
+        assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
+                .isInstanceOf(AiBusinessException.class);
+    }
+
+    @Test
+    void shouldResolveAnOfficialOpenAiDallEImageModel() {
+        when(modelService.loadById("image-1"))
+                .thenReturn(model("image-1", ModelType.IMAGE_GEN, "dall-e-3", "provider-1"));
+        when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
+
+        var binding = resolver.requireExecutable("image-1", ModelType.IMAGE_GEN);
+        assertThat(binding.providerType()).isEqualTo(ProviderType.OPENAI);
+        assertThat(binding.capability().getKind()).isEqualTo("image");
+    }
+
+    @Test
+    void shouldRejectBindingsWhenTheProviderIsDisabled() {
         when(modelService.loadById("image-1"))
                 .thenReturn(model("image-1", ModelType.IMAGE_GEN, "wanx-v1", "provider-1"));
-        when(providerService.loadById("provider-1")).thenReturn(provider("dashscope", true, false));
+        when(providerService.loadById("provider-1")).thenReturn(provider("dashscope", false));
 
         assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
                 .isInstanceOf(AiBusinessException.class);
@@ -70,16 +92,22 @@ class MediaGenerationBindingResolverTest {
         model.setName(modelName);
         model.setModelName(modelName);
         model.setModelType(type);
+        model.setMediaOperation(
+                switch (type) {
+                    case IMAGE_GEN -> MediaGenerationOperation.TEXT_TO_IMAGE;
+                    case VIDEO_GEN -> MediaGenerationOperation.TEXT_TO_VIDEO;
+                    case AUDIO_GEN -> MediaGenerationOperation.TEXT_TO_SPEECH;
+                    default -> null;
+                });
         model.setProviderId(providerId);
         model.setEnabled(Boolean.TRUE);
         return model;
     }
 
-    private static LlmProviderEntity provider(String type, boolean enabled, boolean mediaEnabled) {
+    private static LlmProviderEntity provider(String type, boolean enabled) {
         LlmProviderEntity provider = new LlmProviderEntity();
         provider.setProviderType(type);
         provider.setEnabled(enabled);
-        provider.setEnableMediaGen(mediaEnabled);
         return provider;
     }
 }

@@ -53,7 +53,6 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         entity.setBaseUrl(dto.getBaseUrl());
         entity.setApiKeyEncrypted(keyEncryptionService.encrypt(dto.getApiKey()));
         entity.setEnabled(dto.getEnabled());
-        entity.setEnableMediaGen(dto.getEnableMediaGen());
         entity.setRemark(dto.getRemark());
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
@@ -82,9 +81,6 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         }
         if (dto.getEnabled() != null) {
             entity.setEnabled(dto.getEnabled());
-        }
-        if (dto.getEnableMediaGen() != null) {
-            entity.setEnableMediaGen(dto.getEnableMediaGen());
         }
         if (dto.getRemark() != null) {
             entity.setRemark(dto.getRemark());

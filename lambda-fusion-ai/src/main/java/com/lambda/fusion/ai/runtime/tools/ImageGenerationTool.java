@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.runtime.tools;
 
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
+import com.lambda.fusion.ai.AiConstants.MediaToolName;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -20,7 +20,7 @@ import reactor.core.publisher.Mono;
 public final class ImageGenerationTool {
 
     /** 工具名。 */
-    public static final String TOOL_NAME = "text_to_image";
+    public static final String TOOL_NAME = MediaToolName.TEXT_TO_IMAGE;
 
     private final DashScopeMultiModalTool dashscopeTool;
     private final OpenAIMultiModalTool openaiTool;
@@ -74,15 +74,7 @@ public final class ImageGenerationTool {
                     String size,
             @ToolParam(name = "n", description = "Number of images to generate", required = false) Integer n,
             @ToolParam(name = "quality", description = "Image quality, e.g. standard or hd", required = false)
-                    String quality,
-            MediaGenerationInvocation invocation) {
-        if (invocation != null) {
-            invocation.claimExecution(TOOL_NAME);
-            prompt = invocation.getPrompt();
-            size = invocation.getSize();
-            n = invocation.getCount();
-            quality = invocation.getQuality();
-        }
+                    String quality) {
         if (dashscopeTool != null) {
             return dashscopeTool.dashscopeTextToImage(prompt, modelName, n, normalizeSize(size, '*'), Boolean.FALSE);
         }

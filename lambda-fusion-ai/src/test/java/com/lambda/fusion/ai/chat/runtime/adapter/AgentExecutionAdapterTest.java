@@ -12,6 +12,7 @@ import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCallHook;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
@@ -23,19 +24,32 @@ import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Agent 执行适配器测试。
@@ -44,6 +58,9 @@ import reactor.core.publisher.Flux;
  */
 class AgentExecutionAdapterTest {
 
+    @TempDir
+    Path workspace;
+
     @Test
     void shouldUseConversationSessionInDirectMode() {
         HarnessAgent agent = mock(HarnessAgent.class);
@@ -51,7 +68,7 @@ class AgentExecutionAdapterTest {
         when(agent.getDelegate()).thenReturn(delegate);
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.empty());
         when(delegate.getAgentState("user-1", "session-1")).thenReturn(stateWithAskingBlock());
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
         Msg message = userMessage();
 
         adapter.stream(message, null).blockLast();
@@ -98,11 +115,86 @@ class AgentExecutionAdapterTest {
         DistributedStore distributedStore = mock(DistributedStore.class);
         when(agent.getDistributedStore()).thenReturn(distributedStore);
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.empty());
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         adapter.stream(userMessage(), null).blockLast();
 
         verify(distributedStore, never()).sandboxExecutionGuard();
+    }
+
+    @Test
+    void shouldExecuteExplicitMediaRequestThroughAgentScopeToolkitWithoutCallingChatModel() {
+        NeverCalledModel model = new NeverCalledModel();
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ExplicitMediaTool());
+        ToolUseBlock toolCall = ToolUseBlock.builder()
+                .id("media-call-1")
+                .name("test_text_to_image")
+                .input(java.util.Map.of("prompt", "一只猫"))
+                .content("{\"prompt\":\"一只猫\"}")
+                .build();
+
+        try (HarnessAgent agent = HarnessAgent.builder()
+                .agentId("explicit-media-agent")
+                .name("demo-agent")
+                .sysPrompt("You are a test assistant.")
+                .model(model)
+                .toolkit(toolkit)
+                .hook(new ExplicitToolCallHook())
+                .workspace(workspace)
+                .stateStore(stateStore)
+                .disableFilesystemTools()
+                .disableShellTool()
+                .disableWorkspaceContext()
+                .disableAtPathExpansion()
+                .disableCompaction()
+                .disableToolResultEviction()
+                .disableDynamicSkills()
+                .disableDefaultWorkspaceSkills()
+                .disableSubagents()
+                .disableDynamicSubagents()
+                .disableToolsConfig()
+                .disableMemoryTools()
+                .disableMemoryHooks()
+                .build()) {
+            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
+
+            List<AgentEvent> events =
+                    adapter.stream(userMessage(), toolCall).collectList().block();
+
+            assertThat(events)
+                    .extracting(AgentEvent::getType)
+                    .containsExactly(
+                            AgentEventType.AGENT_START,
+                            AgentEventType.TOOL_CALL_START,
+                            AgentEventType.TOOL_CALL_DELTA,
+                            AgentEventType.TOOL_CALL_END,
+                            AgentEventType.TOOL_RESULT_START,
+                            AgentEventType.TOOL_RESULT_TEXT_DELTA,
+                            AgentEventType.TOOL_RESULT_END,
+                            AgentEventType.AGENT_RESULT,
+                            AgentEventType.AGENT_END);
+            assertThat(model.invocations()).isZero();
+            AgentState state = agent.getDelegate().getAgentState("user-1", "session-1");
+            assertThat(state.getContext())
+                    .extracting(Msg::getRole)
+                    .containsExactly(MsgRole.USER, MsgRole.ASSISTANT, MsgRole.TOOL);
+            ToolUseBlock savedCall = state.getContext()
+                    .get(1)
+                    .getContentBlocks(ToolUseBlock.class)
+                    .getFirst();
+            assertThat(savedCall.getState()).isEqualTo(ToolCallState.ALLOWED);
+            ToolResultBlock savedResult = state.getContext()
+                    .get(2)
+                    .getContentBlocks(ToolResultBlock.class)
+                    .getFirst();
+            assertThat(savedResult.getState()).isEqualTo(ToolResultState.SUCCESS);
+            assertThat(savedResult.getOutput())
+                    .singleElement()
+                    .isInstanceOfSatisfying(
+                            TextBlock.class, text -> assertThat(text.getText()).isEqualTo("generated:一只猫"));
+        }
     }
 
     @Test
@@ -116,7 +208,7 @@ class AgentExecutionAdapterTest {
             return Flux.empty();
         }));
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         List<AgentEvent> events =
                 adapter.stream(userMessage(), null).collectList().block();
@@ -136,7 +228,7 @@ class AgentExecutionAdapterTest {
             return Flux.empty();
         }));
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         List<AgentEvent> events =
                 adapter.stream(userMessage(), null).collectList().block();
@@ -166,7 +258,7 @@ class AgentExecutionAdapterTest {
             return Flux.empty();
         }));
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         List<AgentEvent> events =
                 adapter.stream(userMessage(), null).collectList().block();
@@ -191,7 +283,7 @@ class AgentExecutionAdapterTest {
                     return Flux.empty();
                 }));
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         List<AgentEvent> events =
                 adapter.stream(userMessage(), null).collectList().block();
@@ -215,7 +307,7 @@ class AgentExecutionAdapterTest {
                     return Flux.empty();
                 }));
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         List<AgentEvent> events =
                 adapter.stream(userMessage(), null).collectList().block();
@@ -232,7 +324,7 @@ class AgentExecutionAdapterTest {
         when(agent.getName()).thenReturn("demo-agent");
         AgentState state = stateWithAskingBlock();
         when(delegate.getAgentState("user-1", "session-1")).thenReturn(state);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         adapter.denyPendingToolCalls();
 
@@ -267,7 +359,7 @@ class AgentExecutionAdapterTest {
         AgentState state =
                 AgentState.builder().context(List.of(assistant, result)).build();
         when(delegate.getAgentState("user-1", "session-1")).thenReturn(state);
-        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1");
+        AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
         adapter.denyPendingToolCalls();
 
@@ -309,5 +401,33 @@ class AgentExecutionAdapterTest {
                 .name("demo_tool")
                 .state(ToolCallState.ASKING)
                 .build();
+    }
+
+    static final class ExplicitMediaTool {
+
+        @Tool(name = "test_text_to_image", description = "test")
+        public Mono<ToolResultBlock> generate(@ToolParam(name = "prompt", description = "prompt") String prompt) {
+            return Mono.just(ToolResultBlock.text("generated:" + prompt));
+        }
+    }
+
+    static final class NeverCalledModel implements Model {
+
+        private final AtomicInteger invocations = new AtomicInteger();
+
+        int invocations() {
+            return invocations.get();
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            invocations.incrementAndGet();
+            return Flux.error(new AssertionError("Explicit media execution must not invoke the chat model"));
+        }
+
+        @Override
+        public String getModelName() {
+            return "never-called-model";
+        }
     }
 }

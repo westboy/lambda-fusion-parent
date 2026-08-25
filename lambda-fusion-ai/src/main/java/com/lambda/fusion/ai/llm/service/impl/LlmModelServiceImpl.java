@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.llm.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
@@ -46,7 +47,7 @@ public class LlmModelServiceImpl implements LlmModelService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public LlmModelEntity create(CreateLlmModel dto) {
-        validateProviderSupports(dto.getProviderId(), dto.getModelType());
+        validateConfiguration(dto.getProviderId(), dto.getModelType(), dto.getMediaOperation());
         ensureNameUnique(dto.getName(), null);
         LlmModelEntity entity = new LlmModelEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
@@ -54,6 +55,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         entity.setName(dto.getName());
         entity.setModelName(dto.getModelName());
         entity.setModelType(dto.getModelType());
+        entity.setMediaOperation(dto.getMediaOperation());
         entity.setDefaultTemperature(dto.getDefaultTemperature());
         entity.setDefaultMaxTokens(dto.getDefaultMaxTokens());
         entity.setContextWindowTokens(dto.getContextWindowTokens());
@@ -72,7 +74,10 @@ public class LlmModelServiceImpl implements LlmModelService {
         LlmModelEntity entity = requireExists(id);
         String targetProviderId = StringUtils.defaultIfBlank(dto.getProviderId(), entity.getProviderId());
         ModelType targetModelType = dto.getModelType() == null ? entity.getModelType() : dto.getModelType();
-        validateProviderSupports(targetProviderId, targetModelType);
+        MediaGenerationOperation targetOperation = dto.getMediaOperation() != null
+                ? dto.getMediaOperation()
+                : isMedia(targetModelType) ? entity.getMediaOperation() : null;
+        validateConfiguration(targetProviderId, targetModelType, targetOperation);
         if (!targetProviderId.equals(entity.getProviderId())) {
             entity.setProviderId(targetProviderId);
         }
@@ -86,6 +91,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         if (dto.getModelType() != null) {
             entity.setModelType(dto.getModelType());
         }
+        entity.setMediaOperation(targetOperation);
         if (dto.getDefaultTemperature() != null) {
             entity.setDefaultTemperature(dto.getDefaultTemperature());
         }
@@ -137,7 +143,8 @@ public class LlmModelServiceImpl implements LlmModelService {
         }
     }
 
-    private void validateProviderSupports(String providerId, ModelType modelType) {
+    private void validateConfiguration(
+            String providerId, ModelType modelType, MediaGenerationOperation mediaOperation) {
         LlmProviderEntity provider = llmProviderService.loadById(providerId);
         ProviderType providerType = ProviderType.of(provider.getProviderType());
         if (providerType == null) {
@@ -146,5 +153,24 @@ public class LlmModelServiceImpl implements LlmModelService {
         if (!providerType.supports(modelType)) {
             throw new AiBusinessException(AiErrorCode.LLM_MODEL_TYPE_NOT_SUPPORTED, modelType);
         }
+        if (!isMedia(modelType)) {
+            if (mediaOperation != null) {
+                throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "非媒体模型不能设置创作操作");
+            }
+            return;
+        }
+        if (mediaOperation == null) {
+            throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "媒体模型必须选择创作操作");
+        }
+        if (mediaOperation.getModelType() != modelType) {
+            throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "创作操作与模型类型不匹配");
+        }
+        if (!providerType.supports(mediaOperation)) {
+            throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "当前提供方不支持该创作操作");
+        }
+    }
+
+    private static boolean isMedia(ModelType modelType) {
+        return modelType == ModelType.IMAGE_GEN || modelType == ModelType.VIDEO_GEN || modelType == ModelType.AUDIO_GEN;
     }
 }

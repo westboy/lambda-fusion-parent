@@ -12,7 +12,7 @@ import com.lambda.fusion.ai.rag.runtime.KnowledgeRetrievalTool;
 import com.lambda.fusion.ai.rag.runtime.KnowledgeRetriever;
 import com.lambda.fusion.ai.rag.runtime.RagMiddleware;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
-import com.lambda.fusion.ai.runtime.media.MediaGenerationRoutingMiddleware;
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCallHook;
 import com.lambda.fusion.ai.runtime.sandbox.SandboxSpecResolver;
 import com.lambda.fusion.ai.runtime.state.StateStoreProvider;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
@@ -165,7 +165,6 @@ public class AgentFactory {
      */
     private List<MiddlewareBase> resolveMiddlewares(AppEntity app) {
         List<MiddlewareBase> middlewares = new ArrayList<>();
-        middlewares.add(new MediaGenerationRoutingMiddleware());
         RagMode ragMode = resolveRagMode(app);
         if (ragMode != RagMode.GENERIC && ragMode != RagMode.BOTH) {
             return List.copyOf(middlewares);
@@ -307,6 +306,7 @@ public class AgentFactory {
         return SkillFilter.all();
     }
 
+    @SuppressWarnings({"deprecation", "removal"})
     private HarnessAgent buildChat(
             String stableAgentId,
             AppEntity app,
@@ -323,6 +323,7 @@ public class AgentFactory {
                 .model(model)
                 .maxIters(maxIters)
                 .toolkit(toolkit)
+                .hook(new ExplicitToolCallHook())
                 .permissionContext(buildPermissionContext())
                 .stateStore(sharedStateStore(app.getId(), tenantId))
                 .disableFilesystemTools()
@@ -343,6 +344,7 @@ public class AgentFactory {
         return builder.build();
     }
 
+    @SuppressWarnings({"deprecation", "removal"})
     private HarnessAgent buildWorkspace(
             String stableAgentId,
             AppEntity app,
@@ -361,6 +363,7 @@ public class AgentFactory {
                 .model(model)
                 .maxIters(maxIters)
                 .toolkit(toolkit)
+                .hook(new ExplicitToolCallHook())
                 .permissionContext(buildPermissionContext())
                 .stateStore(sharedStateStore(app.getId(), tenantId))
                 .workspace(hostWorkspace)

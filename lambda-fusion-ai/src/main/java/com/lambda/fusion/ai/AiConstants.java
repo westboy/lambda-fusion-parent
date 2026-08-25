@@ -3,6 +3,7 @@ package com.lambda.fusion.ai;
 import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.lambda.fusion.core.annotation.DictMapper;
 import com.lambda.fusion.core.dict.DictEnum;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.AllArgsConstructor;
@@ -31,6 +32,70 @@ public interface AiConstants {
     }
 
     /**
+     * 平台当前编排的媒体创作操作。模型类型只描述输出数据类型，不能代替操作语义：同为视频模型，
+     * 文生视频、单图生视频和首尾帧生视频需要调用 AgentScope 的不同官方工具。
+     */
+    @Getter
+    enum MediaGenerationOperation {
+        TEXT_TO_IMAGE(ModelType.IMAGE_GEN, "文生图", MediaToolName.TEXT_TO_IMAGE),
+
+        TEXT_TO_VIDEO(ModelType.VIDEO_GEN, "文生视频", MediaToolName.TEXT_TO_VIDEO),
+
+        IMAGE_TO_VIDEO(ModelType.VIDEO_GEN, "图生视频", MediaToolName.IMAGE_TO_VIDEO),
+
+        FIRST_LAST_FRAME_TO_VIDEO(ModelType.VIDEO_GEN, "首尾帧生视频", MediaToolName.FIRST_LAST_FRAME_TO_VIDEO),
+
+        TEXT_TO_SPEECH(ModelType.AUDIO_GEN, "文字转语音", MediaToolName.TEXT_TO_SPEECH);
+
+        /** 数据库存储枚举名称；显式声明后不受全局 {@code EnumOrdinalTypeHandler} 影响。 */
+        @EnumValue
+        private final String code;
+
+        private final ModelType modelType;
+
+        private final String label;
+
+        private final String toolName;
+
+        MediaGenerationOperation(ModelType modelType, String label, String toolName) {
+            this.code = name();
+            this.modelType = modelType;
+            this.label = label;
+            this.toolName = toolName;
+        }
+
+        public String getKind() {
+            return switch (modelType) {
+                case IMAGE_GEN -> "image";
+                case VIDEO_GEN -> "video";
+                case AUDIO_GEN -> "audio";
+                default -> throw new IllegalStateException("媒体创作操作不能使用非媒体模型类型: " + modelType);
+            };
+        }
+
+        public static MediaGenerationOperation of(String code) {
+            if (code == null) {
+                return null;
+            }
+            for (MediaGenerationOperation operation : values()) {
+                if (operation.name().equalsIgnoreCase(code.trim())) {
+                    return operation;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** {@link io.agentscope.core.tool.Tool} 注解需要编译期常量，工具名统一放在此处。 */
+    interface MediaToolName {
+        String TEXT_TO_IMAGE = "text_to_image";
+        String TEXT_TO_VIDEO = "text_to_video";
+        String IMAGE_TO_VIDEO = "image_to_video";
+        String FIRST_LAST_FRAME_TO_VIDEO = "first_last_frame_to_video";
+        String TEXT_TO_SPEECH = "text_to_audio";
+    }
+
+    /**
      * AgentScope 提供方。{@code supportedModelTypes} 表示厂商可配置的模型类型，供模型管理使用；
      * {@code runtimeModelTypes} 表示当前 AgentScope 运行时已经接通的模型类型，供应用绑定与工具装配使用。
      * 两者语义不同，不得用当前运行时实现范围裁剪厂商模型目录。
@@ -42,68 +107,105 @@ public interface AiConstants {
         DASHSCOPE(
                 "dashscope",
                 "通义千问 DashScope",
-                Set.of(
-                        ModelType.CHAT,
-                        ModelType.EMBEDDING,
-                        ModelType.IMAGE_GEN,
-                        ModelType.VIDEO_GEN,
-                        ModelType.AUDIO_GEN),
-                Set.of(
-                        ModelType.CHAT,
-                        ModelType.EMBEDDING,
-                        ModelType.IMAGE_GEN,
-                        ModelType.VIDEO_GEN,
-                        ModelType.AUDIO_GEN)),
+                Set.of(ModelType.CHAT, ModelType.EMBEDDING),
+                Set.of(ModelType.CHAT, ModelType.EMBEDDING),
+                Set.of(MediaGenerationOperation.values()),
+                Set.of(MediaGenerationOperation.values())),
 
         OPENAI(
                 "openai",
                 "OpenAI",
-                Set.of(ModelType.CHAT, ModelType.EMBEDDING, ModelType.IMAGE_GEN),
-                Set.of(ModelType.CHAT, ModelType.EMBEDDING, ModelType.IMAGE_GEN)),
+                Set.of(ModelType.CHAT, ModelType.EMBEDDING),
+                Set.of(ModelType.CHAT, ModelType.EMBEDDING),
+                Set.of(MediaGenerationOperation.TEXT_TO_IMAGE),
+                Set.of(MediaGenerationOperation.TEXT_TO_IMAGE)),
 
         OLLAMA(
                 "ollama",
                 "Ollama 本地部署",
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
-                Set.of(ModelType.CHAT, ModelType.EMBEDDING)),
+                Set.of(ModelType.CHAT, ModelType.EMBEDDING),
+                Set.of(),
+                Set.of()),
 
-        ANTHROPIC("anthropic", "Anthropic", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT)),
+        ANTHROPIC("anthropic", "Anthropic", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
 
-        GEMINI("gemini", "Google Gemini", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT)),
+        GEMINI("gemini", "Google Gemini", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
 
-        DEEPSEEK("deepseek", "DeepSeek", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT)),
+        DEEPSEEK("deepseek", "DeepSeek", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
 
-        GLM("glm", "智谱 GLM", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT)),
+        GLM("glm", "智谱 GLM", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
 
-        KIMI("kimi", "月之暗面 Kimi", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT)),
+        KIMI("kimi", "月之暗面 Kimi", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
 
         MINIMAX(
                 "minimax",
                 "MiniMax",
-                Set.of(ModelType.CHAT, ModelType.IMAGE_GEN, ModelType.VIDEO_GEN, ModelType.AUDIO_GEN),
-                Set.of(ModelType.CHAT));
+                Set.of(ModelType.CHAT),
+                Set.of(ModelType.CHAT),
+                Set.of(
+                        MediaGenerationOperation.TEXT_TO_IMAGE,
+                        MediaGenerationOperation.TEXT_TO_VIDEO,
+                        MediaGenerationOperation.IMAGE_TO_VIDEO,
+                        MediaGenerationOperation.TEXT_TO_SPEECH),
+                Set.of());
 
         private final String code;
 
         private final String label;
 
-        private final Set<ModelType> supportedModelTypes;
+        private final Set<ModelType> supportedCoreModelTypes;
 
-        private final Set<ModelType> runtimeModelTypes;
+        private final Set<ModelType> runtimeCoreModelTypes;
 
-        ProviderType(String code, String label, Set<ModelType> supportedModelTypes, Set<ModelType> runtimeModelTypes) {
+        private final Set<MediaGenerationOperation> supportedMediaOperations;
+
+        private final Set<MediaGenerationOperation> runtimeMediaOperations;
+
+        ProviderType(
+                String code,
+                String label,
+                Set<ModelType> supportedCoreModelTypes,
+                Set<ModelType> runtimeCoreModelTypes,
+                Set<MediaGenerationOperation> supportedMediaOperations,
+                Set<MediaGenerationOperation> runtimeMediaOperations) {
             this.code = code;
             this.label = label;
-            this.supportedModelTypes = supportedModelTypes;
-            this.runtimeModelTypes = runtimeModelTypes;
+            this.supportedCoreModelTypes = supportedCoreModelTypes;
+            this.runtimeCoreModelTypes = runtimeCoreModelTypes;
+            this.supportedMediaOperations = supportedMediaOperations;
+            this.runtimeMediaOperations = runtimeMediaOperations;
         }
 
         public boolean supports(ModelType modelType) {
-            return modelType != null && supportedModelTypes.contains(modelType);
+            return modelType != null && getSupportedModelTypes().contains(modelType);
         }
 
         public boolean supportsRuntime(ModelType modelType) {
-            return modelType != null && runtimeModelTypes.contains(modelType);
+            return modelType != null && getRuntimeModelTypes().contains(modelType);
+        }
+
+        public boolean supports(MediaGenerationOperation operation) {
+            return operation != null && supportedMediaOperations.contains(operation);
+        }
+
+        public boolean supportsRuntime(MediaGenerationOperation operation) {
+            return operation != null && runtimeMediaOperations.contains(operation);
+        }
+
+        public Set<ModelType> getRuntimeModelTypes() {
+            return modelTypes(runtimeCoreModelTypes, runtimeMediaOperations);
+        }
+
+        public Set<ModelType> getSupportedModelTypes() {
+            return modelTypes(supportedCoreModelTypes, supportedMediaOperations);
+        }
+
+        private static Set<ModelType> modelTypes(
+                Set<ModelType> coreTypes, Set<MediaGenerationOperation> mediaOperations) {
+            HashSet<ModelType> types = new HashSet<>(coreTypes);
+            mediaOperations.stream().map(MediaGenerationOperation::getModelType).forEach(types::add);
+            return Set.copyOf(types);
         }
 
         public static ProviderType of(String code) {

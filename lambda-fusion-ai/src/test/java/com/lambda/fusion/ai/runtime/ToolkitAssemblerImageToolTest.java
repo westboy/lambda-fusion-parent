@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
+import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
@@ -24,7 +26,7 @@ import org.springframework.context.ApplicationContext;
 
 /**
  * 媒体生成工具装配条件测试：图片支持 DashScope 与 AgentScope 已实现的 OpenAI DALL-E 协议，视频按
- * AgentScope 2.0.1 的官方能力仅支持 DashScope；provider 开关关闭、模型类型不符、未绑定均跳过且不阻断工具集构建。
+ * AgentScope 2.0.1 的官方能力仅支持 DashScope；提供方或模型停用、模型类型不符、未绑定均跳过且不阻断工具集构建。
  *
  * @author Jin
  */
@@ -46,6 +48,7 @@ class ToolkitAssemblerImageToolTest {
                 mock(McpServerService.class),
                 new MediaGenerationBindingResolver(llmModelService, llmProviderService),
                 keyEncryptionService,
+                mock(ToolResultMediaMaterializer.class),
                 new AiProperties());
     }
 
@@ -59,7 +62,7 @@ class ToolkitAssemblerImageToolTest {
     }
 
     @Test
-    void shouldSkipImageToolWhenProviderMediaGenSwitchOff() {
+    void shouldSkipImageToolWhenProviderDisabled() {
         stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "dashscope", null, "wanx-v1");
 
         assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
@@ -88,10 +91,17 @@ class ToolkitAssemblerImageToolTest {
     }
 
     @Test
-    void shouldSkipGptImageUntilTheOfficialAgentScopeToolSupportsItsResponseProtocol() {
+    void shouldSkipOpenAiImageModelOutsideOfficialDallEProtocol() {
         stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "gpt-image-1");
 
         assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldRegisterOfficialOpenAiDallEImageModel() {
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "dall-e-3");
+
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).contains(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
@@ -129,11 +139,12 @@ class ToolkitAssemblerImageToolTest {
             ModelType modelType,
             Boolean modelEnabled,
             String providerType,
-            Boolean mediaGen,
+            Boolean providerEnabled,
             String modelName) {
         LlmModelEntity model = new LlmModelEntity();
         model.setId(modelId);
         model.setModelType(modelType);
+        model.setMediaOperation(operation(modelType));
         model.setEnabled(modelEnabled);
         model.setModelName(modelName);
         model.setProviderId("p-1");
@@ -142,11 +153,19 @@ class ToolkitAssemblerImageToolTest {
         LlmProviderEntity provider = new LlmProviderEntity();
         provider.setId("p-1");
         provider.setProviderType(providerType);
-        provider.setEnabled(Boolean.TRUE);
-        provider.setEnableMediaGen(mediaGen);
+        provider.setEnabled(providerEnabled);
         provider.setApiKeyEncrypted("enc");
         when(llmProviderService.loadById("p-1")).thenReturn(provider);
         when(keyEncryptionService.decrypt("enc")).thenReturn("sk-test");
+    }
+
+    private static MediaGenerationOperation operation(ModelType modelType) {
+        return switch (modelType) {
+            case IMAGE_GEN -> MediaGenerationOperation.TEXT_TO_IMAGE;
+            case VIDEO_GEN -> MediaGenerationOperation.TEXT_TO_VIDEO;
+            case AUDIO_GEN -> MediaGenerationOperation.TEXT_TO_SPEECH;
+            default -> null;
+        };
     }
 
     private static AppEntity app(String imageModelId, String videoModelId) {

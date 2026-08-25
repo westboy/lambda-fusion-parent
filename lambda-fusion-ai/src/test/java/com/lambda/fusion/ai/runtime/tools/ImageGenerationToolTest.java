@@ -38,8 +38,7 @@ class ImageGenerationToolTest {
                 .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        ToolResultBlock result =
-                tool.generateImage("一只猫", "1024x1024", 1, null, null).block(Duration.ofSeconds(5));
+        ToolResultBlock result = tool.generateImage("一只猫", "1024x1024", 1, null).block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
@@ -55,8 +54,7 @@ class ImageGenerationToolTest {
                 .thenReturn(Mono.just(official));
         ImageGenerationTool tool = new ImageGenerationTool(null, client, "dall-e-3");
 
-        ToolResultBlock result =
-                tool.generateImage("一只猫", "1024*1024", 1, null, null).block(Duration.ofSeconds(5));
+        ToolResultBlock result = tool.generateImage("一只猫", "1024*1024", 1, null).block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).anyMatch(ImageBlock.class::isInstance);
@@ -72,8 +70,7 @@ class ImageGenerationToolTest {
                 .thenReturn(Mono.just(officialError));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        ToolResultBlock result =
-                tool.generateImage("一只猫", null, null, null, null).block(Duration.ofSeconds(5));
+        ToolResultBlock result = tool.generateImage("一只猫", null, null, null).block(Duration.ofSeconds(5));
 
         // 官方 ERROR 结果原样透传，保留官方错误文本供模型转告
         assertThat(result).isSameAs(officialError);
@@ -87,8 +84,7 @@ class ImageGenerationToolTest {
                 .thenThrow(new IllegalStateException("调用超时"));
         ImageGenerationTool tool = new ImageGenerationTool(client, null, "wanx2.1-t2i-turbo");
 
-        assertThatThrownBy(
-                        () -> tool.generateImage("一只猫", null, null, null, null).block(Duration.ofSeconds(5)))
+        assertThatThrownBy(() -> tool.generateImage("一只猫", null, null, null).block(Duration.ofSeconds(5)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("调用超时");
     }

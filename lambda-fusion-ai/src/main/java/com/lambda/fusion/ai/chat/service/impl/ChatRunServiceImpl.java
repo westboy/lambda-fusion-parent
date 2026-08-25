@@ -30,9 +30,9 @@ import com.lambda.fusion.ai.chat.service.ChatSessionService;
 import com.lambda.fusion.ai.chat.service.MediaGenerationRequestValidator;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
 import com.lambda.fusion.core.service.AbstractCrudService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.agentscope.core.message.ToolUseBlock;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -95,7 +95,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             return new RunContext(existing, session, false);
         }
         AppEntity app = appService.loadAvailable(session.getAppId());
-        MediaGenerationInvocation mediaGeneration =
+        ToolUseBlock mediaToolCall =
                 mediaGenerationRequestValidator.validate(app, message.getContent(), message.getMediaGeneration());
         // 同一会话只允许一个活动运行，避免多个执行上下文竞争状态槽。
         ChatRunEntity active = findActive(sessionId);
@@ -133,7 +133,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .eq(ChatSessionEntity::getId, sessionId)
                         .set(ChatSessionEntity::getLastMessageAt, now)
                         .set(ChatSessionEntity::getUpdatedAt, now));
-        return new RunContext(run, session, true, mediaGeneration);
+        return new RunContext(run, session, true, mediaToolCall);
     }
 
     /** 查询当前用户拥有的会话下唯一活跃 Run。 */
@@ -439,7 +439,14 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         appendHashPart(target, Objects.toString(media.getDuration(), ""));
         appendHashPart(target, StringUtils.defaultString(media.getQuality()));
         appendHashPart(target, StringUtils.defaultString(media.getNegativePrompt()));
+        appendHashPart(target, StringUtils.defaultString(media.getSourceImageUrl()));
+        appendHashPart(target, StringUtils.defaultString(media.getFirstFrameUrl()));
+        appendHashPart(target, StringUtils.defaultString(media.getLastFrameUrl()));
+        appendHashPart(target, StringUtils.defaultString(media.getAudioUrl()));
+        appendHashPart(target, StringUtils.defaultString(media.getResolution()));
+        appendHashPart(target, StringUtils.defaultString(media.getTemplate()));
         appendHashPart(target, StringUtils.defaultString(media.getShotType()));
+        appendHashPart(target, Objects.toString(media.getAudio(), ""));
         appendHashPart(target, Objects.toString(media.getPromptExtend(), ""));
         appendHashPart(target, Objects.toString(media.getWatermark(), ""));
         appendHashPart(target, Objects.toString(media.getSeed(), ""));

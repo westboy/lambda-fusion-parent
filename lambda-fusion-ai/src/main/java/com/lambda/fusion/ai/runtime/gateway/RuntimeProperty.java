@@ -7,6 +7,7 @@ public final class RuntimeProperty {
 
     public static final String MSG_CONTEXT_KEY = "msgContext";
     public static final String KEY_AGENT_ID = "agentId";
+    public static final String KEY_RUN_ID = "runId";
     public static final String KEY_TENANT_ID = "tenantId";
     public static final String KEY_APP_ID = "appId";
     public static final String KEY_LF_SESSION_ID = "_sessionId";
@@ -22,6 +23,10 @@ public final class RuntimeProperty {
 
     public static String tenantId(RuntimeContext ctx) {
         return extra(ctx, KEY_TENANT_ID);
+    }
+
+    public static String runId(RuntimeContext ctx) {
+        return extra(ctx, KEY_RUN_ID);
     }
 
     public static String appId(RuntimeContext ctx) {

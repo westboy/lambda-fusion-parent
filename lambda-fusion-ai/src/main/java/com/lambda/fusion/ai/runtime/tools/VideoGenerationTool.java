@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.runtime.tools;
 
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
+import com.lambda.fusion.ai.AiConstants.MediaToolName;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -17,7 +17,13 @@ import reactor.core.publisher.Mono;
 public final class VideoGenerationTool {
 
     /** 工具名。 */
-    public static final String TOOL_NAME = "text_to_video";
+    public static final String TOOL_NAME = MediaToolName.TEXT_TO_VIDEO;
+
+    /** 单图生视频工具名。 */
+    public static final String IMAGE_TO_VIDEO_TOOL_NAME = MediaToolName.IMAGE_TO_VIDEO;
+
+    /** 首尾帧生视频工具名。 */
+    public static final String FIRST_LAST_FRAME_TO_VIDEO_TOOL_NAME = MediaToolName.FIRST_LAST_FRAME_TO_VIDEO;
 
     private final DashScopeMultiModalTool dashscopeTool;
     private final String modelName;
@@ -55,20 +61,7 @@ public final class VideoGenerationTool {
                     Boolean promptExtend,
             @ToolParam(name = "watermark", description = "Whether to include a watermark", required = false)
                     Boolean watermark,
-            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed,
-            MediaGenerationInvocation invocation) {
-        if (invocation != null) {
-            invocation.claimExecution(TOOL_NAME);
-            prompt = invocation.getPrompt();
-            negativePrompt = invocation.getNegativePrompt();
-            audioUrl = null;
-            size = invocation.getSize();
-            duration = invocation.getDuration();
-            shotType = invocation.getShotType();
-            promptExtend = invocation.getPromptExtend();
-            watermark = invocation.getWatermark();
-            seed = invocation.getSeed();
-        }
+            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed) {
         return dashscopeTool.dashscopeTextToVideo(
                 prompt,
                 modelName,
@@ -77,6 +70,88 @@ public final class VideoGenerationTool {
                 normalizeSize(size),
                 duration,
                 shotType,
+                promptExtend,
+                watermark,
+                seed);
+    }
+
+    /** 调用 AgentScope 官方单图生视频能力，模型名仍由应用绑定锁定。 */
+    @Tool(
+            name = IMAGE_TO_VIDEO_TOOL_NAME,
+            description = "Generate a video from one source image and return an official video block.")
+    public Mono<ToolResultBlock> generateVideoFromImage(
+            @ToolParam(name = "prompt", description = "Optional motion and content prompt", required = false)
+                    String prompt,
+            @ToolParam(name = "image_url", description = "Public URL of the source image") String imageUrl,
+            @ToolParam(name = "audio_url", description = "Optional background audio URL", required = false)
+                    String audioUrl,
+            @ToolParam(name = "negative_prompt", description = "Elements to avoid", required = false)
+                    String negativePrompt,
+            @ToolParam(name = "template", description = "Optional video effect template", required = false)
+                    String template,
+            @ToolParam(name = "resolution", description = "Video resolution, e.g. 720P", required = false)
+                    String resolution,
+            @ToolParam(name = "duration", description = "Video duration in seconds", required = false) Integer duration,
+            @ToolParam(name = "shot_type", description = "single or multi", required = false) String shotType,
+            @ToolParam(name = "audio", description = "Whether the generated video includes audio", required = false)
+                    Boolean audio,
+            @ToolParam(
+                            name = "prompt_extend",
+                            description = "Whether to extend the prompt automatically",
+                            required = false)
+                    Boolean promptExtend,
+            @ToolParam(name = "watermark", description = "Whether to include a watermark", required = false)
+                    Boolean watermark,
+            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed) {
+        return dashscopeTool.dashscopeImageToVideo(
+                prompt,
+                modelName,
+                imageUrl,
+                audioUrl,
+                negativePrompt,
+                template,
+                resolution,
+                duration,
+                shotType,
+                audio,
+                promptExtend,
+                watermark,
+                seed);
+    }
+
+    /** 调用 AgentScope 官方首尾帧生视频能力，模型名仍由应用绑定锁定。 */
+    @Tool(
+            name = FIRST_LAST_FRAME_TO_VIDEO_TOOL_NAME,
+            description = "Generate a video between first and last frame images and return an official video block.")
+    public Mono<ToolResultBlock> generateVideoFromFrames(
+            @ToolParam(name = "prompt", description = "Optional motion and content prompt", required = false)
+                    String prompt,
+            @ToolParam(name = "first_frame_url", description = "Public URL of the first frame image")
+                    String firstFrameUrl,
+            @ToolParam(name = "last_frame_url", description = "Public URL of the last frame image", required = false)
+                    String lastFrameUrl,
+            @ToolParam(name = "negative_prompt", description = "Elements to avoid", required = false)
+                    String negativePrompt,
+            @ToolParam(name = "template", description = "Optional video effect template", required = false)
+                    String template,
+            @ToolParam(name = "resolution", description = "Video resolution, e.g. 720P", required = false)
+                    String resolution,
+            @ToolParam(
+                            name = "prompt_extend",
+                            description = "Whether to extend the prompt automatically",
+                            required = false)
+                    Boolean promptExtend,
+            @ToolParam(name = "watermark", description = "Whether to include a watermark", required = false)
+                    Boolean watermark,
+            @ToolParam(name = "seed", description = "Seed for reproducibility", required = false) Integer seed) {
+        return dashscopeTool.dashscopeFirstAndLastFrameImageToVideo(
+                prompt,
+                modelName,
+                firstFrameUrl,
+                lastFrameUrl,
+                negativePrompt,
+                template,
+                resolution,
                 promptExtend,
                 watermark,
                 seed);

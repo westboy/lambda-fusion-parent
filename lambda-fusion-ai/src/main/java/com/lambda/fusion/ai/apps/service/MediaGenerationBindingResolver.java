@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.apps.service;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
 import com.lambda.fusion.ai.apps.model.MediaGenerationCapability;
@@ -10,6 +11,7 @@ import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
+import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -17,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 解析应用媒体模型绑定的唯一入口。安全视图与运行时工具装配共同消费本解析结果，避免分别解释
- * 模型类型、启用状态、provider 开关和 AgentScope 实现范围。
+ * 模型类型、创作操作、启用状态和 AgentScope 实现范围。
  *
  * @author Jin
  */
@@ -56,14 +58,18 @@ public class MediaGenerationBindingResolver {
         if (!Boolean.TRUE.equals(provider.getEnabled())) {
             throw invalid("媒体生成模型的提供方未启用: " + modelLabel(model));
         }
-        if (!Boolean.TRUE.equals(provider.getEnableMediaGen())) {
-            throw invalid("媒体生成模型的提供方未开启媒体生成: " + modelLabel(model));
-        }
         ProviderType providerType = ProviderType.of(provider.getProviderType());
-        MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
-        if (capability == null) {
+        MediaGenerationOperation operation = model.getMediaOperation();
+        if (operation == null || operation.getModelType() != expectedType) {
+            throw invalid("媒体模型未配置与类型匹配的创作操作: " + modelLabel(model));
+        }
+        if (providerType == null || !providerType.supportsRuntime(operation)) {
             throw invalid("AgentScope 官方工具暂不支持该模型与提供方组合: " + modelLabel(model));
         }
+        if (providerType == ProviderType.OPENAI && !isOpenAiDallE(model.getModelName())) {
+            throw invalid("AgentScope 2.0.1 的 OpenAI 生图工具仅支持 DALL·E 2/3: " + modelLabel(model));
+        }
+        MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
         return new Binding(model, provider, providerType, capability);
     }
 
@@ -78,6 +84,11 @@ public class MediaGenerationBindingResolver {
 
     private static String modelLabel(LlmModelEntity model) {
         return StringUtils.defaultIfBlank(model.getName(), model.getModelName());
+    }
+
+    private static boolean isOpenAiDallE(String modelName) {
+        String normalized = StringUtils.defaultString(modelName).trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("dall-e-2") || normalized.equals("dall-e-3");
     }
 
     private static AiBusinessException invalid(String message) {

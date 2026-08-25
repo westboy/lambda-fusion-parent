@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.chat.service;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.apps.model.MediaGenerationCapability;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -7,16 +8,18 @@ import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.chat.model.MediaGenerationRequest;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
-import com.lambda.fusion.ai.runtime.media.MediaGenerationInvocation;
-import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
-import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
-import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonUtils;
+import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
-/** 将浏览器媒体参数校验并转换为运行时权威调用，不信任客户端工具名或模型信息。 */
+/** 将浏览器创作参数转换为已绑定的 AgentScope 官方工具调用，不信任客户端工具名或模型信息。 */
 @Component
 public class MediaGenerationRequestValidator {
 
@@ -26,145 +29,184 @@ public class MediaGenerationRequestValidator {
         this.bindingResolver = bindingResolver;
     }
 
-    /** 普通消息返回空；媒体请求返回只含服务端批准参数的调用对象。 */
-    public MediaGenerationInvocation validate(AppEntity app, String prompt, MediaGenerationRequest request) {
+    /** 普通消息返回空；创作请求返回只含服务端批准参数的 AgentScope 工具调用。 */
+    public ToolUseBlock validate(AppEntity app, String prompt, MediaGenerationRequest request) {
         if (request == null) {
             return null;
         }
         String kind = StringUtils.lowerCase(StringUtils.trim(request.getKind()), Locale.ROOT);
         ModelType modelType = modelType(kind);
-        var binding = bindingResolver.resolve(app, modelType).orElseThrow(() -> invalid("当前应用未配置可用的" + kind + "生成模型"));
+        var binding = bindingResolver.resolve(app, modelType).orElseThrow(() -> invalid("当前应用未配置可用的" + kind + "创作模型"));
+        MediaGenerationOperation operation = binding.model().getMediaOperation();
         MediaGenerationCapability capability = binding.capability();
-        String size = validateSize(request, capability);
+        validateNumericBounds(request);
+        rejectUnsupportedParameters(request, capability.getParameters());
 
-        MediaGenerationInvocation.MediaGenerationInvocationBuilder builder = MediaGenerationInvocation.builder()
-                .toolName(toolName(modelType))
-                .prompt(StringUtils.trim(prompt))
-                .size(size);
-        switch (modelType) {
-            case IMAGE_GEN -> configureImage(builder, request, capability);
-            case VIDEO_GEN -> configureVideo(builder, request, capability);
-            case AUDIO_GEN -> configureAudio(builder, request, capability);
-            default -> throw invalid("不支持的媒体生成类型: " + kind);
+        Map<String, Object> input = new LinkedHashMap<>();
+        String normalizedPrompt = StringUtils.trim(prompt);
+        switch (operation) {
+            case TEXT_TO_IMAGE -> configureTextToImage(input, normalizedPrompt, request);
+            case TEXT_TO_VIDEO -> configureTextToVideo(input, normalizedPrompt, request);
+            case IMAGE_TO_VIDEO -> configureImageToVideo(input, normalizedPrompt, request);
+            case FIRST_LAST_FRAME_TO_VIDEO -> configureFirstLastFrameToVideo(input, normalizedPrompt, request);
+            case TEXT_TO_SPEECH -> configureTextToSpeech(input, normalizedPrompt, request);
         }
-        return builder.build();
+        return ToolUseBlock.builder()
+                .id(UUID.randomUUID().toString().replace("-", ""))
+                .name(operation.getToolName())
+                .input(input)
+                .content(JsonUtils.getJsonCodec().toJson(input))
+                .build();
     }
 
-    private static void configureImage(
-            MediaGenerationInvocation.MediaGenerationInvocationBuilder builder,
-            MediaGenerationRequest request,
-            MediaGenerationCapability capability) {
-        reject(request.getDuration() != null, "图片生成不接受视频时长");
-        reject(hasAudioParameters(request), "图片生成不接受语音参数");
-        reject(hasVideoParameters(request), "图片生成不接受视频参数");
-        Integer count = request.getCount();
-        if (count != null) {
-            if (count < 1) {
-                throw invalid("生成数量必须大于 0");
-            }
-            if (!capability.getCounts().isEmpty()) {
-                validateAllowedValue(count, capability.getCounts(), "生成数量");
-            }
-        }
-        String quality = StringUtils.lowerCase(StringUtils.trimToNull(request.getQuality()), Locale.ROOT);
-        if (quality != null && !capability.getQualities().contains(quality)) {
-            throw invalid("当前模型不支持图片质量: " + quality);
-        }
-        builder.count(count).quality(quality);
+    private static void configureTextToImage(Map<String, Object> input, String prompt, MediaGenerationRequest request) {
+        input.put("prompt", prompt);
+        putIfNotNull(input, "size", dimensions(request));
+        putIfNotNull(input, "n", request.getCount());
+        putIfNotNull(input, "quality", normalizedLower(request.getQuality()));
     }
 
-    private static void configureVideo(
-            MediaGenerationInvocation.MediaGenerationInvocationBuilder builder,
-            MediaGenerationRequest request,
-            MediaGenerationCapability capability) {
-        reject(request.getCount() != null, "视频生成不接受生成数量");
-        reject(StringUtils.isNotBlank(request.getQuality()), "视频生成不接受图片质量");
-        reject(hasAudioParameters(request), "视频生成不接受语音合成参数");
-        if (request.getDuration() != null) {
-            validateAllowedValue(request.getDuration(), capability.getDurations(), "视频时长");
-        }
-        builder.duration(request.getDuration())
-                .negativePrompt(StringUtils.trimToNull(request.getNegativePrompt()))
-                .shotType(StringUtils.trimToNull(request.getShotType()))
-                .promptExtend(request.getPromptExtend())
-                .watermark(request.getWatermark())
-                .seed(request.getSeed());
+    private static void configureTextToVideo(Map<String, Object> input, String prompt, MediaGenerationRequest request) {
+        input.put("prompt", prompt);
+        putIfNotNull(input, "negative_prompt", normalized(request.getNegativePrompt()));
+        putIfNotNull(input, "audio_url", publicUrl(request.getAudioUrl(), "背景音频地址"));
+        putIfNotNull(input, "size", dimensions(request));
+        putCommonVideoParameters(input, request);
     }
 
-    private static void configureAudio(
-            MediaGenerationInvocation.MediaGenerationInvocationBuilder builder,
-            MediaGenerationRequest request,
-            MediaGenerationCapability capability) {
-        reject(request.getWidth() != null || request.getHeight() != null, "语音生成不接受尺寸参数");
-        reject(request.getCount() != null || request.getDuration() != null, "语音生成不接受数量或时长参数");
-        reject(StringUtils.isNotBlank(request.getQuality()), "语音生成不接受图片质量");
-        reject(hasVideoParameters(request), "语音生成不接受视频参数");
-        String voice = StringUtils.trimToNull(request.getVoice());
-        String language = StringUtils.trimToNull(request.getLanguage());
-        reject(voice != null && capability.getVoices().isEmpty(), "当前语音模型不接受音色参数");
-        reject(language != null && capability.getLanguages().isEmpty(), "当前语音模型不接受语言参数");
-        Integer sampleRate = request.getSampleRate();
-        if (sampleRate != null) {
-            if (capability.getSampleRates().isEmpty()) {
-                throw invalid("当前语音模型不接受采样率参数");
-            }
-            validateAllowedValue(sampleRate, capability.getSampleRates(), "音频采样率");
-        }
-        builder.voice(voice).language(language).sampleRate(sampleRate);
+    private static void configureImageToVideo(
+            Map<String, Object> input, String prompt, MediaGenerationRequest request) {
+        input.put("prompt", prompt);
+        input.put("image_url", requiredPublicUrl(request.getSourceImageUrl(), "源图片地址"));
+        putIfNotNull(input, "audio_url", publicUrl(request.getAudioUrl(), "背景音频地址"));
+        putIfNotNull(input, "negative_prompt", normalized(request.getNegativePrompt()));
+        putIfNotNull(input, "template", normalized(request.getTemplate()));
+        putIfNotNull(input, "resolution", normalized(request.getResolution()));
+        putCommonVideoParameters(input, request);
+        putIfNotNull(input, "audio", request.getAudio());
     }
 
-    private static String validateSize(MediaGenerationRequest request, MediaGenerationCapability capability) {
+    private static void configureFirstLastFrameToVideo(
+            Map<String, Object> input, String prompt, MediaGenerationRequest request) {
+        input.put("prompt", prompt);
+        input.put("first_frame_url", requiredPublicUrl(request.getFirstFrameUrl(), "首帧图片地址"));
+        putIfNotNull(input, "last_frame_url", publicUrl(request.getLastFrameUrl(), "尾帧图片地址"));
+        putIfNotNull(input, "negative_prompt", normalized(request.getNegativePrompt()));
+        putIfNotNull(input, "template", normalized(request.getTemplate()));
+        putIfNotNull(input, "resolution", normalized(request.getResolution()));
+        putIfNotNull(input, "prompt_extend", request.getPromptExtend());
+        putIfNotNull(input, "watermark", request.getWatermark());
+        putIfNotNull(input, "seed", request.getSeed());
+    }
+
+    private static void configureTextToSpeech(
+            Map<String, Object> input, String prompt, MediaGenerationRequest request) {
+        input.put("text", prompt);
+        putIfNotNull(input, "voice", normalized(request.getVoice()));
+        putIfNotNull(input, "language", normalized(request.getLanguage()));
+        putIfNotNull(input, "sample_rate", request.getSampleRate());
+    }
+
+    private static void putCommonVideoParameters(Map<String, Object> input, MediaGenerationRequest request) {
+        putIfNotNull(input, "duration", request.getDuration());
+        putIfNotNull(input, "shot_type", normalized(request.getShotType()));
+        putIfNotNull(input, "prompt_extend", request.getPromptExtend());
+        putIfNotNull(input, "watermark", request.getWatermark());
+        putIfNotNull(input, "seed", request.getSeed());
+    }
+
+    private static void rejectUnsupportedParameters(MediaGenerationRequest request, List<String> supported) {
+        rejectUnsupported(supported, "width", request.getWidth());
+        rejectUnsupported(supported, "height", request.getHeight());
+        rejectUnsupported(supported, "count", request.getCount());
+        rejectUnsupported(supported, "duration", request.getDuration());
+        rejectUnsupported(supported, "quality", normalized(request.getQuality()));
+        rejectUnsupported(supported, "negativePrompt", normalized(request.getNegativePrompt()));
+        rejectUnsupported(supported, "sourceImageUrl", normalized(request.getSourceImageUrl()));
+        rejectUnsupported(supported, "firstFrameUrl", normalized(request.getFirstFrameUrl()));
+        rejectUnsupported(supported, "lastFrameUrl", normalized(request.getLastFrameUrl()));
+        rejectUnsupported(supported, "audioUrl", normalized(request.getAudioUrl()));
+        rejectUnsupported(supported, "resolution", normalized(request.getResolution()));
+        rejectUnsupported(supported, "template", normalized(request.getTemplate()));
+        rejectUnsupported(supported, "shotType", normalized(request.getShotType()));
+        rejectUnsupported(supported, "audio", request.getAudio());
+        rejectUnsupported(supported, "promptExtend", request.getPromptExtend());
+        rejectUnsupported(supported, "watermark", request.getWatermark());
+        rejectUnsupported(supported, "seed", request.getSeed());
+        rejectUnsupported(supported, "voice", normalized(request.getVoice()));
+        rejectUnsupported(supported, "language", normalized(request.getLanguage()));
+        rejectUnsupported(supported, "sampleRate", request.getSampleRate());
+    }
+
+    private static void validateNumericBounds(MediaGenerationRequest request) {
+        Integer width = request.getWidth();
+        Integer height = request.getHeight();
+        if ((width == null) != (height == null)) {
+            throw invalid("媒体宽度和高度必须同时填写");
+        }
+        validateRange(width, 1, 16384, "媒体宽度");
+        validateRange(height, 1, 16384, "媒体高度");
+        validateRange(request.getCount(), 1, 10, "生成数量");
+        validateRange(request.getDuration(), 1, 600, "视频时长");
+        validateRange(request.getSampleRate(), 1, 384000, "采样率");
+    }
+
+    private static void validateRange(Integer value, int minimum, int maximum, String label) {
+        if (value != null && (value < minimum || value > maximum)) {
+            throw invalid(label + "必须在" + minimum + "到" + maximum + "之间");
+        }
+    }
+
+    private static void rejectUnsupported(List<String> supported, String parameter, Object value) {
+        if (value != null && !supported.contains(parameter)) {
+            throw invalid("当前创作操作不接受参数: " + parameter);
+        }
+    }
+
+    private static String dimensions(MediaGenerationRequest request) {
         if (request.getWidth() == null && request.getHeight() == null) {
             return null;
         }
         if (request.getWidth() == null || request.getHeight() == null) {
             throw invalid("媒体宽度和高度必须同时填写");
         }
-        String size = request.getWidth() + "x" + request.getHeight();
-        if (!capability.isCustomSizeAllowed()) {
-            boolean preset = capability.getSizes().stream()
-                    .map(option -> option.getSize())
-                    .filter(StringUtils::isNotBlank)
-                    .map(MediaGenerationRequestValidator::normalizeSize)
-                    .anyMatch(size::equals);
-            if (!preset) {
-                throw invalid("当前模型只支持推荐尺寸");
-            }
-            return size;
-        }
-        Integer min = capability.getMinDimension();
-        Integer max = capability.getMaxDimension();
-        if (request.getWidth() < 1 || request.getHeight() < 1) {
-            throw invalid("自定义宽高必须为正整数");
-        }
-        if ((min != null && (request.getWidth() < min || request.getHeight() < min))
-                || (max != null && (request.getWidth() > max || request.getHeight() > max))) {
-            throw invalid("自定义宽高必须在 " + min + " 到 " + max + " 像素之间");
-        }
-        return size;
+        return request.getWidth() + "x" + request.getHeight();
     }
 
-    private static void validateAllowedValue(int value, List<Integer> allowedValues, String label) {
-        if (allowedValues == null || allowedValues.isEmpty()) {
-            throw invalid("当前模型不接受" + label + "参数");
+    private static String requiredPublicUrl(String value, String label) {
+        String url = publicUrl(value, label);
+        if (url == null) {
+            throw invalid(label + "不能为空");
         }
-        if (!allowedValues.contains(value)) {
-            throw invalid(label + "只支持: " + allowedValues);
-        }
+        return url;
     }
 
-    private static boolean hasAudioParameters(MediaGenerationRequest request) {
-        return StringUtils.isNotBlank(request.getVoice())
-                || StringUtils.isNotBlank(request.getLanguage())
-                || request.getSampleRate() != null;
+    private static String publicUrl(String value, String label) {
+        String normalized = normalized(value);
+        if (normalized == null) {
+            return null;
+        }
+        URI uri;
+        try {
+            uri = URI.create(normalized);
+        } catch (IllegalArgumentException invalidUri) {
+            throw invalid(label + "格式不正确");
+        }
+        String scheme = StringUtils.lowerCase(uri.getScheme(), Locale.ROOT);
+        if (!("http".equals(scheme) || "https".equals(scheme))
+                || StringUtils.isBlank(uri.getHost())
+                || uri.getUserInfo() != null) {
+            throw invalid(label + "必须是无用户信息的 HTTP/HTTPS 公网地址");
+        }
+        return normalized;
     }
 
-    private static boolean hasVideoParameters(MediaGenerationRequest request) {
-        return StringUtils.isNotBlank(request.getNegativePrompt())
-                || StringUtils.isNotBlank(request.getShotType())
-                || request.getPromptExtend() != null
-                || request.getWatermark() != null
-                || request.getSeed() != null;
+    private static String normalized(String value) {
+        return StringUtils.trimToNull(value);
+    }
+
+    private static String normalizedLower(String value) {
+        return StringUtils.lowerCase(normalized(value), Locale.ROOT);
     }
 
     private static ModelType modelType(String kind) {
@@ -172,26 +214,13 @@ public class MediaGenerationRequestValidator {
             case "image" -> ModelType.IMAGE_GEN;
             case "video" -> ModelType.VIDEO_GEN;
             case "audio" -> ModelType.AUDIO_GEN;
-            default -> throw invalid("不支持的媒体生成类型: " + kind);
+            default -> throw invalid("不支持的创作类型: " + kind);
         };
     }
 
-    private static String toolName(ModelType type) {
-        return switch (type) {
-            case IMAGE_GEN -> ImageGenerationTool.TOOL_NAME;
-            case VIDEO_GEN -> VideoGenerationTool.TOOL_NAME;
-            case AUDIO_GEN -> AudioGenerationTool.TOOL_NAME;
-            default -> throw invalid("不是媒体生成模型: " + type);
-        };
-    }
-
-    private static String normalizeSize(String size) {
-        return size.replace('*', 'x');
-    }
-
-    private static void reject(boolean rejected, String message) {
-        if (rejected) {
-            throw invalid(message);
+    private static void putIfNotNull(Map<String, Object> input, String name, Object value) {
+        if (value != null) {
+            input.put(name, value);
         }
     }
 

@@ -43,12 +43,111 @@ class VideoGenerationToolTest {
                 .thenReturn(Mono.just(official));
         VideoGenerationTool tool = new VideoGenerationTool(client, "wan2.6-t2v");
 
-        ToolResultBlock result = tool.generateVideo("海边日落", null, null, "1280x720", 5, "single", true, false, 42, null)
+        ToolResultBlock result = tool.generateVideo("海边日落", null, null, "1280x720", 5, "single", true, false, 42)
                 .block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
         assertThat(result.getOutput()).singleElement().isInstanceOf(VideoBlock.class);
         verify(client).dashscopeTextToVideo("海边日落", "wan2.6-t2v", null, null, "1280*720", 5, "single", true, false, 42);
+    }
+
+    @Test
+    void shouldDelegateImageToVideoToTheMatchingOfficialMethod() {
+        DashScopeMultiModalTool client = Mockito.mock(DashScopeMultiModalTool.class);
+        ToolResultBlock official = ToolResultBlock.text("image-to-video");
+        when(client.dashscopeImageToVideo(
+                        eq("让人物挥手"),
+                        eq("wan2.6-i2v"),
+                        eq("https://media.example.com/source.png"),
+                        eq("https://media.example.com/music.mp3"),
+                        eq("模糊"),
+                        eq("rotation"),
+                        eq("1080P"),
+                        eq(7),
+                        eq("multi"),
+                        eq(Boolean.TRUE),
+                        eq(Boolean.TRUE),
+                        eq(Boolean.FALSE),
+                        eq(17)))
+                .thenReturn(Mono.just(official));
+
+        ToolResultBlock result = new VideoGenerationTool(client, "wan2.6-i2v")
+                .generateVideoFromImage(
+                        "让人物挥手",
+                        "https://media.example.com/source.png",
+                        "https://media.example.com/music.mp3",
+                        "模糊",
+                        "rotation",
+                        "1080P",
+                        7,
+                        "multi",
+                        true,
+                        true,
+                        false,
+                        17)
+                .block(Duration.ofSeconds(5));
+
+        assertThat(result).isSameAs(official);
+        verify(client)
+                .dashscopeImageToVideo(
+                        "让人物挥手",
+                        "wan2.6-i2v",
+                        "https://media.example.com/source.png",
+                        "https://media.example.com/music.mp3",
+                        "模糊",
+                        "rotation",
+                        "1080P",
+                        7,
+                        "multi",
+                        true,
+                        true,
+                        false,
+                        17);
+    }
+
+    @Test
+    void shouldDelegateFirstAndLastFramesToTheMatchingOfficialMethod() {
+        DashScopeMultiModalTool client = Mockito.mock(DashScopeMultiModalTool.class);
+        ToolResultBlock official = ToolResultBlock.text("frame-to-video");
+        when(client.dashscopeFirstAndLastFrameImageToVideo(
+                        eq("镜头平滑过渡"),
+                        eq("wan2.2-kf2v-flash"),
+                        eq("https://media.example.com/first.png"),
+                        eq("https://media.example.com/last.png"),
+                        eq("抖动"),
+                        eq("cinematic"),
+                        eq("720P"),
+                        eq(Boolean.TRUE),
+                        eq(Boolean.FALSE),
+                        eq(23)))
+                .thenReturn(Mono.just(official));
+
+        ToolResultBlock result = new VideoGenerationTool(client, "wan2.2-kf2v-flash")
+                .generateVideoFromFrames(
+                        "镜头平滑过渡",
+                        "https://media.example.com/first.png",
+                        "https://media.example.com/last.png",
+                        "抖动",
+                        "cinematic",
+                        "720P",
+                        true,
+                        false,
+                        23)
+                .block(Duration.ofSeconds(5));
+
+        assertThat(result).isSameAs(official);
+        verify(client)
+                .dashscopeFirstAndLastFrameImageToVideo(
+                        "镜头平滑过渡",
+                        "wan2.2-kf2v-flash",
+                        "https://media.example.com/first.png",
+                        "https://media.example.com/last.png",
+                        "抖动",
+                        "cinematic",
+                        "720P",
+                        true,
+                        false,
+                        23);
     }
 
     @Test
@@ -60,7 +159,7 @@ class VideoGenerationToolTest {
                 .thenReturn(Mono.just(official));
 
         ToolResultBlock result = new VideoGenerationTool(client, "wan2.6-t2v")
-                .generateVideo("测试", null, null, null, null, null, null, null, null, null)
+                .generateVideo("测试", null, null, null, null, null, null, null, null)
                 .block(Duration.ofSeconds(5));
 
         assertThat(result).isSameAs(official);
@@ -75,7 +174,7 @@ class VideoGenerationToolTest {
 
         VideoGenerationTool tool = new VideoGenerationTool(client, "wan2.6-t2v");
 
-        assertThatThrownBy(() -> tool.generateVideo("测试", null, null, null, null, null, null, null, null, null)
+        assertThatThrownBy(() -> tool.generateVideo("测试", null, null, null, null, null, null, null, null)
                         .block(Duration.ofSeconds(5)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("调用超时");

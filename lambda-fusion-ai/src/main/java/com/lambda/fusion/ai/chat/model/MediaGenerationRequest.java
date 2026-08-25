@@ -3,9 +3,9 @@ package com.lambda.fusion.ai.chat.model;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -20,20 +20,20 @@ public class MediaGenerationRequest {
     @Schema(description = "生成类型: image|video|audio")
     private String kind;
 
-    @Min(value = 64, message = "媒体宽度不能小于64")
-    @Max(value = 8192, message = "媒体宽度不能大于8192")
+    @Positive(message = "媒体宽度必须大于0")
+    @Max(value = 16384, message = "媒体宽度不能超过16384像素")
     private Integer width;
 
-    @Min(value = 64, message = "媒体高度不能小于64")
-    @Max(value = 8192, message = "媒体高度不能大于8192")
+    @Positive(message = "媒体高度必须大于0")
+    @Max(value = 16384, message = "媒体高度不能超过16384像素")
     private Integer height;
 
-    @Min(value = 1, message = "生成数量不能小于1")
-    @Max(value = 10, message = "生成数量不能大于10")
+    @Positive(message = "生成数量必须大于0")
+    @Max(value = 10, message = "单次生成数量不能超过10")
     private Integer count;
 
-    @Min(value = 1, message = "视频时长不能小于1秒")
-    @Max(value = 60, message = "视频时长不能大于60秒")
+    @Positive(message = "视频时长必须大于0秒")
+    @Max(value = 600, message = "视频时长不能超过600秒")
     private Integer duration;
 
     @Size(max = 32, message = "图片质量参数过长")
@@ -42,12 +42,32 @@ public class MediaGenerationRequest {
     @Size(max = 4000, message = "反向提示词不能超过4000字符")
     private String negativePrompt;
 
+    @Size(max = 2048, message = "源图片地址不能超过2048字符")
+    private String sourceImageUrl;
+
+    @Size(max = 2048, message = "首帧图片地址不能超过2048字符")
+    private String firstFrameUrl;
+
+    @Size(max = 2048, message = "尾帧图片地址不能超过2048字符")
+    private String lastFrameUrl;
+
+    @Size(max = 2048, message = "音频地址不能超过2048字符")
+    private String audioUrl;
+
+    @Size(max = 32, message = "视频清晰度参数过长")
+    private String resolution;
+
+    @Size(max = 64, message = "视频模板参数过长")
+    private String template;
+
     @Pattern(regexp = "single|multi", message = "镜头类型只能是single或multi")
     private String shotType;
 
     private Boolean promptExtend;
 
     private Boolean watermark;
+
+    private Boolean audio;
 
     @PositiveOrZero(message = "随机种子不能为负数")
     private Integer seed;
@@ -58,8 +78,8 @@ public class MediaGenerationRequest {
     @Size(max = 64, message = "语言名称不能超过64字符")
     private String language;
 
-    @Min(value = 8000, message = "采样率不能小于8000")
-    @Max(value = 48000, message = "采样率不能大于48000")
+    @Positive(message = "采样率必须大于0")
+    @Max(value = 384000, message = "采样率不能超过384000")
     private Integer sampleRate;
 
     @AssertTrue(message = "媒体宽度和高度必须同时填写")

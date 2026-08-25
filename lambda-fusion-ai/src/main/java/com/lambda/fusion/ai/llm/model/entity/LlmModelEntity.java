@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.llm.model.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
@@ -33,6 +34,10 @@ public class LlmModelEntity {
     @TableField("model_type")
     @Schema(description = "模型类型: CHAT|EMBEDDING|IMAGE_GEN|VIDEO_GEN|AUDIO_GEN")
     private ModelType modelType;
+
+    @TableField("media_operation")
+    @Schema(description = "媒体创作操作；非媒体模型为空")
+    private MediaGenerationOperation mediaOperation;
 
     @TableField("default_temperature")
     @Schema(description = "默认温度")

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.llm.mapper.LlmModelMapper;
@@ -75,6 +76,7 @@ class LlmModelServiceImplProviderCapabilityTest {
         dto.setName("MiniMax 视频");
         dto.setModelName("video-01");
         dto.setModelType(ModelType.VIDEO_GEN);
+        dto.setMediaOperation(MediaGenerationOperation.TEXT_TO_VIDEO);
 
         service.create(dto);
 

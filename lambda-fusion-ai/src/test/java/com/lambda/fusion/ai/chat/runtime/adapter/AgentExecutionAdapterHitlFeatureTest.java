@@ -54,7 +54,7 @@ class AgentExecutionAdapterHitlFeatureTest {
         InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
 
         try (HarnessAgent agent = buildAgent(mainModel, memoryModel, stateStore)) {
-            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-feature");
+            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-feature", null);
 
             List<AgentEvent> events =
                     adapter.stream(userMessage(), null).collectList().block(TIMEOUT);
@@ -74,7 +74,8 @@ class AgentExecutionAdapterHitlFeatureTest {
 
         // 模拟应用进程重启：本地 Agent 实例消失，新的实例从同一 StateStore 懒加载 ASKING 状态。
         try (HarnessAgent restarted = buildAgent(new ToolCallingModel(), new RecordingMemoryModel(), stateStore)) {
-            AgentExecutionAdapter restored = new AgentExecutionAdapter(restarted, run(), session(), "tenant-feature");
+            AgentExecutionAdapter restored =
+                    new AgentExecutionAdapter(restarted, run(), session(), "tenant-feature", null);
 
             assertThat(restored.readAskingToolBlocks())
                     .extracting(ToolUseBlock::getId)
