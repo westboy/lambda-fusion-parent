@@ -11,8 +11,10 @@ import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeBaseMapper;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.KnowledgeBasePage;
+import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.UpdateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
+import com.lambda.fusion.ai.rag.runtime.RetrievalProbe;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
 import com.lambda.fusion.ai.rag.service.KnowledgeDocumentService;
@@ -113,6 +115,26 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         documentServiceProvider.getObject().deleteByKbId(id);
         knowledgeBaseMapper.deleteById(id);
         evictAdapter(id);
+    }
+
+    @Override
+    public RetrievalProbe testRetrieval(String id, TestKnowledgeRetrieval command) {
+        KnowledgeBaseEntity kb = requireExists(id);
+        if (!Boolean.TRUE.equals(kb.getEnabled())) {
+            throw new AiBusinessException(AiErrorCode.KB_DISABLED, id);
+        }
+        SimpleKnowledgeAdapter adapter = adapterProvider.getIfAvailable();
+        if (adapter == null) {
+            throw new AiBusinessException(AiErrorCode.KB_RAG_NOT_ENABLED);
+        }
+        try {
+            return adapter.probe(kb, command.getQuery().trim(), command.getLimit(), command.getScoreThreshold());
+        } catch (AiBusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("知识库 {} 检索测试失败", id, e);
+            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
+        }
     }
 
     @Override

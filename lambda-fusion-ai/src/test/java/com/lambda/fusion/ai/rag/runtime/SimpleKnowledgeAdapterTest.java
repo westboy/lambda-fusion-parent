@@ -77,6 +77,17 @@ class SimpleKnowledgeAdapterTest {
     }
 
     @Test
+    void overrideScoreThresholdTakesPrecedenceOverKbLevel() {
+        AiProperties.Rag rag = new AiProperties.Rag();
+        KnowledgeBaseEntity kb = new KnowledgeBaseEntity();
+        kb.setScoreThreshold(new BigDecimal("0.750"));
+
+        assertThat(SimpleKnowledgeAdapter.resolveScoreThreshold(kb, rag, new BigDecimal("0.320")))
+                .isEqualTo(0.32);
+        assertThat(SimpleKnowledgeAdapter.resolveScoreThreshold(kb, rag, null)).isEqualTo(0.75);
+    }
+
+    @Test
     void memoryStoreCreatedWithoutPgvectorConfig() {
         AiProperties.Rag rag = new AiProperties.Rag(); // store.type=MEMORY 默认，pgvector 未配置
 

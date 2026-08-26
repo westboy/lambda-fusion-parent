@@ -18,12 +18,14 @@ import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.rag.store.PgVectorStore;
 import io.agentscope.core.rag.store.VDBStoreBase;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -73,23 +75,44 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 continue;
             }
             try {
-                RetrieveConfig config = RetrieveConfig.builder()
-                        .limit(resolveLimit(kb, rag, limit))
-                        .scoreThreshold(resolveScoreThreshold(kb, rag))
-                        .build();
-                List<Document> docs = knowledge(kb).retrieve(query, config).block();
-                if (docs == null) {
-                    continue;
-                }
-                for (Document doc : docs) {
-                    merged.add(toRetrievedChunk(doc, kbId));
-                }
+                merged.addAll(retrieveOne(kb, query, resolveLimit(kb, rag, limit), resolveScoreThreshold(kb, rag)));
             } catch (Exception e) {
                 // 单个知识库检索失败不影响其他知识库。
                 log.warn("知识库 {} 检索失败，跳过: {}", kbId, e.getMessage());
             }
         }
         return mergeAndTruncate(merged, resolveFinalLimit(rag, limit));
+    }
+
+    /**
+     * 使用生产检索路径执行单知识库诊断。与多知识库检索不同，本方法不吞掉底层异常，
+     * 以便管理端区分“没有命中”与“检索失败”。
+     */
+    public RetrievalProbe probe(KnowledgeBaseEntity kb, String query, Integer limit, BigDecimal scoreThreshold) {
+        AiProperties.Rag rag = aiProperties.getRag();
+        int effectiveLimit = resolveLimit(kb, rag, limit);
+        double effectiveScoreThreshold = resolveScoreThreshold(kb, rag, scoreThreshold);
+        long startedAt = System.nanoTime();
+        List<RetrievedChunk> hits = mergeAndTruncate(
+                new ArrayList<>(retrieveOne(kb, query, effectiveLimit, effectiveScoreThreshold)), effectiveLimit);
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        return new RetrievalProbe(effectiveLimit, effectiveScoreThreshold, durationMs, hits);
+    }
+
+    private List<RetrievedChunk> retrieveOne(KnowledgeBaseEntity kb, String query, int limit, double scoreThreshold) {
+        RetrieveConfig config = RetrieveConfig.builder()
+                .limit(limit)
+                .scoreThreshold(scoreThreshold)
+                .build();
+        List<Document> docs = knowledge(kb).retrieve(query, config).block();
+        if (docs == null || docs.isEmpty()) {
+            return List.of();
+        }
+        List<RetrievedChunk> chunks = new ArrayList<>(docs.size());
+        for (Document doc : docs) {
+            chunks.add(toRetrievedChunk(doc, kb.getId()));
+        }
+        return chunks;
     }
 
     /** 按分数降序排列检索结果，并截断到指定条数。 */
@@ -322,6 +345,15 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
 
     /** 解析检索分数阈值，知识库配置优先于全局配置。 */
     static double resolveScoreThreshold(KnowledgeBaseEntity kb, AiProperties.Rag rag) {
+        return resolveScoreThreshold(kb, rag, null);
+    }
+
+    /** 解析检索分数阈值，调用参数优先于知识库和全局配置。 */
+    static double resolveScoreThreshold(
+            KnowledgeBaseEntity kb, AiProperties.Rag rag, BigDecimal overrideScoreThreshold) {
+        if (overrideScoreThreshold != null) {
+            return overrideScoreThreshold.doubleValue();
+        }
         return kb.getScoreThreshold() != null ? kb.getScoreThreshold().doubleValue() : rag.getDefaultScoreThreshold();
     }
 }

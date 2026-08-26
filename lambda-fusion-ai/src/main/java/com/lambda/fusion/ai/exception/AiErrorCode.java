@@ -96,6 +96,8 @@ public enum AiErrorCode implements ErrorCode {
 
     KB_VECTOR_STORE_NOT_CONFIGURED(30806, "pgvector连接未配置(lambda.fusion.ai.rag.pgvector.jdbc-url)"),
 
+    KB_RETRIEVAL_FAILED(30807, "知识库检索失败，请检查嵌入模型与向量库配置"),
+
     DOCUMENT_NOT_FOUND(30811, "知识库文档不存在"),
 
     DOCUMENT_TYPE_NOT_SUPPORTED(30812, "不支持的文档类型"),

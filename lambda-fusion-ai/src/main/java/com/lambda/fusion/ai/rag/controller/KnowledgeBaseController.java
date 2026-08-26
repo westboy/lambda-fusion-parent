@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.KnowledgeBasePage;
+import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.UpdateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
+import com.lambda.fusion.ai.rag.runtime.RetrievalProbe;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -64,5 +66,13 @@ public class KnowledgeBaseController {
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "知识库ID", required = true) @PathVariable String id) {
         knowledgeBaseService.delete(id);
+    }
+
+    @Operation(summary = "测试知识库检索召回")
+    @PostMapping("/{id}/retrieval-test")
+    public RetrievalProbe testRetrieval(
+            @Parameter(description = "知识库ID", required = true) @PathVariable String id,
+            @RequestBody @Valid TestKnowledgeRetrieval command) {
+        return knowledgeBaseService.testRetrieval(id, command);
     }
 }
