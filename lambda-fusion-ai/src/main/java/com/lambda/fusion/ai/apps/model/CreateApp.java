@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.apps.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,6 +38,7 @@ public class CreateApp {
     private String audioModelId;
 
     @Schema(description = "ReAct 最大迭代数")
+    @Min(value = 1, message = "ReAct 最大迭代数必须大于 0")
     private Integer maxIters;
 
     @Schema(description = "温度")

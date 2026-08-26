@@ -13,11 +13,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
-import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
-import io.agentscope.core.event.ToolCallDeltaEvent;
-import io.agentscope.core.event.ToolCallEndEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -79,8 +75,7 @@ public final class AgentExecutionAdapter {
 
     /** 启动事件流；显式媒体请求直接执行 AgentScope 工具，普通消息仍交给 Agent 自主编排。 */
     public Flux<AgentEvent> stream(Msg message, ToolUseBlock mediaToolCall) {
-        ExplicitToolCall explicitCall =
-                mediaToolCall == null ? null : new ExplicitToolCall(message, mediaToolCall, agent.getName()).marked();
+        ExplicitToolCall explicitCall = mediaToolCall == null ? null : new ExplicitToolCall(mediaToolCall);
         RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
                 .userId(userId)
                 .sessionId(sessionId)
@@ -94,7 +89,7 @@ public final class AgentExecutionAdapter {
         RuntimeContext context = contextBuilder.build();
         Flux<AgentEvent> source = explicitCall == null
                 ? agent.streamEvents(message, context)
-                : streamExplicitMediaTool(explicitCall, context);
+                : streamExplicitMediaTool(message, explicitCall, context);
         if (subagentGateway != null) {
             source = source.doOnNext(this::recordSubagentExposure);
         }
@@ -105,11 +100,11 @@ public final class AgentExecutionAdapter {
      * 执行页面明确选择的媒体工具。工具查找、参数 Schema 校验、预置参数合并、调用追踪和异常结果转换
      * 全部委托 AgentScope {@link io.agentscope.core.tool.Toolkit}；这里只编排官方事件并维护同一会话记忆。
      */
-    private Flux<AgentEvent> streamExplicitMediaTool(ExplicitToolCall explicitCall, RuntimeContext context) {
+    private Flux<AgentEvent> streamExplicitMediaTool(
+            Msg message, ExplicitToolCall explicitCall, RuntimeContext context) {
         ToolUseBlock toolCall = explicitCall.toolCall();
-        Flux<AgentEvent> source = agent.streamEvents(List.of(), context);
+        Flux<AgentEvent> source = agent.streamEvents(message, context);
         return Flux.defer(() -> {
-            AtomicBoolean callAnnounced = new AtomicBoolean();
             AtomicBoolean toolFailed = new AtomicBoolean();
             return source.concatMap(
                             event -> {
@@ -121,20 +116,9 @@ public final class AgentExecutionAdapter {
                                 if (event instanceof AgentEndEvent && event.getSource() == null && toolFailed.get()) {
                                     return Flux.error(new IllegalStateException("媒体工具执行失败: " + toolCall.getName()));
                                 }
-                                if (event instanceof AgentStartEvent start
-                                        && event.getSource() == null
-                                        && callAnnounced.compareAndSet(false, true)) {
-                                    return Flux.just(
-                                            event,
-                                            new ToolCallStartEvent(
-                                                    start.getReplyId(), toolCall.getId(), toolCall.getName()),
-                                            new ToolCallDeltaEvent(
-                                                    start.getReplyId(),
-                                                    toolCall.getId(),
-                                                    toolCall.getName(),
-                                                    toolCall.getContent()),
-                                            new ToolCallEndEvent(
-                                                    start.getReplyId(), toolCall.getId(), toolCall.getName()));
+                                if (event.getType() == AgentEventType.MODEL_CALL_START
+                                        || event.getType() == AgentEventType.MODEL_CALL_END) {
+                                    return Flux.empty();
                                 }
                                 return Flux.just(event);
                             },

@@ -12,13 +12,16 @@ import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCall;
 import com.lambda.fusion.ai.runtime.media.ExplicitToolCallHook;
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCallMiddleware;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.message.GenerateReason;
@@ -33,8 +36,14 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
@@ -43,6 +52,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -125,7 +135,7 @@ class AgentExecutionAdapterTest {
     @Test
     void shouldExecuteExplicitMediaRequestThroughAgentScopeToolkitWithoutCallingChatModel() {
         NeverCalledModel model = new NeverCalledModel();
-        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        JsonFileAgentStateStore stateStore = new JsonFileAgentStateStore(workspace.resolve("state"));
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ExplicitMediaTool());
         ToolUseBlock toolCall = ToolUseBlock.builder()
@@ -135,29 +145,7 @@ class AgentExecutionAdapterTest {
                 .content("{\"prompt\":\"一只猫\"}")
                 .build();
 
-        try (HarnessAgent agent = HarnessAgent.builder()
-                .agentId("explicit-media-agent")
-                .name("demo-agent")
-                .sysPrompt("You are a test assistant.")
-                .model(model)
-                .toolkit(toolkit)
-                .hook(new ExplicitToolCallHook())
-                .workspace(workspace)
-                .stateStore(stateStore)
-                .disableFilesystemTools()
-                .disableShellTool()
-                .disableWorkspaceContext()
-                .disableAtPathExpansion()
-                .disableCompaction()
-                .disableToolResultEviction()
-                .disableDynamicSkills()
-                .disableDefaultWorkspaceSkills()
-                .disableSubagents()
-                .disableDynamicSubagents()
-                .disableToolsConfig()
-                .disableMemoryTools()
-                .disableMemoryHooks()
-                .build()) {
+        try (HarnessAgent agent = buildExplicitMediaAgent(model, toolkit, stateStore, null)) {
             AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
             List<AgentEvent> events =
@@ -176,7 +164,16 @@ class AgentExecutionAdapterTest {
                             AgentEventType.AGENT_RESULT,
                             AgentEventType.AGENT_END);
             assertThat(model.invocations()).isZero();
-            AgentState state = agent.getDelegate().getAgentState("user-1", "session-1");
+            AgentResultEvent resultEvent = events.stream()
+                    .filter(AgentResultEvent.class::isInstance)
+                    .map(AgentResultEvent.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(resultEvent.getResult().getRole()).isEqualTo(MsgRole.TOOL);
+            assertThat(resultEvent.getResult().getGenerateReason()).isEqualTo(GenerateReason.ACTING_STOP_REQUESTED);
+            AgentState state = stateStore
+                    .get("user-1", "session-1", "agent_state", AgentState.class)
+                    .orElseThrow();
             assertThat(state.getContext())
                     .extracting(Msg::getRole)
                     .containsExactly(MsgRole.USER, MsgRole.ASSISTANT, MsgRole.TOOL);
@@ -194,6 +191,105 @@ class AgentExecutionAdapterTest {
                     .singleElement()
                     .isInstanceOfSatisfying(
                             TextBlock.class, text -> assertThat(text.getText()).isEqualTo("generated:一只猫"));
+        }
+    }
+
+    @Test
+    void shouldResumeExplicitMediaRequestAfterPermissionConfirmationWithoutCallingChatModel() {
+        NeverCalledModel model = new NeverCalledModel();
+        JsonFileAgentStateStore stateStore = new JsonFileAgentStateStore(workspace.resolve("confirm-state"));
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ExplicitMediaTool());
+        String toolName = "test_text_to_image";
+        PermissionContextState permissionContext = PermissionContextState.builder()
+                .mode(PermissionMode.BYPASS)
+                .addAskRule(toolName, new PermissionRule(toolName, null, PermissionBehavior.ASK, "test"))
+                .build();
+        ToolUseBlock toolCall = ToolUseBlock.builder()
+                .id("media-confirm-1")
+                .name(toolName)
+                .input(Map.of("prompt", "一只猫"))
+                .content("{\"prompt\":\"一只猫\"}")
+                .build();
+
+        try (HarnessAgent agent = buildExplicitMediaAgent(model, toolkit, stateStore, permissionContext)) {
+            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
+
+            List<AgentEvent> askingEvents =
+                    adapter.stream(userMessage(), toolCall).collectList().block();
+
+            assertThat(askingEvents)
+                    .extracting(AgentEvent::getType)
+                    .contains(AgentEventType.REQUIRE_USER_CONFIRM, AgentEventType.AGENT_END);
+            ToolUseBlock asking = adapter.readAskingToolBlocks().getFirst();
+            assertThat(asking.getState()).isEqualTo(ToolCallState.ASKING);
+            assertThat(ExplicitToolCall.isExplicit(asking)).isTrue();
+
+            Msg confirmation = Msg.builderForRole(MsgRole.USER)
+                    .textContent("[confirm]")
+                    .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, List.of(new ConfirmResult(true, asking))))
+                    .build();
+            List<AgentEvent> resumedEvents =
+                    adapter.stream(confirmation, null).collectList().block();
+
+            assertThat(model.invocations()).isZero();
+            AgentResultEvent resultEvent = resumedEvents.stream()
+                    .filter(AgentResultEvent.class::isInstance)
+                    .map(AgentResultEvent.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(resultEvent.getResult().getRole()).isEqualTo(MsgRole.TOOL);
+            assertThat(resultEvent.getResult().getGenerateReason()).isEqualTo(GenerateReason.ACTING_STOP_REQUESTED);
+            AgentState persisted = stateStore
+                    .get("user-1", "session-1", "agent_state", AgentState.class)
+                    .orElseThrow();
+            assertThat(persisted.getContext())
+                    .extracting(Msg::getRole)
+                    .containsExactly(MsgRole.USER, MsgRole.ASSISTANT, MsgRole.TOOL);
+        }
+    }
+
+    @Test
+    void shouldStopExplicitMediaRequestWhenPermissionIsDeniedWithoutCallingChatModel() {
+        NeverCalledModel model = new NeverCalledModel();
+        InMemoryAgentStateStore stateStore = new InMemoryAgentStateStore();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ExplicitMediaTool());
+        String toolName = "test_text_to_image";
+        PermissionContextState permissionContext = PermissionContextState.builder()
+                .mode(PermissionMode.BYPASS)
+                .addAskRule(toolName, new PermissionRule(toolName, null, PermissionBehavior.ASK, "test"))
+                .build();
+        ToolUseBlock toolCall = ToolUseBlock.builder()
+                .id("media-denied-1")
+                .name(toolName)
+                .input(Map.of("prompt", "一只猫"))
+                .build();
+
+        try (HarnessAgent agent = buildExplicitMediaAgent(model, toolkit, stateStore, permissionContext)) {
+            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
+            adapter.stream(userMessage(), toolCall).blockLast();
+            ToolUseBlock asking = adapter.readAskingToolBlocks().getFirst();
+            Msg rejection = Msg.builderForRole(MsgRole.USER)
+                    .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, List.of(new ConfirmResult(false, asking))))
+                    .build();
+
+            List<AgentEvent> events =
+                    adapter.stream(rejection, null).collectList().block();
+
+            assertThat(model.invocations()).isZero();
+            AgentResultEvent resultEvent = events.stream()
+                    .filter(AgentResultEvent.class::isInstance)
+                    .map(AgentResultEvent.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(resultEvent.getResult().getGenerateReason()).isEqualTo(GenerateReason.ALL_TOOLS_DENIED);
+            AgentState state = agent.getDelegate().getAgentState("user-1", "session-1");
+            ToolResultBlock denied = state.getContext().stream()
+                    .flatMap(message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(denied.getState()).isEqualTo(ToolResultState.DENIED);
         }
     }
 
@@ -401,6 +497,38 @@ class AgentExecutionAdapterTest {
                 .name("demo_tool")
                 .state(ToolCallState.ASKING)
                 .build();
+    }
+
+    @SuppressWarnings({"deprecation", "removal"})
+    private HarnessAgent buildExplicitMediaAgent(
+            Model model, Toolkit toolkit, AgentStateStore stateStore, PermissionContextState permissionContext) {
+        HarnessAgent.Builder builder = HarnessAgent.builder()
+                .agentId("explicit-media-agent")
+                .name("demo-agent")
+                .sysPrompt("You are a test assistant.")
+                .model(model)
+                .toolkit(toolkit)
+                .middleware(new ExplicitToolCallMiddleware())
+                .hook(new ExplicitToolCallHook())
+                .workspace(workspace)
+                .stateStore(stateStore)
+                .disableFilesystemTools()
+                .disableShellTool()
+                .disableWorkspaceContext()
+                .disableAtPathExpansion()
+                .disableCompaction()
+                .disableToolResultEviction()
+                .disableDynamicSkills()
+                .disableDefaultWorkspaceSkills()
+                .disableSubagents()
+                .disableDynamicSubagents()
+                .disableToolsConfig()
+                .disableMemoryTools()
+                .disableMemoryHooks();
+        if (permissionContext != null) {
+            builder.permissionContext(permissionContext);
+        }
+        return builder.build();
     }
 
     static final class ExplicitMediaTool {

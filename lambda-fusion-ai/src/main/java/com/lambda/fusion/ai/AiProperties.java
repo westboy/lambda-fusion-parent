@@ -26,6 +26,7 @@ import org.springframework.validation.annotation.Validated;
 public class AiProperties {
 
     /** Agent 运行参数。 */
+    @Valid
     private Runtime runtime = new Runtime();
 
     /** LLM API Key 加密参数。 */
@@ -227,6 +228,7 @@ public class AiProperties {
     public static class Runtime {
 
         /** 应用未设置 maxIters 时，ReAct Agent 使用的最大迭代次数。 */
+        @Min(1)
         private int defaultMaxIters = 10;
     }
 

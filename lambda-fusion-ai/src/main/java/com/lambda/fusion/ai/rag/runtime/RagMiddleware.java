@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.rag.runtime;
 
+import com.lambda.fusion.ai.runtime.media.ExplicitToolCall;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -36,6 +37,10 @@ public class RagMiddleware implements HarnessRuntimeMiddleware {
     @Override
     public Flux<AgentEvent> onAgent(
             Agent agent, RuntimeContext context, AgentInput input, Function<AgentInput, Flux<AgentEvent>> next) {
+        // 显式工具调用的参数已由服务端构造，检索结果不会进入工具参数，跳过无效的 RAG 请求。
+        if (context != null && context.get(ExplicitToolCall.class) != null) {
+            return next.apply(input);
+        }
         String query = lastUserQuery(input.msgs());
         if (StringUtils.isBlank(query) || kbIds.isEmpty()) {
             return next.apply(input);

@@ -1,40 +1,25 @@
 package com.lambda.fusion.ai.runtime.media;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.RuntimeContextAware;
-import io.agentscope.core.state.AgentState;
 import reactor.core.publisher.Mono;
 
 /**
- * 将页面明确选择的工具调用接入 AgentScope 调用生命周期。
+ * AgentScope 2.0.1 的终止工具兼容边界。
  *
- * <p>{@link #setRuntimeContext(RuntimeContext)} 由 AgentScope 在会话串行门放行并完成权威状态加载后调用，
- * 因此这里不需要额外锁或平台自建会话队列。工具执行完成后使用官方 {@link PostActingEvent#stopAgent()}
- * 终止 ReAct 循环，避免再发起一次无意义的模型调用。
+ * <p>2.0.1 的 {@code onActing} 中间件若直接请求停止，会跳过成功工具结果的 PostActing
+ * 归一化与记忆写入；官方修复尚未发布。因此这里只在 AgentScope 已进入 PostActing 后识别平台标记并请求停止，
+ * 不读取运行上下文、不修改 AgentState，也不承担工具执行职责。上游修复发布后可整体删除本 Hook。
  *
  * @author Jin
+ * @see <a href="https://github.com/agentscope-ai/agentscope-java/issues/2362">AgentScope issue
+ *     #2362</a>
+ * @see <a href="https://github.com/agentscope-ai/agentscope-java/pull/2380">AgentScope PR
+ *     #2380</a>
  */
 @SuppressWarnings({"deprecation", "removal"})
-public final class ExplicitToolCallHook implements Hook, RuntimeContextAware {
-
-    @Override
-    public void setRuntimeContext(RuntimeContext context) {
-        if (context == null) {
-            return;
-        }
-        ExplicitToolCall invocation = context.get(ExplicitToolCall.class);
-        if (invocation == null) {
-            return;
-        }
-        AgentState state = context.getAgentState();
-        if (state == null) {
-            throw new IllegalStateException("AgentScope call-scoped state is unavailable");
-        }
-        state.contextMutable().addAll(invocation.historyInput());
-    }
+public final class ExplicitToolCallHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
