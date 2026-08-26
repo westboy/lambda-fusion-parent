@@ -40,7 +40,7 @@ public class TenantUtils {
     public static <T> T withTenant(String tenantId, Callable<T> task) {
         String previous = TenantContextHolder.getCurrentTenantId();
         try {
-            if (StringUtils.isBlank(tenantId)) {
+            if (StringUtils.isBlank(tenantId) || "default".equals(tenantId)) {
                 TenantContextHolder.getInstance().close();
             } else {
                 TenantContextHolder.getInstance().setTenantId(tenantId);

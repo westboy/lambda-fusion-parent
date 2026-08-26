@@ -7,6 +7,7 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver.Binding;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
@@ -56,6 +57,7 @@ public class ToolkitAssembler {
     private final KeyEncryptionService keyEncryptionService;
     private final ToolResultMediaMaterializer mediaMaterializer;
     private final AiProperties aiProperties;
+    private final ChatAttachmentContentTool chatAttachmentContentTool;
 
     /**
      * -- GETTER --
@@ -119,6 +121,8 @@ public class ToolkitAssembler {
         for (Object toolBean : localToolBeans) {
             toolkit.registerTool(toolBean);
         }
+        // 对话附件能力由应用 Toolkit 显式装配，不进入定时任务等无会话上下文的全局 @AiTools 列表。
+        toolkit.registerTool(chatAttachmentContentTool);
         registerMediaGenerationTools(toolkit, app);
         registerMcpServers(toolkit, app.getMcpServerIds());
         return toolkit;

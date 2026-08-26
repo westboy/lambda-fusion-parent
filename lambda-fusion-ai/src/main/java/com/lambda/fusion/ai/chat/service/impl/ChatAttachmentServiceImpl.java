@@ -190,6 +190,20 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     }
 
     @Override
+    public ChatAttachmentEntity loadBoundInSession(String attachmentId, String sessionId, String userId) {
+        if (StringUtils.isAnyBlank(attachmentId, sessionId, userId)
+                || chatSessionMapper.selectOwned(sessionId, userId) == null) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
+        }
+        ChatAttachmentEntity entity = chatAttachmentMapper.selectById(attachmentId);
+        if (entity == null || !sessionId.equals(entity.getSessionId()) || entity.getMessageId() == null) {
+            // 不区分不存在、跨会话和尚未发送，避免通过工具探测其他附件状态。
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
+        }
+        return entity;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public List<ChatAttachmentEntity> bindToMessage(
             ChatSessionEntity session, List<String> attachmentIds, Long messageId) {

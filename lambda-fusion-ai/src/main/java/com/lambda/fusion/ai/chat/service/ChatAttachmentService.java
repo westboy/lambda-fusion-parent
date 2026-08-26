@@ -33,6 +33,13 @@ public interface ChatAttachmentService {
     ChatAttachmentEntity loadOwned(String attachmentId);
 
     /**
+     * 查询当前 Agent 运行可读取的已发送附件。会话 ID、用户 ID 必须来自服务端注入的运行上下文，
+     * 不能使用模型参数或客户端补传值；附件不存在、未绑定消息或不属于该用户会话时统一抛出
+     * {@code ATTACHMENT_NOT_FOUND}。
+     */
+    ChatAttachmentEntity loadBoundInSession(String attachmentId, String sessionId, String userId);
+
+    /**
      * 将已上传且未被占用的附件绑定到消息。任一附件不存在、不属于目标会话或已绑定时，
      * 整体抛出 {@code ATTACHMENT_NOT_FOUND}。
      */

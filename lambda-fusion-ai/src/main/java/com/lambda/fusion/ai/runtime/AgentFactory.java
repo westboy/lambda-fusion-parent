@@ -32,10 +32,13 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -55,9 +58,9 @@ import org.springframework.stereotype.Component;
 /**
  * 按 {@code (appId, tenantId)} 构建并缓存智能应用的 {@link HarnessAgent}。
  *
- * <p>CHAT 应用只使用数据库配置，不启用工作区能力；WORKSPACE 应用拥有独立工作区，并根据
- * {@code selfEvolve} 控制文件与记忆的写能力。配置了非 HOST 沙箱后端时优先使用沙箱文件系统，
- * 后端不可用时返回空配置并回退宿主环境。
+ * <p>CHAT 应用只使用数据库配置，不向模型开放工作区能力；附件工具仍复用会话隔离的 AgentScope
+ * 文件系统，配置非 HOST 后端时进入真实沙箱，否则回退受限本地目录。WORKSPACE 应用拥有独立工作区，
+ * 并根据 {@code selfEvolve} 控制文件与记忆的写能力。
  *
  * @author Jin
  */
@@ -327,6 +330,7 @@ public class AgentFactory {
                 .permissionContext(buildPermissionContext())
                 .stateStore(sharedStateStore(app.getId(), tenantId))
                 .disableFilesystemTools()
+                .disableShellTool()
                 .disableWorkspaceContext()
                 .disableAtPathExpansion()
                 .disableCompaction()
@@ -338,10 +342,23 @@ public class AgentFactory {
                 .disableSessionPersistence()
                 .disableMemoryTools()
                 .disableMemoryHooks();
+        configureChatAttachmentFilesystem(builder, app);
         if (!middlewares.isEmpty()) {
             builder.middlewares(middlewares);
         }
         return builder.build();
+    }
+
+    /** CHAT 仅把文件系统作为附件工具的受控暂存区，隔离粒度固定为会话，不暴露 Shell/写文件工具。 */
+    private void configureChatAttachmentFilesystem(HarnessAgent.Builder builder, AppEntity app) {
+        Optional<SandboxFilesystemSpec> sandboxSpec = sandboxSpecResolver.resolve(app, null);
+        if (sandboxSpec.isPresent()) {
+            builder.filesystem(
+                    sandboxSpec.get().isolationScope(IsolationScope.SESSION).workspaceProjectionEnabled(false));
+            return;
+        }
+        builder.filesystem(
+                new LocalFilesystemSpec().mode(LocalFsMode.SANDBOXED).isolationScope(IsolationScope.SESSION));
     }
 
     @SuppressWarnings({"deprecation", "removal"})

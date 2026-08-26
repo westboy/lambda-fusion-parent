@@ -92,6 +92,7 @@ public class AiProperties {
     public static class Chat {
 
         /** 附件参数。 */
+        @Valid
         private Attachment attachment = new Attachment();
 
         /** 后台对话 Run 的执行参数。 */
@@ -158,8 +159,15 @@ public class AiProperties {
             /** 每条消息允许上传的附件数。 */
             private int maxCount = 5;
 
-            /** 文档正文注入提示词时保留的最大字符数。 */
-            private int maxExtractChars = 8000;
+            /** 每条消息允许完整内联的附件正文总字符预算；单个文档放不下时改由工具按需读取。 */
+            @Min(1)
+            @Max(65536)
+            private int maxInlineChars = 8000;
+
+            /** 附件读取工具单次允许返回的正文字符数。 */
+            @Min(256)
+            @Max(16384)
+            private int maxToolReadChars = 4000;
 
             /** 支持上传的图片扩展名，须使用小写。 */
             private List<String> imageTypes = List.of("jpg", "jpeg", "png", "gif", "webp");

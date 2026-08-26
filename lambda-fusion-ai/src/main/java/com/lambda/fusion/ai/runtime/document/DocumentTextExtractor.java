@@ -37,7 +37,7 @@ public final class DocumentTextExtractor {
      */
     public static String extractText(String fileType, Path file) throws IOException {
         // 全文抽取不在 Reader 层切块，避免默认 50 字符 overlap 在重新拼接时造成重复；
-        // 知识库入库由 DocumentChunker 统一解释切割策略，对话附件则按自身字符预算截断。
+        // 知识库入库由 DocumentChunker 统一解释切割策略；对话附件在调用层决定完整内联或交给工具分段读取。
         Reader reader = resolveFullTextReader(fileType);
         ReaderInput input = buildReaderInput(fileType, file);
         var documents = reader.read(input).block();

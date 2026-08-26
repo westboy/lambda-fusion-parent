@@ -9,6 +9,7 @@ import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
@@ -49,7 +50,8 @@ class ToolkitAssemblerImageToolTest {
                 new MediaGenerationBindingResolver(llmModelService, llmProviderService),
                 keyEncryptionService,
                 mock(ToolResultMediaMaterializer.class),
-                new AiProperties());
+                new AiProperties(),
+                mock(ChatAttachmentContentTool.class));
     }
 
     @Test

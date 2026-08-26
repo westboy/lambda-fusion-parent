@@ -14,7 +14,8 @@ class DocumentTextExtractorTest {
 
     @Test
     void extractsLongTextWithoutReaderOverlapDuplication() throws Exception {
-        String content = "设备通讯协议正文".repeat(200);
+        // 明确越过默认 8000 字符内联预算，证明 Reader 层仍返回全文，长短分流只发生在消息组装层。
+        String content = "设备通讯协议正文".repeat(2000);
         Path file = tempDir.resolve("protocol.txt");
         Files.writeString(file, content);
 

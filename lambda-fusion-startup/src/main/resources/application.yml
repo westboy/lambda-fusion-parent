@@ -108,6 +108,10 @@ lambda:
       #### 对话附件与工具生成媒体（生产请配 AI_ATTACHMENT_PREVIEW_SECRET） ####
       chat:
         attachment:
+          #### 每条消息完整内联的附件正文总预算；超出后由 Agent 按需搜索/分段读取 ####
+          max-inline-chars: ${AI_CHAT_ATTACHMENT_MAX_INLINE_CHARS:8000}
+          #### 附件读取工具单次返回的正文字符上限 ####
+          max-tool-read-chars: ${AI_CHAT_ATTACHMENT_MAX_TOOL_READ_CHARS:4000}
           preview:
             secret: ${AI_ATTACHMENT_PREVIEW_SECRET:dev-only-please-change-attachment-preview-secret}
           generated-media:
