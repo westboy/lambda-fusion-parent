@@ -853,17 +853,13 @@
         </createIndex>
     </changeSet>
 
-    <!-- ========== 媒体生成能力：provider 能力开关 + 应用生成模型绑定 ========== -->
+    <!-- ========== 媒体生成能力 ========== -->
     <changeSet id="lambda-ai-20260821000110" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
-                <columnExists tableName="ai_llm_provider" columnName="enable_media_gen"/>
+                <columnExists tableName="ai_app" columnName="image_model_id"/>
             </not>
         </preConditions>
-        <addColumn tableName="ai_llm_provider">
-            <column name="enable_media_gen" type="tinyint(1)" defaultValueBoolean="false"
-                    remarks="该Key是否开通图像/视频等媒体生成能力(由配置者声明)"/>
-        </addColumn>
         <addColumn tableName="ai_app">
             <column name="image_model_id" type="varchar(32)" remarks="图像生成模型ID(ai_llm_model;空=无生图能力)"/>
             <column name="video_model_id" type="varchar(32)" remarks="视频生成模型ID(ai_llm_model;预留)"/>
@@ -910,36 +906,6 @@
             <column name="media_operation" value="TEXT_TO_SPEECH"/>
             <where>model_type = 5 AND media_operation IS NULL</where>
         </update>
-    </changeSet>
-
-    <changeSet id="lambda-ai-2026082500040" author="Jin">
-        <preConditions onFail="MARK_RAN">
-            <columnExists tableName="ai_llm_provider" columnName="enable_media_gen"/>
-        </preConditions>
-        <dropColumn tableName="ai_llm_provider" columnName="enable_media_gen"/>
-    </changeSet>
-
-    <!-- 修复早期组合变更在部分升级场景中被整体 MARK_RAN 后遗漏的应用模型列。 -->
-    <changeSet id="lambda-ai-2026082500050" author="Jin">
-        <preConditions onFail="MARK_RAN">
-            <not>
-                <columnExists tableName="ai_app" columnName="image_model_id"/>
-            </not>
-        </preConditions>
-        <addColumn tableName="ai_app">
-            <column name="image_model_id" type="varchar(32)" remarks="图像生成模型ID(ai_llm_model;空=无生图能力)"/>
-        </addColumn>
-    </changeSet>
-
-    <changeSet id="lambda-ai-2026082500060" author="Jin">
-        <preConditions onFail="MARK_RAN">
-            <not>
-                <columnExists tableName="ai_app" columnName="video_model_id"/>
-            </not>
-        </preConditions>
-        <addColumn tableName="ai_app">
-            <column name="video_model_id" type="varchar(32)" remarks="视频生成模型ID(ai_llm_model;空=无视频能力)"/>
-        </addColumn>
     </changeSet>
 
     <!-- Office 原件仍复用对话附件，仅记录同存储后端下的派生 PDF 预览。 -->
