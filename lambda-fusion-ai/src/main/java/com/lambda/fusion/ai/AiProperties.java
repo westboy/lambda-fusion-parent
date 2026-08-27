@@ -236,21 +236,8 @@ public class AiProperties {
     @Data
     public static class Memory {
 
-        /** 记忆模型单次调用允许的最大输出 Token；同时覆盖推理模型的 reasoning Token。 */
-        @Min(1)
-        private int maxOutputTokens = 32768;
-
-        /** 记忆模型单次调用从订阅到完整结束的总时长上限。 */
-        @NotNull
-        private Duration modelTimeout = Duration.ofMinutes(3);
-
         @Valid
         private Flush flush = new Flush();
-
-        @AssertTrue(message = "lambda.fusion.ai.memory.model-timeout 必须大于0")
-        public boolean isModelTimeoutValid() {
-            return modelTimeout != null && !modelTimeout.isNegative() && !modelTimeout.isZero();
-        }
 
         @Data
         public static class Flush {

@@ -40,6 +40,7 @@ import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -448,7 +449,8 @@ public class AgentFactory {
                 .permissionContext(buildPermissionContext())
                 .stateStore(sharedStateStore(app.getId(), tenantId))
                 .workspace(hostWorkspace)
-                .memory(resolveMemoryConfig(aiProperties, model))
+                .memory(resolveMemoryConfig(aiProperties))
+                .compaction(resolveCompactionConfig(model))
                 .skillFilter(resolveSkillFilter(app));
         AgentSkillRepository skillRepo = skillRepositoryResolver.resolve();
         if (skillRepo != null) {
@@ -484,8 +486,8 @@ public class AgentFactory {
         builder.hook(new ExplicitToolCallHook());
     }
 
-    /** 将系统级记忆刷新与模型安全边界映射为 AgentScope 官方配置。 */
-    static MemoryConfig resolveMemoryConfig(AiProperties properties, Model model) {
+    /** 将系统级记忆刷新策略映射为 AgentScope 官方配置。 */
+    static MemoryConfig resolveMemoryConfig(AiProperties properties) {
         AiProperties.Memory memory = properties.getMemory();
         AiProperties.Memory.Flush flush = memory.getFlush();
         MemoryConfig.FlushTrigger trigger =
@@ -494,10 +496,16 @@ public class AgentFactory {
                     case THROTTLED -> MemoryConfig.FlushTrigger.throttled(flush.getMinGap());
                     case NEVER -> MemoryConfig.FlushTrigger.never();
                 };
-        return MemoryConfig.builder()
-                .model(new MemoryModelGuard(model, memory.getMaxOutputTokens(), memory.getModelTimeout()))
-                .flushTrigger(trigger)
-                .build();
+        return MemoryConfig.builder().flushTrigger(trigger).build();
+    }
+
+    /** 使用 AgentScope 官方动态 Token 阈值；已知上下文窗口时关闭固定消息数阈值，未知时保留官方兜底。 */
+    static CompactionConfig resolveCompactionConfig(Model model) {
+        CompactionConfig.Builder builder = CompactionConfig.builder().triggerTokens(0);
+        if (model.getContextWindowSize() > 0) {
+            builder.triggerMessages(0);
+        }
+        return builder.build();
     }
 
     /** 缓存键格式须与 {@link #invalidateApp(String)} 的应用前缀匹配规则保持一致。 */

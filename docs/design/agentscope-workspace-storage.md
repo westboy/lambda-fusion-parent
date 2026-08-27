@@ -29,8 +29,6 @@ lambda:
           postgres:
             datasource: ${AI_WORKSPACE_POSTGRES_DATASOURCE:ai-postgres}
       memory:
-        max-output-tokens: ${AI_MEMORY_MAX_OUTPUT_TOKENS:32768}
-        model-timeout: ${AI_MEMORY_MODEL_TIMEOUT:3m}
         flush:
           mode: ${AI_MEMORY_FLUSH_MODE:THROTTLED}
           min-gap: ${AI_MEMORY_FLUSH_MIN_GAP:10m}
@@ -39,10 +37,10 @@ lambda:
 `lambda-fusion-ai` 的通用默认值为 `LOCAL`，保证既有单节点项目无配置升级。启动示例模块默认选择
 `MYSQL`，与其既有 MySQL Agent state store 配置保持一致。
 
-长期记忆仍由 AgentScope 的 flush 与 consolidation 负责写入。Lambda Fusion 只在它们共用的记忆模型外建立
-完整性边界：输出 Token 超过上限时由模型返回截断原因；若响应明确为 `length`、内容过滤等不完整状态，或调用超过
-`model-timeout`，模型流以错误结束。AgentScope 因而不会追加当日日记、覆盖 `MEMORY.md` 或推进 consolidation
-watermark，下一次维护仍可重试同一批日记。未返回 `finishReason` 的兼容模型保持原行为。
+长期记忆仍由 AgentScope 的 flush 与 consolidation 负责写入，记忆与会话压缩未指定专用模型时均沿用 Agent
+主模型。Lambda Fusion 不在 AgentScope 的 `Model` 外增加输出截断判断、超时或响应缓存适配层；模型完成状态的校验
+与副作用提交应由 AgentScope 在记忆写入和上下文替换边界统一处理。AgentScope 2.0.1 对非空但被截断的响应尚未
+统一校验，升级到官方修复版本后由底层直接生效，上层不维护平行语义。
 
 远程 Workspace 必须同时使用分布式 Agent state store。若 Workspace 为 `MYSQL`/`POSTGRES`，而
 `state-store.type` 仍为 `MEMORY` 或 `FILE`，系统启动时直接失败，避免集群节点间状态与文件行为不一致。
