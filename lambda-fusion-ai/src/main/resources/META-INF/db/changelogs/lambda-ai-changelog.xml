@@ -4,7 +4,7 @@
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
 
     <!-- ========== LLM 提供方 ========== -->
-    <changeSet id="lambda-ai-202607210001" author="Jin">
+    <changeSet id="lambda-ai-2026072100010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_llm_provider"/>
@@ -32,7 +32,7 @@
     </changeSet>
 
     <!-- ========== LLM 模型 ========== -->
-    <changeSet id="lambda-ai-202607210002" author="Jin">
+    <changeSet id="lambda-ai-2026072100020" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_llm_model"/>
@@ -68,7 +68,7 @@
     </changeSet>
 
     <!-- ========== 智能应用 ========== -->
-    <changeSet id="lambda-ai-202607210003" author="Jin">
+    <changeSet id="lambda-ai-2026072100030" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_app"/>
@@ -78,9 +78,7 @@
             <column name="id" type="varchar(32)" remarks="主键">
                 <constraints primaryKey="true" primaryKeyName="pk_ai_app_id" nullable="false"/>
             </column>
-            <column name="tenant_id" type="varchar(32)" remarks="租户ID">
-                <constraints nullable="false"/>
-            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
             <column name="name" type="varchar(128)" remarks="应用名称">
                 <constraints nullable="false"/>
             </column>
@@ -118,7 +116,7 @@
     </changeSet>
 
     <!-- ========== MCP 服务 ========== -->
-    <changeSet id="lambda-ai-202607210004" author="Jin">
+    <changeSet id="lambda-ai-2026072100040" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_mcp_server"/>
@@ -150,7 +148,7 @@
     </changeSet>
 
     <!-- ========== 对话会话 ========== -->
-    <changeSet id="lambda-ai-202607210005" author="Jin">
+    <changeSet id="lambda-ai-2026072100050" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_chat_session"/>
@@ -160,9 +158,7 @@
             <column name="id" type="varchar(32)" remarks="主键">
                 <constraints primaryKey="true" primaryKeyName="pk_ai_chat_session_id" nullable="false"/>
             </column>
-            <column name="tenant_id" type="varchar(32)" remarks="租户ID">
-                <constraints nullable="false"/>
-            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
             <column name="app_id" type="varchar(32)" remarks="应用ID">
                 <constraints nullable="false"/>
             </column>
@@ -184,7 +180,7 @@
     </changeSet>
 
     <!-- ========== 对话消息 ========== -->
-    <changeSet id="lambda-ai-2026072100061" author="Jin">
+    <changeSet id="lambda-ai-2026072100060" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_chat_message"/>
@@ -216,7 +212,7 @@
     </changeSet>
 
     <!-- ========== 自演化审计 ========== -->
-    <changeSet id="lambda-ai-2026072100081" author="Jin">
+    <changeSet id="lambda-ai-2026072100080" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_app_workspace_audit"/>
@@ -250,7 +246,7 @@
     </changeSet>
 
     <!-- ========== 通道路由配置 ========== -->
-    <changeSet id="lambda-ai-202607220001" author="Jin">
+    <changeSet id="lambda-ai-2026072200010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_channel_config"/>
@@ -267,7 +263,8 @@
                 <constraints nullable="false"/>
             </column>
             <column name="default_agent_id" type="varchar(64)" remarks="默认 agent(app:{appId}:t:{tenantId})"/>
-            <column name="dm_scope" type="varchar(32)" defaultValue="MAIN" remarks="DM 会话粒度: MAIN/PER_PEER/PER_CHANNEL_PEER/PER_ACCOUNT_CHANNEL_PEER">
+            <column name="dm_scope" type="varchar(32)" defaultValue="MAIN"
+                    remarks="DM 会话粒度: MAIN/PER_PEER/PER_CHANNEL_PEER/PER_ACCOUNT_CHANNEL_PEER">
                 <constraints nullable="false"/>
             </column>
             <column name="bindings" type="text" remarks="绑定规则 JSON 数组(ChannelBinding)"/>
@@ -285,7 +282,7 @@
     </changeSet>
 
     <!-- ========== 技能市场 ========== -->
-    <changeSet id="lambda-ai-202607220002" author="Jin">
+    <changeSet id="lambda-ai-2026072200020" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_skill"/>
@@ -317,7 +314,7 @@
     </changeSet>
 
     <!-- ========== ai_app 增技能白/黑名单 ========== -->
-    <changeSet id="lambda-ai-202607220003" author="Jin">
+    <changeSet id="lambda-ai-2026072200030" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="skills_allow"/>
@@ -330,7 +327,7 @@
     </changeSet>
 
     <!-- ========== 知识库 ========== -->
-    <changeSet id="lambda-ai-2026072200041" author="Jin">
+    <changeSet id="lambda-ai-20260722000410" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_knowledge_base"/>
@@ -345,7 +342,8 @@
                 <constraints nullable="false"/>
             </column>
             <column name="description" type="varchar(512)" remarks="知识库描述"/>
-            <column name="embedding_model_id" type="varchar(32)" remarks="嵌入模型ID(ai_llm_model, model_type=EMBEDDING)">
+            <column name="embedding_model_id" type="varchar(32)"
+                    remarks="嵌入模型ID(ai_llm_model, model_type=EMBEDDING)">
                 <constraints nullable="false"/>
             </column>
             <column name="dimensions" type="int" remarks="向量维度(建表后不可变)"/>
@@ -369,7 +367,7 @@
     </changeSet>
 
     <!-- ========== 知识库文档 ========== -->
-    <changeSet id="lambda-ai-2026072200051" author="Jin">
+    <changeSet id="lambda-ai-20260722000510" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_knowledge_document"/>
@@ -405,7 +403,7 @@
     </changeSet>
 
     <!-- ========== ai_app 增知识库绑定 ========== -->
-    <changeSet id="lambda-ai-202607220006" author="Jin">
+    <changeSet id="lambda-ai-2026072200060" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="knowledge_base_ids"/>
@@ -430,19 +428,20 @@
     </changeSet>
 
     <!-- ========== ai_app 增知识库检索模式 ========== -->
-    <changeSet id="lambda-ai-202607220008" author="Jin">
+    <changeSet id="lambda-ai-2026072200080" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="rag_mode"/>
             </not>
         </preConditions>
         <addColumn tableName="ai_app">
-            <column name="rag_mode" type="varchar(16)" remarks="知识库检索模式: GENERIC(自动注入)|AGENTIC(工具自主检索)|BOTH；空=GENERIC"/>
+            <column name="rag_mode" type="varchar(16)"
+                    remarks="知识库检索模式: GENERIC(自动注入)|AGENTIC(工具自主检索)|BOTH；空=GENERIC"/>
         </addColumn>
     </changeSet>
 
     <!-- ========== 子代理定义 ========== -->
-    <changeSet id="lambda-ai-2026072200091" author="Jin">
+    <changeSet id="lambda-ai-20260722000910" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_sub_agent"/>
@@ -468,7 +467,8 @@
             <column name="top_p" type="decimal(3,2)" remarks="Top-P"/>
             <column name="tools_allow" type="text" remarks="工具白名单 JSON 数组(空=全继承父工具)"/>
             <column name="skills_allow" type="text" remarks="技能白名单 JSON 数组(空=全继承)"/>
-            <column name="workspace_mode" type="varchar(16)" defaultValue="ISOLATED" remarks="工作区模式: ISOLATED|SHARED"/>
+            <column name="workspace_mode" type="varchar(16)" defaultValue="ISOLATED"
+                    remarks="工作区模式: ISOLATED|SHARED"/>
             <column name="enabled" type="tinyint(1)" defaultValueNumeric="1" remarks="是否启用">
                 <constraints nullable="false"/>
             </column>
@@ -486,7 +486,7 @@
     </changeSet>
 
     <!-- ========== ai_app 增子代理绑定 ========== -->
-    <changeSet id="lambda-ai-202607220010" author="Jin">
+    <changeSet id="lambda-ai-2026072200100" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="sub_agent_ids"/>
@@ -498,14 +498,15 @@
     </changeSet>
 
     <!-- ========== ai_app 增应用头像 ========== -->
-    <changeSet id="lambda-ai-202607240001" author="Jin">
+    <changeSet id="lambda-ai-2026072400010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="avatar"/>
             </not>
         </preConditions>
         <addColumn tableName="ai_app">
-            <column name="avatar" type="varchar(64)" remarks="应用头像(图标名,如 lucide:bot;空=按应用类型显示默认图标)"/>
+            <column name="avatar" type="varchar(64)"
+                    remarks="应用头像(图标名,如 lucide:bot;空=按应用类型显示默认图标)"/>
         </addColumn>
     </changeSet>
 
@@ -516,14 +517,15 @@
             </not>
         </preConditions>
         <addColumn tableName="ai_llm_model">
-            <column name="supports_vision" type="tinyint(1)" defaultValueNumeric="0" remarks="是否支持视觉(图片): CHAT=可接受图片输入, EMBEDDING=可向量化图片">
+            <column name="supports_vision" type="tinyint(1)" defaultValueNumeric="0"
+                    remarks="是否支持视觉(图片): CHAT=可接受图片输入, EMBEDDING=可向量化图片">
                 <constraints nullable="false"/>
             </column>
         </addColumn>
     </changeSet>
 
     <!-- ========== 对话附件 ========== -->
-    <changeSet id="lambda-ai-20260806000101" author="Jin">
+    <changeSet id="lambda-ai-202608060001010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_chat_attachment"/>
@@ -567,19 +569,20 @@
     </changeSet>
 
     <!-- ========== HITL 待确认工具调用持久化 ========== -->
-    <changeSet id="lambda-ai-202608090001" author="Jin">
+    <changeSet id="lambda-ai-2026080900010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_chat_session" columnName="pending_confirm"/>
             </not>
         </preConditions>
         <addColumn tableName="ai_chat_session">
-            <column name="pending_confirm" type="text" remarks="HITL 待确认工具调用 JSON(ASK 时写、回合结束清空;空=无待确认)"/>
+            <column name="pending_confirm" type="text"
+                    remarks="HITL 待确认工具调用 JSON(ASK 时写、回合结束清空;空=无待确认)"/>
         </addColumn>
     </changeSet>
 
     <!-- ========== 可恢复对话 Run ========== -->
-    <changeSet id="lambda-ai-20260813000111" author="Jin">
+    <changeSet id="lambda-ai-202608130001110" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_chat_run"/>
@@ -589,9 +592,7 @@
             <column name="id" type="varchar(32)" remarks="业务Run ID">
                 <constraints primaryKey="true" primaryKeyName="pk_ai_chat_run" nullable="false"/>
             </column>
-            <column name="tenant_id" type="varchar(32)" remarks="租户ID">
-                <constraints nullable="false"/>
-            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
             <column name="session_id" type="varchar(32)" remarks="会话ID">
                 <constraints nullable="false"/>
             </column>
@@ -640,25 +641,24 @@
     </changeSet>
 
     <!-- ========== 长对话最终消息容量 ========== -->
-    <changeSet id="lambda-ai-202608140001" author="Jin">
+    <changeSet id="lambda-ai-2026081400010" author="Jin">
         <modifyDataType tableName="ai_chat_message" columnName="content" newDataType="longtext"/>
         <modifyDataType tableName="ai_chat_message" columnName="tool_call" newDataType="longtext"/>
     </changeSet>
 
-    <!-- ========== 应用配置变更审计(append-only, 非版本机制) ========== -->
-    <changeSet id="lambda-ai-202608160001" author="Jin">
+    <!-- ========== 应用配置变更审计 ========== -->
+    <changeSet id="lambda-ai-2026081600010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_app_config_audit"/>
             </not>
         </preConditions>
-        <createTable tableName="ai_app_config_audit" remarks="应用配置变更审计(仅追加, 支撑人工回退; 非版本机制, 不参与运行时读取)">
+        <createTable tableName="ai_app_config_audit"
+                     remarks="应用配置变更审计(仅追加, 支撑人工回退; 非版本机制, 不参与运行时读取)">
             <column name="id" type="bigint" autoIncrement="true" remarks="主键">
                 <constraints primaryKey="true" primaryKeyName="pk_ai_app_config_audit_id" nullable="false"/>
             </column>
-            <column name="tenant_id" type="varchar(32)" remarks="租户ID">
-                <constraints nullable="false"/>
-            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
             <column name="app_id" type="varchar(32)" remarks="应用ID">
                 <constraints nullable="false"/>
             </column>
@@ -676,15 +676,17 @@
     </changeSet>
 
     <!-- ========== 应用发布入口 ========== -->
-    <changeSet id="lambda-ai-202608160002" author="Jin">
+    <changeSet id="lambda-ai-2026081600020" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="publish_code"/>
             </not>
         </preConditions>
         <addColumn tableName="ai_app">
-            <column name="publish_code" type="varchar(32)" remarks="发布代码(32位无横线随机UUID;可空,全局唯一,非权限凭据)"/>
-            <column name="publish_status" type="varchar(16)" defaultValue="UNPUBLISHED" remarks="发布状态: UNPUBLISHED|PUBLISHED">
+            <column name="publish_code" type="varchar(32)"
+                    remarks="发布代码(32位无横线随机UUID;可空,全局唯一,非权限凭据)"/>
+            <column name="publish_status" type="varchar(16)" defaultValue="UNPUBLISHED"
+                    remarks="发布状态: UNPUBLISHED|PUBLISHED">
                 <constraints nullable="false"/>
             </column>
             <column name="published_at" type="datetime" remarks="最近一次成功发布时间"/>
@@ -693,7 +695,7 @@
     </changeSet>
 
     <!-- ========== ai_knowledge_document 增文档切割策略 ========== -->
-    <changeSet id="lambda-ai-202608170001" author="Jin">
+    <changeSet id="lambda-ai-2026081700010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_knowledge_document" columnName="chunk_strategy"/>
@@ -708,7 +710,7 @@
     </changeSet>
 
     <!-- ========== LLM 模型上下文窗口 ========== -->
-    <changeSet id="lambda-ai-202608170002" author="Jin">
+    <changeSet id="lambda-ai-2026081700020" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_llm_model" columnName="context_window_tokens"/>
@@ -720,7 +722,7 @@
     </changeSet>
 
     <!-- ========== ai_sub_agent 定时任务分类与调度字段 ========== -->
-    <changeSet id="lambda-ai-202608190001" author="Jin">
+    <changeSet id="lambda-ai-2026081900010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_sub_agent" columnName="category"/>
@@ -745,7 +747,7 @@
     </changeSet>
 
     <!-- ========== 定时任务执行记录 ========== -->
-    <changeSet id="lambda-ai-202608200012" author="Jin">
+    <changeSet id="lambda-ai-20260820001200" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_scheduled_task_log"/>
@@ -755,9 +757,7 @@
             <column name="id" type="varchar(32)" remarks="主键">
                 <constraints primaryKey="true" primaryKeyName="pk_ai_scheduled_task_log" nullable="false"/>
             </column>
-            <column name="tenant_id" type="varchar(32)" remarks="租户ID">
-                <constraints nullable="false"/>
-            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
             <column name="task_id" type="varchar(32)" remarks="定时任务ID(ai_sub_agent.id)">
                 <constraints nullable="false"/>
             </column>
@@ -789,7 +789,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608200013" author="Jin">
+    <changeSet id="lambda-ai-2026082000130" author="Jin">
         <preConditions onFail="MARK_RAN">
             <and>
                 <tableExists tableName="ai_scheduled_task_log"/>
@@ -804,7 +804,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608200014" author="Jin">
+    <changeSet id="lambda-ai-2026082000140" author="Jin">
         <preConditions onFail="MARK_RAN">
             <and>
                 <tableExists tableName="ai_scheduled_task_log"/>
@@ -817,7 +817,7 @@
         <dropColumn tableName="ai_scheduled_task_log" columnName="updated_at"/>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608200015" author="Jin">
+    <changeSet id="lambda-ai-2026082000150" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_scheduled_task_log"/>
@@ -854,7 +854,7 @@
     </changeSet>
 
     <!-- ========== 媒体生成能力：provider 能力开关 + 应用生成模型绑定 ========== -->
-    <changeSet id="lambda-ai-2026082100011" author="Jin">
+    <changeSet id="lambda-ai-20260821000110" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_llm_provider" columnName="enable_media_gen"/>
@@ -862,7 +862,7 @@
         </preConditions>
         <addColumn tableName="ai_llm_provider">
             <column name="enable_media_gen" type="tinyint(1)" defaultValueBoolean="false"
-                remarks="该Key是否开通图像/视频等媒体生成能力(由配置者声明)"/>
+                    remarks="该Key是否开通图像/视频等媒体生成能力(由配置者声明)"/>
         </addColumn>
         <addColumn tableName="ai_app">
             <column name="image_model_id" type="varchar(32)" remarks="图像生成模型ID(ai_llm_model;空=无生图能力)"/>
@@ -870,7 +870,7 @@
         </addColumn>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608250001" author="Jin">
+    <changeSet id="lambda-ai-2026082500010" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="audio_model_id"/>
@@ -878,7 +878,7 @@
         </preConditions>
         <addColumn tableName="ai_app">
             <column name="audio_model_id" type="varchar(32)"
-                remarks="音频生成模型ID(ai_llm_model;空=无语音生成能力)"/>
+                    remarks="音频生成模型ID(ai_llm_model;空=无语音生成能力)"/>
         </addColumn>
     </changeSet>
 
@@ -890,11 +890,11 @@
         </preConditions>
         <addColumn tableName="ai_llm_model">
             <column name="media_operation" type="varchar(40)"
-                remarks="媒体创作操作: TEXT_TO_IMAGE|TEXT_TO_VIDEO|IMAGE_TO_VIDEO|FIRST_LAST_FRAME_TO_VIDEO|TEXT_TO_SPEECH"/>
+                    remarks="媒体创作操作: TEXT_TO_IMAGE|TEXT_TO_VIDEO|IMAGE_TO_VIDEO|FIRST_LAST_FRAME_TO_VIDEO|TEXT_TO_SPEECH"/>
         </addColumn>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608250003" author="Jin">
+    <changeSet id="lambda-ai-2026082500030" author="Jin">
         <preConditions onFail="MARK_RAN">
             <columnExists tableName="ai_llm_model" columnName="media_operation"/>
         </preConditions>
@@ -912,7 +912,7 @@
         </update>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608250004" author="Jin">
+    <changeSet id="lambda-ai-2026082500040" author="Jin">
         <preConditions onFail="MARK_RAN">
             <columnExists tableName="ai_llm_provider" columnName="enable_media_gen"/>
         </preConditions>
@@ -920,7 +920,7 @@
     </changeSet>
 
     <!-- 修复早期组合变更在部分升级场景中被整体 MARK_RAN 后遗漏的应用模型列。 -->
-    <changeSet id="lambda-ai-202608250005" author="Jin">
+    <changeSet id="lambda-ai-2026082500050" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="image_model_id"/>
@@ -931,7 +931,7 @@
         </addColumn>
     </changeSet>
 
-    <changeSet id="lambda-ai-202608250006" author="Jin">
+    <changeSet id="lambda-ai-2026082500060" author="Jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="ai_app" columnName="video_model_id"/>
@@ -939,6 +939,19 @@
         </preConditions>
         <addColumn tableName="ai_app">
             <column name="video_model_id" type="varchar(32)" remarks="视频生成模型ID(ai_llm_model;空=无视频能力)"/>
+        </addColumn>
+    </changeSet>
+
+    <!-- Office 原件仍复用对话附件，仅记录同存储后端下的派生 PDF 预览。 -->
+    <changeSet id="lambda-ai-2026082600010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_chat_attachment" columnName="preview_storage_path"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_chat_attachment">
+            <column name="preview_storage_path" type="varchar(512)"
+                    remarks="派生 PDF 预览存储路径(可空，与原件使用相同存储后端)"/>
         </addColumn>
     </changeSet>
 
