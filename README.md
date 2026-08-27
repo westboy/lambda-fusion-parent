@@ -110,20 +110,20 @@ lambda-fusion-parent/
 <div align="center">
 <table>
   <tr>
-    <td align="center"><img src="docs/images/img_5.png" alt="AI应用管理" width="420"/></td>
-    <td align="center"><img src="docs/images/img_1.png" alt="用户管理" width="420"/></td>
+    <td align="center"><img src="docs/images/img_14.png" width="420"/></td>
+    <td align="center"><img src="docs/images/img_1.png"  width="420"/></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/img_6.png" alt="AI对话体验" width="420"/></td>
-    <td align="center"><img src="docs/images/img_0.png" alt="资源管理" width="420"/></td>
+    <td align="center"><img src="docs/images/img_16.png"  width="420"/></td>
+    <td align="center"><img src="docs/images/img_17.png"  width="420"/></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/img_4.png" alt="AI知识库" width="420"/></td>
-    <td align="center"><img src="docs/images/img_3.png" alt="字典管理" width="420"/></td>
+    <td align="center"><img src="docs/images/img.png" width="420"/></td>
+    <td align="center"><img src="docs/images/img_8.png" width="420"/></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/img_7.png" alt="AI模型管理" width="420"/></td>
-    <td align="center"><img src="docs/images/img_2.png" alt="系统配置" width="420"/></td>
+    <td align="center"><img src="docs/images/img_9.png" width="420"/></td>
+    <td align="center"><img src="docs/images/img_10.png" width="420"/></td>
   </tr>
 </table>
 </div>
