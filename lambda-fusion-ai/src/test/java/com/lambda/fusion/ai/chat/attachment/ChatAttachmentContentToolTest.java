@@ -62,6 +62,9 @@ class ChatAttachmentContentToolTest {
         String second = text(tool.read("att-1", 7, 5, context()));
 
         assertThat(first)
+                .contains("requested_length=100")
+                .contains("applied_length=5")
+                .contains("max_read_chars=5")
                 .contains("range=2..7")
                 .contains("total_chars=10")
                 .contains("next_start=7")

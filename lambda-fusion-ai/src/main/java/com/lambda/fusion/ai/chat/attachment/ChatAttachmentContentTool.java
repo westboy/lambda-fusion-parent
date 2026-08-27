@@ -116,16 +116,17 @@ public class ChatAttachmentContentTool {
             return ToolResultBlock.error("start 必须大于等于 0。");
         }
         int maxReadChars = aiProperties.getChat().getAttachment().getMaxToolReadChars();
-        int normalizedLength = length == null ? Math.min(DEFAULT_READ_CHARS, maxReadChars) : length;
-        if (normalizedLength <= 0) {
+        int requestedLength = length == null ? DEFAULT_READ_CHARS : length;
+        if (requestedLength <= 0) {
             return ToolResultBlock.error("length 必须大于 0。");
         }
-        normalizedLength = Math.min(normalizedLength, maxReadChars);
+        int appliedLength = Math.min(requestedLength, maxReadChars);
         try {
             StagedAttachment staged = stage(attachmentId, context);
             FileDownloadResponse downloaded = download(staged, context);
             String text = new String(downloaded.content(), StandardCharsets.UTF_8);
-            return ToolResultBlock.text(formatReadResult(staged.attachment(), text, normalizedStart, normalizedLength));
+            return ToolResultBlock.text(formatReadResult(
+                    staged.attachment(), text, normalizedStart, requestedLength, appliedLength, maxReadChars));
         } catch (Exception e) {
             log.warn("分段读取对话附件失败: attachmentId={}, reason={}", attachmentId, e.getMessage());
             return ToolResultBlock.error(READ_FAILURE);
@@ -202,15 +203,27 @@ public class ChatAttachmentContentTool {
         return result.toString();
     }
 
-    private static String formatReadResult(ChatAttachmentEntity attachment, String text, int start, int length) {
+    private static String formatReadResult(
+            ChatAttachmentEntity attachment,
+            String text,
+            int start,
+            int requestedLength,
+            int appliedLength,
+            int maxReadChars) {
         if (start > text.length()) {
             return "start 超出附件范围；total_chars=" + text.length() + "。";
         }
-        int end = (int) Math.min(text.length(), (long) start + length);
+        int end = (int) Math.min(text.length(), (long) start + appliedLength);
         String nextStart = end < text.length() ? Integer.toString(end) : "null";
         return "附件：" + attachment.getFileName()
                 + "\nattachment_id="
                 + attachment.getId()
+                + "\nrequested_length="
+                + requestedLength
+                + "\napplied_length="
+                + appliedLength
+                + "\nmax_read_chars="
+                + maxReadChars
                 + "\nrange="
                 + start
                 + ".."

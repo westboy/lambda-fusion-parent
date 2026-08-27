@@ -14,7 +14,6 @@ import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
-import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.storage.AiFileStorage;
 import com.lambda.fusion.ai.storage.AiFileStorageResolver;
@@ -52,28 +51,22 @@ class ChatAttachmentServiceImplTest {
 
     @Test
     void shouldLoadOnlySentAttachmentOwnedByRuntimeUserAndSession() {
-        ChatSessionEntity session = new ChatSessionEntity();
-        session.setId("session-1");
-        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(session);
         ChatAttachmentEntity attachment = attachment("session-1", 10L);
-        when(attachmentMapper.selectById("att-1")).thenReturn(attachment);
+        when(attachmentMapper.selectBoundOwned("att-1", "session-1", "zhangsan"))
+                .thenReturn(attachment);
 
         assertThat(service.loadBoundInSession("att-1", "session-1", "zhangsan")).isSameAs(attachment);
+        verify(attachmentMapper).selectBoundOwned("att-1", "session-1", "zhangsan");
+        verifyNoInteractions(sessionMapper);
     }
 
     @Test
-    void shouldRejectUnsentOrCrossSessionAttachment() {
-        ChatSessionEntity session = new ChatSessionEntity();
-        session.setId("session-1");
-        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(session);
-
-        when(attachmentMapper.selectById("att-1")).thenReturn(attachment("session-1", null));
+    void shouldRejectAttachmentOutsideOwnedBoundQuery() {
+        when(attachmentMapper.selectBoundOwned("att-1", "session-1", "zhangsan"))
+                .thenReturn(null);
         assertThatThrownBy(() -> service.loadBoundInSession("att-1", "session-1", "zhangsan"))
                 .isInstanceOf(AiBusinessException.class);
-
-        when(attachmentMapper.selectById("att-1")).thenReturn(attachment("session-2", 10L));
-        assertThatThrownBy(() -> service.loadBoundInSession("att-1", "session-1", "zhangsan"))
-                .isInstanceOf(AiBusinessException.class);
+        verifyNoInteractions(sessionMapper);
     }
 
     @Test

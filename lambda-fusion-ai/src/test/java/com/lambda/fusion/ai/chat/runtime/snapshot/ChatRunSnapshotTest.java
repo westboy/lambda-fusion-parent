@@ -90,4 +90,37 @@ class ChatRunSnapshotTest {
 
         assertThat(snapshot.pendingTools()).isEmpty();
     }
+
+    @Test
+    void shouldKeepOnlyBoundedHeadAndTailPreviewForLargeToolContent() {
+        String args = "args-head-" + "a".repeat(4000) + "-args-tail";
+        String result = "result-head-" + "r".repeat(5000) + "-result-tail";
+
+        ChatRunSnapshot snapshot = new ChatRunSnapshot(
+                "run-1",
+                "phase-1",
+                1,
+                "",
+                "",
+                null,
+                null,
+                false,
+                false,
+                List.of(new ChatRunSnapshot.ToolCall("tool-1", "read", args, result, "complete")),
+                List.of(),
+                List.of(),
+                List.of());
+
+        ChatRunSnapshot.ToolCall tool = snapshot.tools().getFirst();
+        assertThat(tool.args())
+                .hasSizeLessThanOrEqualTo(ChatRunSnapshotSanitizer.MAX_TOOL_CONTENT_CHARS)
+                .startsWith("args-head-")
+                .endsWith("-args-tail")
+                .contains("快照内容已截断");
+        assertThat(tool.result())
+                .hasSizeLessThanOrEqualTo(ChatRunSnapshotSanitizer.MAX_TOOL_CONTENT_CHARS)
+                .startsWith("result-head-")
+                .endsWith("-result-tail")
+                .contains("快照内容已截断");
+    }
 }

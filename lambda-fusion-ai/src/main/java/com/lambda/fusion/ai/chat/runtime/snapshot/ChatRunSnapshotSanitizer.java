@@ -18,6 +18,10 @@ import org.apache.commons.lang3.StringUtils;
 @UtilityClass
 public class ChatRunSnapshotSanitizer {
 
+    static final int MAX_TOOL_CONTENT_CHARS = 2048;
+
+    private static final String TRUNCATION_MARKER = "\n…[快照内容已截断，完整内容未持久化]…\n";
+
     /**
      * 清理工具调用快照。
      *
@@ -116,9 +120,19 @@ public class ChatRunSnapshotSanitizer {
         return new ChatRunSnapshot.ToolCall(
                 safe(tool.toolCallId()),
                 safe(tool.toolCallName()),
-                sanitizeJson(tool.args()),
-                sanitizeJson(tool.result()),
+                toPreview(sanitizeJson(tool.args())),
+                toPreview(sanitizeJson(tool.result())),
                 safe(tool.status()));
+    }
+
+    private static String toPreview(String value) {
+        if (value.length() <= MAX_TOOL_CONTENT_CHARS) {
+            return value;
+        }
+        int remaining = MAX_TOOL_CONTENT_CHARS - TRUNCATION_MARKER.length();
+        int headLength = remaining * 2 / 3;
+        int tailLength = remaining - headLength;
+        return value.substring(0, headLength) + TRUNCATION_MARKER + value.substring(value.length() - tailLength);
     }
 
     private static String sanitizeJson(String value) {

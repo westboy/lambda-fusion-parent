@@ -55,6 +55,7 @@ logging:
       lettuce: error
     com:
       zaxxer: error
+    p6spy: ${P6SPY_LOG_LEVEL:warn}
     root: info
 ################################# Mybatis-plus 配置 #################################
 mybatis-plus:
@@ -62,7 +63,6 @@ mybatis-plus:
     enabled: true
   configuration:
     default-enum-type-handler: org.apache.ibatis.type.EnumOrdinalTypeHandler
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 ################################# Lambda 配置 #################################
 lambda:
   fusion:
