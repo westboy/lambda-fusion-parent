@@ -6,8 +6,8 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 对话附件视图：平铺 {@link ChatAttachmentEntity} 对外字段并携带媒体签名预览直链。不含 storageType/storagePath/
- * tenantId 等存储与租户内部字段（收口在后端），新增 {@link #previewUrl} 供前端 {@code <img src>} 直连预览；与
+ * 对话附件视图：平铺 {@link ChatAttachmentEntity} 对外字段并携带签名下载、预览直链。不含 storageType/storagePath/
+ * tenantId 等存储与租户内部字段（收口在后端）；与
  * {@link ChatMessageView} 同为 chat 子域视图，沿用 {@code of} 静态工厂手写转换的既有模式。
  *
  * @author Jin
@@ -47,7 +47,14 @@ public class ChatAttachmentView {
     @Schema(description = "附件预览直链(相对路径，前端拼接 apiURL)")
     private String previewUrl;
 
-    public static ChatAttachmentView of(ChatAttachmentEntity entity, String previewUrl) {
+    @Schema(description = "附件原件下载直链(相对路径，前端拼接 apiURL)")
+    private String downloadUrl;
+
+    @Schema(description = "预览内容 MIME 类型；不可预览时为空")
+    private String previewMimeType;
+
+    public static ChatAttachmentView of(
+            ChatAttachmentEntity entity, String previewUrl, String downloadUrl, String previewMimeType) {
         ChatAttachmentView view = new ChatAttachmentView();
         view.setId(entity.getId());
         view.setSessionId(entity.getSessionId());
@@ -59,6 +66,8 @@ public class ChatAttachmentView {
         view.setCategory(entity.getCategory());
         view.setCreatedAt(entity.getCreatedAt());
         view.setPreviewUrl(previewUrl);
+        view.setDownloadUrl(downloadUrl);
+        view.setPreviewMimeType(previewMimeType);
         return view;
     }
 }

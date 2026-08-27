@@ -3,6 +3,8 @@ package com.lambda.fusion.ai.runtime.sandbox;
 import com.lambda.fusion.ai.AiConstants.SandboxBackend;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
@@ -16,7 +18,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 根据应用的 {@code sandboxBackend} 选择 {@link SandboxBackendProvider} 并创建沙箱文件系统配置。
- * 使用 HOST、扩展未安装或后端创建失败时返回 {@link Optional#empty()}，由调用方回退宿主文件系统。
+ * 使用 HOST 时返回 {@link Optional#empty()}；应用显式选择沙箱后端后，扩展缺失或创建失败均拒绝构建，
+ * 禁止把本应隔离的执行静默降级到宿主文件系统。
  *
  * @author Jin
  */
@@ -41,13 +44,18 @@ public class SandboxSpecResolver {
                     .findFirst()
                     .map(p -> p.create(app, hostWorkspace));
         } catch (Exception e) {
-            log.warn("沙箱后端 {} 创建失败，将回退到宿主文件系统: {}", backend, e.getMessage());
-            return Optional.empty();
+            log.error("沙箱后端 {} 创建失败", backend, e);
+            throw new AiBusinessException(
+                    AiErrorCode.CONFIGURATION_ERROR, "沙箱后端 " + backend + " 创建失败: " + safeMessage(e));
         }
         if (spec.isEmpty()) {
-            log.warn("沙箱后端 {} 的扩展未安装，将回退到宿主文件系统", backend);
+            throw new AiBusinessException(AiErrorCode.CONFIGURATION_ERROR, "沙箱后端 " + backend + " 的扩展未安装");
         }
         return spec;
+    }
+
+    private static String safeMessage(Exception error) {
+        return StringUtils.defaultIfBlank(error.getMessage(), error.getClass().getSimpleName());
     }
 
     /** 解析沙箱隔离粒度；配置为空或非法时使用 {@link IsolationScope#AGENT}。 */

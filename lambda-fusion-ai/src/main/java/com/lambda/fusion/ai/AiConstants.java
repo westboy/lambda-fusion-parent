@@ -252,8 +252,8 @@ public interface AiConstants {
     }
 
     /**
-     * 工作区应用使用的沙箱后端。HOST 直接使用宿主文件系统，不提供 Shell 或沙箱隔离；
-     * 其他类型使用对应的 AgentScope 沙箱后端，并启用隔离环境中的 Shell 工具。
+     * 工作区应用使用的执行后端。HOST 使用 AgentScope 宿主文件系统；本地工作区可直接在宿主机执行 Shell，
+     * 但不提供沙箱隔离。其他类型使用对应的 AgentScope 沙箱后端，并在隔离环境中执行 Shell。
      */
     @Getter
     @AllArgsConstructor

@@ -213,7 +213,7 @@ public class AiProperties {
             public static class Preview {
 
                 /**
-                 * HMAC-SHA256 签名密钥。生产环境通过 {@code AI_ATTACHMENT_PREVIEW_SECRET} 注入；未配置时不生成预览链接。
+                 * HMAC-SHA256 签名密钥。生产环境通过 {@code AI_ATTACHMENT_PREVIEW_SECRET} 注入；未配置时不生成附件预览和下载直链。
                  */
                 private String secret;
 

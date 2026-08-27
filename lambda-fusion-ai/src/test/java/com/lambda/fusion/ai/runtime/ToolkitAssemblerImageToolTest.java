@@ -10,6 +10,7 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
+import com.lambda.fusion.ai.chat.attachment.WorkspaceArtifactPublishTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
@@ -51,7 +52,8 @@ class ToolkitAssemblerImageToolTest {
                 keyEncryptionService,
                 mock(ToolResultMediaMaterializer.class),
                 new AiProperties(),
-                mock(ChatAttachmentContentTool.class));
+                mock(ChatAttachmentContentTool.class),
+                mock(WorkspaceArtifactPublishTool.class));
     }
 
     @Test
@@ -134,6 +136,22 @@ class ToolkitAssemblerImageToolTest {
         app.setAudioModelId("audio-1");
 
         assertThat(assembler.build(app).getToolNames()).contains(AudioGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldRegisterArtifactPublisherForEveryWorkspaceBackend() {
+        AppEntity workspace = app(null, null);
+        workspace.setAppType("WORKSPACE");
+        workspace.setSandboxBackend("DOCKER");
+        assertThat(assembler.build(workspace).getToolNames()).contains(WorkspaceArtifactPublishTool.TOOL_NAME);
+
+        workspace.setSandboxBackend("HOST");
+        assertThat(assembler.build(workspace).getToolNames()).contains(WorkspaceArtifactPublishTool.TOOL_NAME);
+
+        AppEntity chat = app(null, null);
+        chat.setAppType("CHAT");
+        chat.setSandboxBackend("DOCKER");
+        assertThat(assembler.build(chat).getToolNames()).doesNotContain(WorkspaceArtifactPublishTool.TOOL_NAME);
     }
 
     private void stubMediaModel(

@@ -39,6 +39,7 @@ class ChatAttachmentPreviewTokenServiceTest {
         ChatAttachmentEntity entity = new ChatAttachmentEntity();
         entity.setId(id);
         entity.setCategory("DOCUMENT");
+        entity.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         return entity;
     }
 
@@ -57,15 +58,41 @@ class ChatAttachmentPreviewTokenServiceTest {
         assertThat(url).startsWith("/v1/ai/chat/attachments/att-001/preview?expires=");
         assertThat(url).contains("sig=");
         // 校验通过（不抛异常即通过）
-        svc.validate("att-001", extractExpires(url), extractSig(url));
+        svc.validatePreview("att-001", extractExpires(url), extractSig(url));
     }
 
     @Test
-    void generatePreviewUrlForDocumentAlsoReturnsUrl() {
+    void previewTokenCannotAuthorizeOriginalDownload() {
         ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
-        // 文档附件也签发 previewUrl（preview 端点对文档返回 attachment 下载）
-        assertThat(svc.generatePreviewUrl(documentAttachment("att-002")))
-                .startsWith("/v1/ai/chat/attachments/att-002/preview?expires=");
+        String url = svc.generatePreviewUrl(imageAttachment("att-009"));
+
+        assertThatThrownBy(() -> svc.validateDownload("att-009", extractExpires(url), extractSig(url)))
+                .isInstanceOf(AiBusinessException.class);
+    }
+
+    @Test
+    void downloadTokenCannotAuthorizePreview() {
+        ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
+        String url = svc.generateDownloadUrl(imageAttachment("att-010"));
+
+        assertThatThrownBy(() -> svc.validatePreview("att-010", extractExpires(url), extractSig(url)))
+                .isInstanceOf(AiBusinessException.class);
+    }
+
+    @Test
+    void officeDocumentWithoutDerivedPdfHasDownloadButNoPreviewUrl() {
+        ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
+        ChatAttachmentEntity attachment = documentAttachment("att-002");
+        assertThat(svc.generatePreviewUrl(attachment)).isNull();
+        assertThat(svc.generateDownloadUrl(attachment)).startsWith("/v1/ai/chat/attachments/att-002/file?expires=");
+    }
+
+    @Test
+    void officeDocumentWithDerivedPdfHasPreviewUrl() {
+        ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
+        ChatAttachmentEntity attachment = documentAttachment("att-008");
+        attachment.setPreviewStoragePath("chat/session/att-008.preview.pdf");
+        assertThat(svc.generatePreviewUrl(attachment)).startsWith("/v1/ai/chat/attachments/att-008/preview?expires=");
     }
 
     @Test
@@ -78,7 +105,7 @@ class ChatAttachmentPreviewTokenServiceTest {
     void validateWithTamperedSigThrows() {
         ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
         String url = svc.generatePreviewUrl(imageAttachment("att-004"));
-        assertThatThrownBy(() -> svc.validate("att-004", extractExpires(url), "tampered-sig"))
+        assertThatThrownBy(() -> svc.validatePreview("att-004", extractExpires(url), "tampered-sig"))
                 .isInstanceOf(AiBusinessException.class);
     }
 
@@ -89,14 +116,14 @@ class ChatAttachmentPreviewTokenServiceTest {
         // 用过去时间重新签发 sig，校验时应判过期
         String url = svc.generatePreviewUrl(imageAttachment("att-005"));
         // 直接用过期时间校验原 sig（payload 不同也会失败，但过期检查先于签名比较失败）
-        assertThatThrownBy(() -> svc.validate("att-005", pastExpires, extractSig(url)))
+        assertThatThrownBy(() -> svc.validatePreview("att-005", pastExpires, extractSig(url)))
                 .isInstanceOf(AiBusinessException.class);
     }
 
     @Test
     void validateWithoutSecretThrows() {
         ChatAttachmentPreviewTokenService svc = newService(null, 3600);
-        assertThatThrownBy(() -> svc.validate("att-006", Instant.now().getEpochSecond() + 3600, "any"))
+        assertThatThrownBy(() -> svc.validatePreview("att-006", Instant.now().getEpochSecond() + 3600, "any"))
                 .isInstanceOf(AiBusinessException.class);
     }
 
@@ -105,7 +132,7 @@ class ChatAttachmentPreviewTokenServiceTest {
         ChatAttachmentPreviewTokenService svc = newService(SECRET, 3600);
         String url = svc.generatePreviewUrl(imageAttachment("att-007"));
         // 用 att-007 的 sig 校验 att-008（payload 不同，签名不匹配）
-        assertThatThrownBy(() -> svc.validate("att-008", extractExpires(url), extractSig(url)))
+        assertThatThrownBy(() -> svc.validatePreview("att-008", extractExpires(url), extractSig(url)))
                 .isInstanceOf(AiBusinessException.class);
     }
 }

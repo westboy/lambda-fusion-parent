@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewPolicy;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
@@ -33,6 +34,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -77,7 +80,27 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             Map.entry("video/mp4", "mp4"),
             Map.entry("video/webm", "webm"),
             Map.entry("video/quicktime", "mov"),
-            Map.entry("application/pdf", "pdf"));
+            Map.entry("application/pdf", "pdf"),
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"),
+            Map.entry("text/plain", "txt"),
+            Map.entry("text/markdown", "md"),
+            Map.entry("text/csv", "csv"),
+            Map.entry("application/json", "json"),
+            Map.entry("application/xml", "xml"),
+            Map.entry("text/html", "html"));
+    private static final List<String> READABLE_DOCUMENT_MIME_TYPES = List.of(
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "application/xml",
+            "text/html");
 
     private final ChatAttachmentMapper chatAttachmentMapper;
     private final ChatSessionMapper chatSessionMapper;
@@ -137,11 +160,21 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ChatAttachmentEntity storeGenerated(String sessionId, Path source, String fileName, String mimeType) {
+        return storeGenerated(sessionId, source, fileName, mimeType, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ChatAttachmentEntity storeGenerated(
+            String sessionId, Path source, String fileName, String mimeType, Path pdfPreviewSource) {
         long size = fileSize(source);
         long maxBytes =
                 aiProperties.getChat().getAttachment().getGeneratedMedia().getMaxFileSizeMb() * 1024L * 1024L;
         if (size > maxBytes) {
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, fileName);
+        }
+        if (pdfPreviewSource != null && fileSize(pdfPreviewSource) > maxBytes) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, fileName + " 预览");
         }
         String normalizedMimeType = normalizeMimeType(mimeType);
         String normalizedFileName = normalizeFileName(fileName);
@@ -164,6 +197,11 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             String relativeName = "chat/" + sessionId + "/" + entity.getId() + "." + extension;
             entity.setStorageType(storage.type());
             entity.setStoragePath(storage.store(source, relativeName, normalizedMimeType));
+            if (pdfPreviewSource != null) {
+                String previewRelativeName = "chat/" + sessionId + "/" + entity.getId() + ".preview.pdf";
+                entity.setPreviewStoragePath(storage.store(
+                        pdfPreviewSource, previewRelativeName, ChatAttachmentPreviewPolicy.PDF_MIME_TYPE));
+            }
             chatAttachmentMapper.updateById(entity);
             return entity;
         } catch (RuntimeException e) {
@@ -260,13 +298,33 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     }
 
     @Override
+    public AiFileResource openPreviewContent(ChatAttachmentEntity entity) {
+        if (!ChatAttachmentPreviewPolicy.hasDerivedPreview(entity)) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, entity == null ? null : entity.getId());
+        }
+        return storageResolver.resolve(entity.getStorageType()).open(entity.getPreviewStoragePath());
+    }
+
+    @Override
     public Optional<String> temporaryReadUrl(ChatAttachmentEntity entity, Duration ttl) {
         return storageResolver.resolve(entity.getStorageType()).temporaryReadUrl(entity.getStoragePath(), ttl);
     }
 
     @Override
+    public Optional<String> temporaryPreviewReadUrl(ChatAttachmentEntity entity, Duration ttl) {
+        if (!ChatAttachmentPreviewPolicy.hasDerivedPreview(entity)) {
+            return Optional.empty();
+        }
+        return storageResolver.resolve(entity.getStorageType()).temporaryReadUrl(entity.getPreviewStoragePath(), ttl);
+    }
+
+    @Override
     public ChatAttachmentView toView(ChatAttachmentEntity entity) {
-        return ChatAttachmentView.of(entity, previewTokenService.generatePreviewUrl(entity));
+        return ChatAttachmentView.of(
+                entity,
+                previewTokenService.generatePreviewUrl(entity),
+                previewTokenService.generateDownloadUrl(entity),
+                ChatAttachmentPreviewPolicy.previewMimeType(entity));
     }
 
     @Override
@@ -277,8 +335,8 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             // 已发送附件不单独删除，随会话级联清理，避免历史消息出现空洞引用
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
         }
-        deleteStoredFile(entity);
         chatAttachmentMapper.deleteById(attachmentId);
+        deleteStoredFilesAfterCommit(List.of(entity));
     }
 
     @Override
@@ -287,10 +345,8 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         LambdaQueryWrapper<ChatAttachmentEntity> query =
                 new LambdaQueryWrapper<ChatAttachmentEntity>().eq(ChatAttachmentEntity::getSessionId, sessionId);
         List<ChatAttachmentEntity> attachments = chatAttachmentMapper.selectList(query);
-        for (ChatAttachmentEntity attachment : attachments) {
-            deleteStoredFile(attachment);
-        }
         chatAttachmentMapper.delete(query);
+        deleteStoredFilesAfterCommit(attachments);
     }
 
     @Override
@@ -304,7 +360,6 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
                 .isNull(ChatAttachmentEntity::getMessageId)
                 .in(ChatAttachmentEntity::getId, attachmentIds);
         List<ChatAttachmentEntity> attachments = chatAttachmentMapper.selectList(query);
-        attachments.forEach(this::deleteStoredFile);
         if (!attachments.isEmpty()) {
             chatAttachmentMapper.delete(new LambdaQueryWrapper<ChatAttachmentEntity>()
                     .eq(ChatAttachmentEntity::getSessionId, sessionId)
@@ -314,22 +369,46 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
                             attachments.stream()
                                     .map(ChatAttachmentEntity::getId)
                                     .toList()));
+            deleteStoredFilesAfterCommit(attachments);
         }
+    }
+
+    /** 数据库记录提交成功后再删除实体文件，避免外层事务回滚时留下指向已删除文件的附件记录。 */
+    private void deleteStoredFilesAfterCommit(Collection<ChatAttachmentEntity> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return;
+        }
+        List<ChatAttachmentEntity> snapshot = List.copyOf(attachments);
+        Runnable cleanup = () -> snapshot.forEach(this::deleteStoredFile);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+            return;
+        }
+        cleanup.run();
     }
 
     // 按行记录的 storageType 路由删除（配置变更后旧附件仍可删）；失败仅告警不阻断
     private void deleteStoredFile(ChatAttachmentEntity attachment) {
-        if (StringUtils.isBlank(attachment.getStorageType()) || StringUtils.isBlank(attachment.getStoragePath())) {
+        if (StringUtils.isBlank(attachment.getStorageType())) {
+            return;
+        }
+        deleteStoredPath(attachment, attachment.getStoragePath(), "原文件");
+        deleteStoredPath(attachment, attachment.getPreviewStoragePath(), "派生预览");
+    }
+
+    private void deleteStoredPath(ChatAttachmentEntity attachment, String storagePath, String label) {
+        if (StringUtils.isBlank(storagePath)) {
             return;
         }
         try {
-            storageResolver.resolve(attachment.getStorageType()).delete(attachment.getStoragePath());
+            storageResolver.resolve(attachment.getStorageType()).delete(storagePath);
         } catch (RuntimeException e) {
-            log.warn(
-                    "删除对话附件原文件失败(att={}, path={}): {}",
-                    attachment.getId(),
-                    attachment.getStoragePath(),
-                    e.getMessage());
+            log.warn("删除对话附件{}失败(att={}, path={}): {}", label, attachment.getId(), storagePath, e.getMessage());
         }
     }
 
@@ -393,6 +472,9 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         }
         if (SAFE_VIDEO_MIME_TYPES.contains(mimeType)) {
             return CATEGORY_VIDEO;
+        }
+        if (READABLE_DOCUMENT_MIME_TYPES.contains(mimeType)) {
+            return CATEGORY_DOCUMENT;
         }
         return CATEGORY_FILE;
     }

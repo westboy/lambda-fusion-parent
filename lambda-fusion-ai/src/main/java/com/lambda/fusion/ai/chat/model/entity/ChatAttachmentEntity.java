@@ -56,6 +56,10 @@ public class ChatAttachmentEntity {
     @Schema(description = "存储路径")
     private String storagePath;
 
+    @TableField("preview_storage_path")
+    @Schema(description = "派生 PDF 预览存储路径(可空，与原件使用相同存储后端)")
+    private String previewStoragePath;
+
     @TableField("created_at")
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;

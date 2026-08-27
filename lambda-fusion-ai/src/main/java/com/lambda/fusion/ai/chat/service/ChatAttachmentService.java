@@ -29,6 +29,12 @@ public interface ChatAttachmentService {
     /** 将可信工具输出物化为未绑定的对话附件；调用方负责删除传入的临时文件。 */
     ChatAttachmentEntity storeGenerated(String sessionId, Path source, String fileName, String mimeType);
 
+    /**
+     * 将可信工具输出及其可选 PDF 预览物化为同一条未绑定附件。预览为空时仅存原件；调用方负责删除传入的临时文件。
+     */
+    ChatAttachmentEntity storeGenerated(
+            String sessionId, Path source, String fileName, String mimeType, Path pdfPreviewSource);
+
     /** 通过所属会话校验附件归属；附件不存在或不属于当前用户时抛出 {@code ATTACHMENT_NOT_FOUND}。 */
     ChatAttachmentEntity loadOwned(String attachmentId);
 
@@ -48,15 +54,15 @@ public interface ChatAttachmentService {
     /** 按消息 ID 批量查询用于历史消息展示的附件。 */
     List<ChatAttachmentEntity> listByMessageIds(Collection<Long> messageIds);
 
-    /** 转换为对外视图；图片附件附带签名预览地址，内部存储路径和租户信息不对外暴露。 */
+    /** 转换为对外视图；附带可用的签名预览/原件地址，内部存储路径和租户信息不对外暴露。 */
     ChatAttachmentView toView(ChatAttachmentEntity entity);
 
     /** 根据附件记录的存储类型，将原文件写入输出流。 */
     void download(String attachmentId, OutputStream out);
 
     /**
-     * 仅供签名预览端点按 ID 查询附件，不执行租户或用户归属校验。预览请求没有登录上下文，
-     * 调用方必须先校验签名令牌，不能将该方法用于普通下载接口。
+     * 仅供签名预览/下载端点按 ID 查询附件，不执行租户或用户归属校验。直链请求没有登录上下文，
+     * 调用方必须先校验签名令牌，不能将该方法用于普通鉴权接口。
      */
     ChatAttachmentEntity loadByIdForPreview(String attachmentId);
 
@@ -66,13 +72,19 @@ public interface ChatAttachmentService {
     /** 打开附件内容，调用方必须关闭返回句柄。 */
     AiFileResource openContent(ChatAttachmentEntity entity);
 
+    /** 打开派生 PDF 预览；附件没有派生预览时抛出附件不存在异常。 */
+    AiFileResource openPreviewContent(ChatAttachmentEntity entity);
+
     /** 为支持直读的后端生成临时地址；LOCAL 返回空。 */
     Optional<String> temporaryReadUrl(ChatAttachmentEntity entity, Duration ttl);
+
+    /** 为派生 PDF 预览生成临时读取地址；LOCAL 或没有派生预览时返回空。 */
+    Optional<String> temporaryPreviewReadUrl(ChatAttachmentEntity entity, Duration ttl);
 
     /** 删除尚未绑定消息的附件；已发送附件只能随会话级联删除。 */
     void delete(String attachmentId);
 
-    /** 删除会话的全部附件文件和记录；单个文件删除失败仅记录告警，不阻断记录清理。 */
+    /** 删除会话的全部附件记录；事务提交后清理原文件和派生预览，单个文件失败仅记录告警。 */
     void deleteBySession(String sessionId);
 
     /** 清理由当前运行创建但未绑定消息的生成附件。 */

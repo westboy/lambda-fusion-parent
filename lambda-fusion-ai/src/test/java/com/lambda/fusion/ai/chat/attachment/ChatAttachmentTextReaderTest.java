@@ -12,6 +12,8 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ChatAttachmentTextReaderTest {
 
@@ -47,6 +49,22 @@ class ChatAttachmentTextReaderTest {
                 .thenReturn(new AiFileResource(new ByteArrayInputStream(content), content.length));
 
         assertThat(reader.readAll(attachment)).isEqualTo("中文附件");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"txt", "md", "csv", "json", "xml", "html", "htm"})
+    void shouldReadPublishedUtf8TextTypesWithoutBinaryExtraction(String fileType) throws Exception {
+        ChatAttachmentEntity attachment = textAttachment();
+        attachment.setFileName("生成结果." + fileType);
+        attachment.setFileType(fileType);
+        byte[] content = ("UTF-8 文本 " + fileType).getBytes(StandardCharsets.UTF_8);
+        when(attachmentService.openContent(attachment))
+                .thenReturn(
+                        new AiFileResource(new ByteArrayInputStream(content), content.length),
+                        new AiFileResource(new ByteArrayInputStream(content), content.length));
+
+        assertThat(reader.readInlineIfComplete(attachment, 100)).contains("UTF-8 文本 " + fileType);
+        assertThat(reader.readAll(attachment)).isEqualTo("UTF-8 文本 " + fileType);
     }
 
     @Test

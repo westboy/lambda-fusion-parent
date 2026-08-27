@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ChatAttachmentTextReader {
 
-    private static final Set<String> PLAIN_TEXT_TYPES = Set.of("txt", "md");
+    private static final Set<String> TEXT_TYPES = Set.of("txt", "md", "csv", "json", "xml", "html", "htm");
     private static final Charset GB18030 = Charset.forName("GB18030");
     private static final int MAX_PROBE_BYTES_PER_CHAR = 4;
     private static final int MAX_BOM_BYTES = 4;
@@ -44,7 +44,7 @@ public class ChatAttachmentTextReader {
      * 长文本不会为了判断长度而下载全文。PDF、Word 等二进制文档直接交给按需工具处理。
      */
     public Optional<String> readInlineIfComplete(ChatAttachmentEntity attachment, int maxChars) throws IOException {
-        if (maxChars <= 0 || !isPlainText(attachment.getFileType())) {
+        if (maxChars <= 0 || !isText(attachment.getFileType())) {
             return Optional.empty();
         }
         int maxProbeBytes =
@@ -68,7 +68,7 @@ public class ChatAttachmentTextReader {
      * @throws IOException 临时文件或文本编码读取失败
      */
     public String readAll(ChatAttachmentEntity attachment) throws IOException {
-        if (isPlainText(attachment.getFileType())) {
+        if (isText(attachment.getFileType())) {
             try (AiFileResource resource = attachmentService.openContent(attachment)) {
                 return decodeText(resource.content().readAllBytes());
             }
@@ -89,8 +89,8 @@ public class ChatAttachmentTextReader {
         }
     }
 
-    private static boolean isPlainText(String fileType) {
-        return PLAIN_TEXT_TYPES.contains(StringUtils.lowerCase(StringUtils.defaultString(fileType)));
+    private static boolean isText(String fileType) {
+        return TEXT_TYPES.contains(StringUtils.lowerCase(StringUtils.defaultString(fileType)));
     }
 
     private static String decodeText(byte[] bytes) {

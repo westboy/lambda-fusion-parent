@@ -1,7 +1,7 @@
 package com.lambda.fusion.ai.chat.runtime.media;
 
 import com.lambda.fusion.ai.AiProperties;
-import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentBlockFactory;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
@@ -62,21 +62,20 @@ import reactor.core.scheduler.Schedulers;
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class ToolResultMediaMaterializer {
 
-    public static final String ATTACHMENT_ID_PREFIX = "attachment:";
-    private static final String AUTHENTICATED_DOWNLOAD_PATH = "/v1/ai/chat/attachments/%s/download";
+    public static final String ATTACHMENT_ID_PREFIX = ChatAttachmentBlockFactory.ATTACHMENT_ID_PREFIX;
     private static final int COPY_BUFFER_SIZE = 8192;
 
     private final ChatAttachmentService attachmentService;
-    private final ChatAttachmentPreviewTokenService previewTokenService;
+    private final ChatAttachmentBlockFactory attachmentBlockFactory;
     private final AiProperties aiProperties;
     private final CloseableHttpClient httpClient;
 
     public ToolResultMediaMaterializer(
             ChatAttachmentService attachmentService,
-            ChatAttachmentPreviewTokenService previewTokenService,
+            ChatAttachmentBlockFactory attachmentBlockFactory,
             AiProperties aiProperties) {
         this.attachmentService = attachmentService;
-        this.previewTokenService = previewTokenService;
+        this.attachmentBlockFactory = attachmentBlockFactory;
         this.aiProperties = aiProperties;
         var generatedMedia = aiProperties.getChat().getAttachment().getGeneratedMedia();
         ConnectionConfig connectionConfig = ConnectionConfig.custom()
@@ -135,15 +134,7 @@ public class ToolResultMediaMaterializer {
             prepared = prepare(source, original);
             ChatAttachmentEntity attachment = attachmentService.storeGenerated(
                     context.sessionId(), prepared.path(), prepared.fileName(), prepared.mimeType());
-            String url = StringUtils.defaultIfBlank(
-                    previewTokenService.generatePreviewUrl(attachment),
-                    AUTHENTICATED_DOWNLOAD_PATH.formatted(attachment.getId()));
-            DataBlock materialized = DataBlock.builder()
-                    .id(ATTACHMENT_ID_PREFIX + attachment.getId())
-                    .name(attachment.getFileName())
-                    .source(new URLSource(url, attachment.getMimeType()))
-                    .build();
-            return materialized;
+            return attachmentBlockFactory.create(attachment);
         } catch (AiBusinessException e) {
             throw e;
         } catch (Exception e) {

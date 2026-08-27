@@ -2,6 +2,7 @@ package com.lambda.fusion.ai.chat.controller;
 
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewPolicy;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.model.ChatAttachmentView;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
@@ -17,8 +18,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
@@ -40,27 +39,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class ChatAttachmentController {
 
-    private static final Set<String> INLINE_CATEGORIES = Set.of("IMAGE", "AUDIO", "VIDEO");
-    private static final Set<String> SAFE_INLINE_MIME_TYPES = Set.of(
-            "image/jpeg",
-            "image/png",
-            "image/gif",
-            "image/webp",
-            "image/avif",
-            "image/bmp",
-            "audio/mpeg",
-            "audio/mp4",
-            "audio/wav",
-            "audio/ogg",
-            "audio/webm",
-            "audio/aac",
-            "audio/flac",
-            "video/mp4",
-            "video/webm",
-            "video/quicktime",
-            "video/ogg",
-            "video/mpeg");
-
     private final ChatAttachmentService chatAttachmentService;
     private final ChatAttachmentPreviewTokenService chatAttachmentPreviewTokenService;
     private final AiProperties aiProperties;
@@ -72,6 +50,12 @@ public class ChatAttachmentController {
             @Parameter(description = "会话ID", required = true) @RequestParam("sessionId") String sessionId,
             @RequestParam("file") MultipartFile file) {
         return chatAttachmentService.toView(chatAttachmentService.upload(sessionId, file));
+    }
+
+    @Operation(summary = "查询当前用户的对话附件")
+    @GetMapping("/{id}")
+    public ChatAttachmentView detail(@Parameter(description = "附件ID", required = true) @PathVariable String id) {
+        return chatAttachmentService.toView(chatAttachmentService.loadOwned(id));
     }
 
     @OperationLog
@@ -89,10 +73,24 @@ public class ChatAttachmentController {
             HttpServletResponse response)
             throws IOException {
         ChatAttachmentEntity attachment = chatAttachmentService.loadOwned(id);
-        writeContent(attachment, request, response);
+        writeOriginal(attachment, request, response, false);
     }
 
-    @Operation(summary = "预览图片/音频/视频附件(签名直链，无需登录)")
+    @Operation(summary = "下载附件原件(签名直链，无需登录)")
+    @GetMapping("/{id}/file")
+    public void signedDownload(
+            @Parameter(description = "附件ID", required = true) @PathVariable String id,
+            @RequestParam long expires,
+            @RequestParam String sig,
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws IOException {
+        chatAttachmentPreviewTokenService.validateDownload(id, expires, sig);
+        ChatAttachmentEntity attachment = chatAttachmentService.loadByIdForPreview(id);
+        writeOriginal(attachment, request, response, true);
+    }
+
+    @Operation(summary = "预览安全媒体、PDF 或 Office 派生 PDF(签名直链，无需登录)")
     @GetMapping("/{id}/preview")
     public void preview(
             @Parameter(description = "附件ID", required = true) @PathVariable String id,
@@ -101,46 +99,87 @@ public class ChatAttachmentController {
             HttpServletRequest request,
             HttpServletResponse response)
             throws IOException {
-        chatAttachmentPreviewTokenService.validate(id, expires, sig);
+        chatAttachmentPreviewTokenService.validatePreview(id, expires, sig);
         ChatAttachmentEntity attachment = chatAttachmentService.loadByIdForPreview(id);
-        if (isInline(attachment)) {
-            Duration ttl = Duration.ofSeconds(
-                    aiProperties.getChat().getAttachment().getPreview().getTtlSeconds());
-            var redirect = chatAttachmentService.temporaryReadUrl(attachment, ttl);
+        if (!ChatAttachmentPreviewPolicy.canPreview(attachment)) {
+            response.sendError(HttpStatus.NOT_FOUND.value());
+            return;
+        }
+        Duration ttl = Duration.ofSeconds(
+                aiProperties.getChat().getAttachment().getPreview().getTtlSeconds());
+        if (ChatAttachmentPreviewPolicy.hasDerivedPreview(attachment)) {
+            var redirect = chatAttachmentService.temporaryPreviewReadUrl(attachment, ttl);
             if (redirect.isPresent()) {
                 response.sendRedirect(redirect.get());
                 return;
             }
+            String originalName = StringUtils.defaultIfBlank(attachment.getFileName(), attachment.getId());
+            String previewName =
+                    StringUtils.defaultIfBlank(StringUtils.substringBeforeLast(originalName, "."), originalName)
+                            + ".pdf";
+            writeResource(
+                    previewName,
+                    ChatAttachmentPreviewPolicy.PDF_MIME_TYPE,
+                    true,
+                    chatAttachmentService.openPreviewContent(attachment),
+                    request,
+                    response);
+            return;
         }
-        writeContent(attachment, request, response);
+        var redirect = chatAttachmentService.temporaryReadUrl(attachment, ttl);
+        if (redirect.isPresent()) {
+            response.sendRedirect(redirect.get());
+            return;
+        }
+        writeOriginal(attachment, request, response, false);
     }
 
-    private void writeContent(ChatAttachmentEntity attachment, HttpServletRequest request, HttpServletResponse response)
+    private void writeOriginal(
+            ChatAttachmentEntity attachment,
+            HttpServletRequest request,
+            HttpServletResponse response,
+            boolean forceDownload)
             throws IOException {
         String id = attachment.getId();
         String fileName = StringUtils.defaultIfBlank(attachment.getFileName(), id);
+        boolean inline = !forceDownload && ChatAttachmentPreviewPolicy.isSafeOriginalPreview(attachment);
+        String contentType = inline
+                ? ChatAttachmentPreviewPolicy.previewMimeType(attachment)
+                : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        writeResource(fileName, contentType, inline, chatAttachmentService.openContent(attachment), request, response);
+    }
+
+    private static void writeResource(
+            String fileName,
+            String contentType,
+            boolean inline,
+            AiFileResource resource,
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws IOException {
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
-        if (isInline(attachment)) {
-            response.setContentType(attachment.getMimeType());
+        long contentLength = resource.contentLength();
+        if (inline) {
+            response.setContentType(contentType);
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encoded);
         } else {
-            response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+            response.setContentType(contentType);
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded);
         }
         response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
-        try (AiFileResource resource = chatAttachmentService.openContent(attachment)) {
+        try (resource) {
             List<HttpRange> ranges = parseRanges(request.getHeader(HttpHeaders.RANGE));
             if (ranges.isEmpty()) {
-                response.setContentLengthLong(resource.contentLength());
+                response.setContentLengthLong(contentLength);
                 resource.content().transferTo(response.getOutputStream());
-            } else if (ranges.size() == 1 && resource.contentLength() > 0) {
+            } else if (ranges.size() == 1 && contentLength > 0) {
                 writeRange(resource, ranges.get(0), response);
             } else {
-                rangeNotSatisfiable(resource.contentLength(), response);
+                rangeNotSatisfiable(contentLength, response);
                 return;
             }
         } catch (IllegalArgumentException e) {
-            rangeNotSatisfiable(attachment.getSizeBytes() == null ? 0 : attachment.getSizeBytes(), response);
+            rangeNotSatisfiable(contentLength, response);
             return;
         }
         response.flushBuffer();
@@ -183,12 +222,5 @@ public class ChatAttachmentController {
     private static void rangeNotSatisfiable(long total, HttpServletResponse response) {
         response.setStatus(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE.value());
         response.setHeader(HttpHeaders.CONTENT_RANGE, "bytes */" + total);
-    }
-
-    private static boolean isInline(ChatAttachmentEntity attachment) {
-        String mimeType = StringUtils.substringBefore(StringUtils.defaultString(attachment.getMimeType()), ";")
-                .trim()
-                .toLowerCase(Locale.ROOT);
-        return INLINE_CATEGORIES.contains(attachment.getCategory()) && SAFE_INLINE_MIME_TYPES.contains(mimeType);
     }
 }

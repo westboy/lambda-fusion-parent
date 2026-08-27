@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentBlockFactory;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
@@ -58,7 +59,7 @@ class ToolResultMediaMaterializerTest {
                     storedBytes.set(Files.readAllBytes(invocation.getArgument(1)));
                     return stored;
                 });
-        materializer = new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        materializer = new ToolResultMediaMaterializer(attachmentService, blockFactory(properties), properties);
         byte[] expected = "generated-image".getBytes();
         ToolResultBlock toolResult = result(
                 ImageGenerationTool.TOOL_NAME,
@@ -89,7 +90,7 @@ class ToolResultMediaMaterializerTest {
     void shouldRejectPrivateRemoteAddressBeforeDownload() {
         AiProperties properties = properties();
         ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
-        materializer = new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        materializer = new ToolResultMediaMaterializer(attachmentService, blockFactory(properties), properties);
         ToolResultBlock toolResult = result(
                 ImageGenerationTool.TOOL_NAME,
                 ImageBlock.builder()
@@ -114,7 +115,7 @@ class ToolResultMediaMaterializerTest {
         ChatAttachmentEntity stored = attachment("video-1", "generated.mp4", "video/mp4");
         when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), anyString()))
                 .thenReturn(stored);
-        materializer = new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        materializer = new ToolResultMediaMaterializer(attachmentService, blockFactory(properties), properties);
         ToolResultBlock toolResult = result(
                 VideoGenerationTool.TOOL_NAME,
                 VideoBlock.builder()
@@ -142,7 +143,7 @@ class ToolResultMediaMaterializerTest {
         ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
         when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), eq("audio/mpeg")))
                 .thenReturn(attachment("audio-1", "generated.mp3", "audio/mpeg"));
-        materializer = new ToolResultMediaMaterializer(attachmentService, previewTokenService(properties), properties);
+        materializer = new ToolResultMediaMaterializer(attachmentService, blockFactory(properties), properties);
         ToolResultBlock toolResult = result(
                 AudioGenerationTool.TOOL_NAME,
                 AudioBlock.builder()
@@ -176,11 +177,22 @@ class ToolResultMediaMaterializerTest {
         return service;
     }
 
+    private static ChatAttachmentBlockFactory blockFactory(AiProperties properties) {
+        return new ChatAttachmentBlockFactory(previewTokenService(properties));
+    }
+
     private static ChatAttachmentEntity attachment(String id, String fileName, String mimeType) {
         ChatAttachmentEntity entity = new ChatAttachmentEntity();
         entity.setId(id);
         entity.setFileName(fileName);
         entity.setMimeType(mimeType);
+        if (mimeType.startsWith("image/")) {
+            entity.setCategory("IMAGE");
+        } else if (mimeType.startsWith("audio/")) {
+            entity.setCategory("AUDIO");
+        } else if (mimeType.startsWith("video/")) {
+            entity.setCategory("VIDEO");
+        }
         return entity;
     }
 }

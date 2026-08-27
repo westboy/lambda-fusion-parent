@@ -16,6 +16,7 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDateTime;
@@ -23,6 +24,8 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +37,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     private final AppService appService;
     private final ChatMessageService chatMessageService;
     private final ChatAttachmentService chatAttachmentService;
+    private final AgentFactory agentFactory;
 
     @Override
     public Page<ChatSessionEntity> page(ChatSessionPage query) {
@@ -64,7 +68,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(String id) {
-        loadOwnedForUpdate(id);
+        ChatSessionEntity session = loadOwnedForUpdate(id);
         LambdaQueryWrapper<ChatRunEntity> activeQuery = new LambdaQueryWrapper<ChatRunEntity>()
                 .eq(ChatRunEntity::getSessionId, id)
                 .notIn(
@@ -81,6 +85,22 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         chatAttachmentService.deleteBySession(id);
         chatMessageService.deleteBySession(id);
         chatSessionMapper.deleteById(id);
+        runAfterCommit(() -> agentFactory.clearChatSessionWorkspace(
+                session.getAppId(), session.getTenantId(), session.getUserId(), session.getId()));
+    }
+
+    /** 会话数据库删除提交后再清理外部工作区；无事务上下文时保持服务方法可独立调用。 */
+    private static void runAfterCommit(Runnable cleanup) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+            return;
+        }
+        cleanup.run();
     }
 
     @Override

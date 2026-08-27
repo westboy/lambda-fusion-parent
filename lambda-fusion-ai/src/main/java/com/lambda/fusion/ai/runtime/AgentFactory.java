@@ -20,6 +20,7 @@ import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
 import com.lambda.fusion.ai.skill.runtime.SkillRepositoryResolver;
 import com.lambda.fusion.ai.subagent.service.SubAgentService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionBehavior;
@@ -34,12 +35,16 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
+import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -106,6 +111,51 @@ public class AgentFactory {
 
     public String buildStableAgentId(String appId, String tenantId) {
         return workspaceStorage.stableAgentId(appId, tenantId);
+    }
+
+    /**
+     * 清理 CHAT 会话独占的 AgentScope 工作区。HOST 删除 SESSION 文件命名空间；沙箱后端清除官方恢复状态，
+     * 使下一次同会话调用不会恢复已删除会话的沙箱快照。WORKSPACE 应用的目录属于应用，不随对话删除。
+     *
+     * <p>该方法用于数据库事务提交后的资源回收，清理失败只告警，不能反向影响已经提交的会话删除。
+     */
+    public void clearChatSessionWorkspace(String appId, String tenantId, String userId, String sessionId) {
+        if (StringUtils.isAnyBlank(appId, sessionId)) {
+            log.warn("跳过 AgentScope 会话工作区清理：缺少应用或会话标识");
+            return;
+        }
+        try {
+            AppEntity app = appService.loadById(appId);
+            AppType appType = AppType.of(StringUtils.defaultIfBlank(app.getAppType(), AppType.CHAT.getCode()));
+            if (appType == AppType.WORKSPACE) {
+                log.debug("保留 WORKSPACE 应用的应用级工作区: app={}, session={}", appId, sessionId);
+                return;
+            }
+            String resolvedTenantId = StringUtils.defaultIfBlank(tenantId, "default");
+            RuntimeContext runtimeContext =
+                    RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+            if (sandboxSpecResolver.resolve(app, null).isPresent()) {
+                String stableAgentId = buildStableAgentId(appId, resolvedTenantId);
+                SandboxIsolationKey key = SandboxIsolationKey.resolve(
+                                IsolationScope.SESSION, runtimeContext, stableAgentId)
+                        .orElseThrow(() -> new IllegalStateException("无法解析会话沙箱隔离标识"));
+                new SessionSandboxStateStore(sharedStateStore(appId, resolvedTenantId), stableAgentId).delete(key);
+                log.info("已清除 AgentScope 会话沙箱恢复状态: app={}, session={}", appId, sessionId);
+                return;
+            }
+
+            var filesystem = new LocalFilesystemSpec()
+                    .mode(LocalFsMode.SANDBOXED)
+                    .toFilesystem(resolveChatWorkspace(), IsolationScope.SESSION.toNamespaceFactory());
+            WriteResult result = filesystem.delete(runtimeContext, ".");
+            if (!result.isSuccess()) {
+                log.warn("清理 AgentScope 会话工作区失败: app={}, session={}, reason={}", appId, sessionId, result.error());
+                return;
+            }
+            log.info("已清理 AgentScope 会话工作区: app={}, session={}", appId, sessionId);
+        } catch (Exception e) {
+            log.warn("清理 AgentScope 会话资源失败: app={}, session={}, reason={}", appId, sessionId, safeMessage(e), e);
+        }
     }
 
     public void invalidateApp(String appId) {
@@ -353,6 +403,7 @@ public class AgentFactory {
 
     /** CHAT 仅把文件系统作为附件工具的受控暂存区，隔离粒度固定为会话，不暴露 Shell/写文件工具。 */
     private void configureChatAttachmentFilesystem(HarnessAgent.Builder builder, AppEntity app) {
+        builder.workspace(resolveChatWorkspace());
         Optional<SandboxFilesystemSpec> sandboxSpec = sandboxSpecResolver.resolve(app, null);
         if (sandboxSpec.isPresent()) {
             builder.filesystem(
@@ -361,6 +412,19 @@ public class AgentFactory {
         }
         builder.filesystem(
                 new LocalFilesystemSpec().mode(LocalFsMode.SANDBOXED).isolationScope(IsolationScope.SESSION));
+    }
+
+    /** 与 AgentScope {@code HarnessAgent} 默认工作区采用相同的公开配置优先级。 */
+    private static Path resolveChatWorkspace() {
+        String property = System.getProperty("agentscope.workspace");
+        if (StringUtils.isNotBlank(property)) {
+            return Paths.get(property.strip());
+        }
+        String environment = System.getenv("AGENTSCOPE_WORKSPACE");
+        if (StringUtils.isNotBlank(environment)) {
+            return Paths.get(environment.strip());
+        }
+        return Paths.get(System.getProperty("user.dir")).resolve(WorkspaceConstants.DEFAULT_WORKSPACE_ROOT);
     }
 
     private HarnessAgent buildWorkspace(

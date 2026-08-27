@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.runtime;
 
+import com.lambda.fusion.ai.AiConstants.AppType;
 import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
@@ -8,6 +9,7 @@ import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver.Binding;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
+import com.lambda.fusion.ai.chat.attachment.WorkspaceArtifactPublishTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
@@ -58,6 +60,7 @@ public class ToolkitAssembler {
     private final ToolResultMediaMaterializer mediaMaterializer;
     private final AiProperties aiProperties;
     private final ChatAttachmentContentTool chatAttachmentContentTool;
+    private final WorkspaceArtifactPublishTool workspaceArtifactPublishTool;
 
     /**
      * -- GETTER --
@@ -123,9 +126,16 @@ public class ToolkitAssembler {
         }
         // 对话附件能力由应用 Toolkit 显式装配，不进入定时任务等无会话上下文的全局 @AiTools 列表。
         toolkit.registerTool(chatAttachmentContentTool);
+        registerWorkspaceArtifactTool(toolkit, app);
         registerMediaGenerationTools(toolkit, app);
         registerMcpServers(toolkit, app.getMcpServerIds());
         return toolkit;
+    }
+
+    private void registerWorkspaceArtifactTool(Toolkit toolkit, AppEntity app) {
+        if (AppType.of(app.getAppType()) == AppType.WORKSPACE) {
+            toolkit.registerTool(workspaceArtifactPublishTool);
+        }
     }
 
     /** 安全视图与此处共用同一绑定解析器；单个失效绑定只降级该能力。 */

@@ -156,7 +156,7 @@ public enum AiErrorCode implements ErrorCode {
 
     ATTACHMENT_STORAGE_ERROR(30215, "附件存储失败"),
 
-    ATTACHMENT_PREVIEW_TOKEN_INVALID(30216, "附件预览链接无效或已过期"),
+    ATTACHMENT_PREVIEW_TOKEN_INVALID(30216, "附件链接无效或已过期"),
 
     CHAT_RUN_AWAIT_CONFIRM_FAILED(30217, "对话运行进入待确认失败"),
 
