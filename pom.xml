@@ -24,7 +24,6 @@
         <module>lambda-fusion-dictionary</module>
         <module>lambda-fusion-oss</module>
         <module>lambda-fusion-datasource</module>
-        <module>lambda-fusion-startup</module>
         <module>lambda-fusion-permission</module>
         <module>lambda-fusion-authority-api</module>
     </modules>
