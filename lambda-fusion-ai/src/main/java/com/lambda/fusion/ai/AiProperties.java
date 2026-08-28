@@ -11,6 +11,7 @@ import java.util.List;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -27,46 +28,59 @@ public class AiProperties {
 
     /** Agent 运行参数。 */
     @Valid
+    @NestedConfigurationProperty
     private Runtime runtime = new Runtime();
 
     /** LLM API Key 加密参数。 */
+    @NestedConfigurationProperty
     private Security security = new Security();
 
     /** WORKSPACE 应用的工作区参数。 */
+    @NestedConfigurationProperty
     private Workspace workspace = new Workspace();
 
     /** WORKSPACE 自演化应用的长期记忆参数。 */
     @Valid
+    @NestedConfigurationProperty
     private Memory memory = new Memory();
 
     /** WORKSPACE 应用的沙箱参数。 */
+    @NestedConfigurationProperty
     private Sandbox sandbox = new Sandbox();
 
     /** 应用可见性使用的 B/C 端角色映射。 */
+    @NestedConfigurationProperty
     private Audience audience = new Audience();
 
     /** AgentScope Harness Gateway 与外部通道参数。 */
+    @NestedConfigurationProperty
     private Gateway gateway = new Gateway();
 
     /** 多轮对话状态的存储参数。 */
+    @NestedConfigurationProperty
     private StateStore stateStore = new StateStore();
 
     /** 技能仓库参数。 */
+    @NestedConfigurationProperty
     private Skill skill = new Skill();
 
     /** 知识库检索与向量存储参数。 */
     @Valid
+    @NestedConfigurationProperty
     private Rag rag = new Rag();
 
     /** 对话、附件和后台 Run 参数。 */
     @Valid
+    @NestedConfigurationProperty
     private Chat chat = new Chat();
 
     /** 集群部署参数。 */
+    @NestedConfigurationProperty
     private Cluster cluster = new Cluster();
 
     /** 定时 Agent 任务调度参数。 */
     @Valid
+    @NestedConfigurationProperty
     private Schedule schedule = new Schedule();
 
     /** 定时 Agent 任务调度参数。 */
@@ -401,10 +415,13 @@ public class AiProperties {
         /** FILE 模式的状态目录。未设置时使用 {@code workspace.root/state}。 */
         private String root;
 
+        @NestedConfigurationProperty
         private Mysql mysql = new Mysql();
 
+        @NestedConfigurationProperty
         private Postgres postgres = new Postgres();
 
+        @NestedConfigurationProperty
         private Redis redis = new Redis();
 
         private Oss oss = new Oss();
@@ -501,8 +518,10 @@ public class AiProperties {
             /** 仓库类型：MYSQL / POSTGRES / GIT / NACOS / NONE。 */
             private String type = "MYSQL";
 
+            @NestedConfigurationProperty
             private Mysql mysql = new Mysql();
 
+            @NestedConfigurationProperty
             private Postgres postgres = new Postgres();
 
             private Git git = new Git();
@@ -586,12 +605,14 @@ public class AiProperties {
 
         /** 文档切块参数。 */
         @Valid
+        @NestedConfigurationProperty
         private Chunking chunking = new Chunking();
 
         /** 向量存储参数。 */
         private Store store = new Store();
 
         /** 知识库文档和对话附件共用的原文件存储。 */
+        @NestedConfigurationProperty
         private DocumentStorage documentStorage = new DocumentStorage();
 
         /** 文档切块的全局参数。 */
@@ -622,6 +643,7 @@ public class AiProperties {
 
             private String type = "MEMORY";
 
+            @NestedConfigurationProperty
             private PgVector pgVector = new PgVector();
         }
 
@@ -632,8 +654,10 @@ public class AiProperties {
             /** 存储类型：LOCAL / OSS。 */
             private String type = "LOCAL";
 
+            @NestedConfigurationProperty
             private Local local = new Local();
 
+            @NestedConfigurationProperty
             private Oss oss = new Oss();
 
             @Data
