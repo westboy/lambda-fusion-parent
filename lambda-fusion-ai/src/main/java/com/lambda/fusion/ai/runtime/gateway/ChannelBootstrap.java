@@ -30,6 +30,7 @@ public class ChannelBootstrap {
     private final HarnessGateway gateway;
     private final ChannelConfigService channelConfigService;
     private final Map<String, ChannelFactory> factories;
+    private final ChannelAgentResolver channelAgentResolver;
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapAll() {
@@ -60,7 +61,8 @@ public class ChannelBootstrap {
             return;
         }
         try {
-            Channel channel = factory.create(def.channelId(), def.routing(), def.properties());
+            Channel channel =
+                    factory.create(def.channelId(), channelAgentResolver.resolve(def.routing()), def.properties());
             channelManager.register(channel);
             channel.init(gateway);
             channel.start();

@@ -19,6 +19,7 @@ import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import com.lambda.fusion.ai.runtime.event.DubboConfigInvalidationBroadcaster;
 import com.lambda.fusion.ai.runtime.event.RemoteAgentCacheInvalidationService;
+import com.lambda.fusion.ai.runtime.gateway.ChannelAgentResolver;
 import com.lambda.fusion.ai.runtime.gateway.ChannelBootstrap;
 import com.lambda.fusion.ai.runtime.gateway.ChannelConfigApplier;
 import com.lambda.fusion.ai.runtime.gateway.ChannelLifecycle;
@@ -156,8 +157,9 @@ public class AiConfigure {
                 ChannelManager channelManager,
                 HarnessGateway gateway,
                 ChannelConfigService channelConfigService,
-                Map<String, ChannelFactory> factories) {
-            return new ChannelBootstrap(channelManager, gateway, channelConfigService, factories);
+                Map<String, ChannelFactory> factories,
+                ChannelAgentResolver channelAgentResolver) {
+            return new ChannelBootstrap(channelManager, gateway, channelConfigService, factories, channelAgentResolver);
         }
     }
 

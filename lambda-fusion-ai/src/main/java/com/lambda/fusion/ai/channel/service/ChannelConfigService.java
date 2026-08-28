@@ -31,10 +31,10 @@ public interface ChannelConfigService {
 
     ChannelConfigEntity loadById(String id);
 
-    /** 返回启用的路由配置；不存在或禁用时返回 null。 */
+    /** 返回启用的 AgentScope 运行时路由配置，并按需注册其中引用的平台应用 Agent；不存在或禁用时返回 null。 */
     ChannelConfig resolve(String channelId);
 
-    /** 加载启用渠道的构造视图，包含已解密凭证。 */
+    /** 加载启用渠道的构造视图，包含已解密凭证和持久化的可读 Agent 引用。 */
     List<ChannelDefinition> loadEnabledDefinitions();
 
     /** 返回单个启用渠道的构造视图；不存在或禁用时返回 null。 */

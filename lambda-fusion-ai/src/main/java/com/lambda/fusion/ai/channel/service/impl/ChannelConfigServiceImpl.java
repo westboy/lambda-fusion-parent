@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.channel.model.entity.ChannelConfigEntity;
 import com.lambda.fusion.ai.channel.service.ChannelConfigService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.gateway.ChannelAgentResolver;
 import com.lambda.fusion.ai.runtime.gateway.ChannelBootstrap;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -50,6 +51,7 @@ public class ChannelConfigServiceImpl implements ChannelConfigService {
     private final KeyEncryptionService keyEncryptionService;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<ChannelBootstrap> bootstrapProvider;
+    private final ChannelAgentResolver channelAgentResolver;
 
     @Override
     public Page<ChannelConfigEntity> page(ChannelConfigPage query) {
@@ -146,7 +148,7 @@ public class ChannelConfigServiceImpl implements ChannelConfigService {
         if (entity == null) {
             return null;
         }
-        return buildConfig(entity);
+        return channelAgentResolver.resolve(buildConfig(entity));
     }
 
     @Override
