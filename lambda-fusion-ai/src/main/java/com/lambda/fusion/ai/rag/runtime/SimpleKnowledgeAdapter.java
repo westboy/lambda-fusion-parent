@@ -6,6 +6,7 @@ import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
+import com.lambda.fusion.ai.rag.store.OceanBaseVectorStore;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.embedding.EmbeddingModel;
@@ -306,6 +307,22 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
         if (type == VectorStoreType.MEMORY) {
             return InMemoryStore.builder().dimensions(dimensions).build();
+        }
+        if (type == VectorStoreType.OCEANBASE) {
+            AiProperties.Rag.OceanBase oceanBase = rag.getStore().getOceanBase();
+            if (StringUtils.isBlank(oceanBase.getJdbcUrl())) {
+                throw new AiBusinessException(AiErrorCode.KB_VECTOR_STORE_NOT_CONFIGURED);
+            }
+            try {
+                return new OceanBaseVectorStore(
+                        oceanBase.getJdbcUrl(),
+                        oceanBase.getUsername(),
+                        oceanBase.getPassword(),
+                        kb.getVectorTable(),
+                        dimensions);
+            } catch (VectorStoreException e) {
+                throw new AiBusinessException(AiErrorCode.CONFIGURATION_ERROR, e);
+            }
         }
         AiProperties.Rag.PgVector pgvector = rag.getStore().getPgVector();
         if (StringUtils.isBlank(pgvector.getJdbcUrl())) {

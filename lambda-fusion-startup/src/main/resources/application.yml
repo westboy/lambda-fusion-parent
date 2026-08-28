@@ -124,7 +124,7 @@ lambda:
       #### 知识库(RAG)：默认关闭；pgvector 连接默认复用 ai-postgres 环境变量 ####
       rag:
         enabled: ${AI_RAG_ENABLED:true}
-        #### 向量库后端：MEMORY(默认,进程内,重启丢失)/PGVECTOR(生产推荐) ####
+        #### 向量库后端：MEMORY(进程内)/PGVECTOR/OCEANBASE(OceanBase MySQL 模式) ####
         store:
           type: ${AI_RAG_STORE_TYPE:PGVECTOR}
           pg-vector:
@@ -132,6 +132,10 @@ lambda:
             username: ${AI_PGVECTOR_USERNAME:${AI_DB_USERNAME}}
             password: ${AI_PGVECTOR_PASSWORD:${AI_DB_PASSWORD}}
             schema: ${AI_PGVECTOR_SCHEMA:public}
+          ocean-base:
+            jdbc-url: ${AI_OCEANBASE_JDBC_URL:${AI_DB_URL}}
+            username: ${AI_OCEANBASE_USERNAME:${AI_DB_USERNAME}}
+            password: ${AI_OCEANBASE_PASSWORD:${AI_DB_PASSWORD}}
         #### AI 文件存储：知识库原文件、聊天附件、工具生成媒体共用 LOCAL/OSS 后端 ####
         document-storage:
           type: ${AI_KB_STORAGE_TYPE:OSS}

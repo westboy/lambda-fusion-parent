@@ -586,7 +586,7 @@ public class AiProperties {
     }
 
     /**
-     * 知识库检索参数。向量存储可使用进程内存或 pgvector；pgvector 需单独配置 JDBC 连接。
+     * 知识库检索参数。向量存储可使用进程内存、pgvector 或 OceanBase 向量存储。
      */
     @Data
     public static class Rag {
@@ -637,7 +637,7 @@ public class AiProperties {
             }
         }
 
-        /** 向量存储类型：MEMORY / PGVECTOR。 */
+        /** 向量存储类型：MEMORY / PGVECTOR / OCEANBASE。 */
         @Data
         public static class Store {
 
@@ -645,6 +645,8 @@ public class AiProperties {
 
             @NestedConfigurationProperty
             private PgVector pgVector = new PgVector();
+
+            private OceanBase oceanBase = new OceanBase();
         }
 
         /** 文档原文件存储。 */
@@ -693,6 +695,17 @@ public class AiProperties {
 
             /** Schema 名。 */
             private String schema = "public";
+        }
+
+        /** OceanBase MySQL 模式向量存储连接参数。 */
+        @Data
+        public static class OceanBase {
+
+            private String jdbcUrl;
+
+            private String username;
+
+            private String password;
         }
     }
 

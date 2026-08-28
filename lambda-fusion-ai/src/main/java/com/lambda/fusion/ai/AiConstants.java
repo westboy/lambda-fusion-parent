@@ -521,14 +521,17 @@ public interface AiConstants {
     }
 
     /**
-     * 知识库向量库后端类型。MEMORY 进程内存（零配置、重启丢失、单节点）；PGVECTOR PostgreSQL pgvector（生产推荐、多副本共享）。
+     * 知识库向量库后端类型。MEMORY 进程内存（零配置、重启丢失、单节点）；PGVECTOR PostgreSQL pgvector；
+     * OCEANBASE OceanBase MySQL 模式向量存储。
      */
     @Getter
     @AllArgsConstructor
     enum VectorStoreType {
         MEMORY("MEMORY", "进程内存(重启丢失)"),
 
-        PGVECTOR("PGVECTOR", "PostgreSQL pgvector");
+        PGVECTOR("PGVECTOR", "PostgreSQL pgvector"),
+
+        OCEANBASE("OCEANBASE", "OceanBase 向量存储");
 
         private final String code;
 

@@ -200,12 +200,13 @@ lambda:
         default-score-threshold: 0.5
         max-inject-chars: 4000
         store:
-          type: MEMORY                              # MEMORY（默认）/ PGVECTOR
+          type: MEMORY                              # MEMORY（默认）/ PGVECTOR / OCEANBASE
+          pg-vector: { jdbc-url, username, password, schema } # 仅 PGVECTOR 需要
+          ocean-base: { jdbc-url, username, password } # 仅 OCEANBASE 需要
         document-storage:
           type: LOCAL                               # LOCAL（默认）/ OSS
           local: { root }                           # 默认 ${workspace.root}/knowledge-files
           oss:   { client-name, key-prefix }        # 默认前缀 ai/knowledge/
-        pgvector: { jdbc-url, username, password, schema }   # 仅 PGVECTOR 需要
 ```
 
 | 项目 | 说明 |
@@ -219,7 +220,7 @@ lambda:
 | `sandbox.*` | 各沙箱后端凭据；对应扩展需在 classpath（ai 模块已 optional 引入） |
 | `skill.repository.type` | 技能仓库源；`NONE` 或扩展缺失时技能市场禁用 |
 | `rag.enabled` | 知识库检索注入总开关（默认 false）；关闭时管理 CRUD 仍可用 |
-| `rag.store.type` | 向量库后端；PGVECTOR 需配 `pgvector.*` 连接（只接受 JDBC 连接串，不走动态数据源） |
+| `rag.store.type` | 向量库后端；PGVECTOR 使用 `store.pg-vector.*` JDBC 连接；OCEANBASE 使用 `store.ocean-base.*` JDBC 连接 |
 | `rag.document-storage.type` | AI 文件存储后端；知识库原文件、聊天附件和工具生成媒体共用 LOCAL / OSS |
 | `chat.attachment.generated-media.*` | 工具结果 URL/Base64 媒体物化的大小、连接、请求和重定向限制 |
 | `chat.attachment.preview.*` | 附件与生成媒体预览签名密钥和有效期；OSS 预览会二次重定向到短期预签名地址 |

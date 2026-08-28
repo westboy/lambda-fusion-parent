@@ -109,6 +109,17 @@ class SimpleKnowledgeAdapterTest {
     }
 
     @Test
+    void oceanbaseStoreRequiresJdbcUrl() {
+        AiProperties.Rag rag = new AiProperties.Rag();
+        rag.getStore().setType("OCEANBASE");
+        KnowledgeBaseEntity kb = new KnowledgeBaseEntity();
+        kb.setVectorTable("ai_kb_1");
+
+        assertThatThrownBy(() -> SimpleKnowledgeAdapter.createStore(rag, kb, 1536))
+                .isInstanceOf(AiBusinessException.class);
+    }
+
+    @Test
     void unknownStoreTypeRejected() {
         AiProperties.Rag rag = new AiProperties.Rag();
         rag.getStore().setType("QDRANT");
