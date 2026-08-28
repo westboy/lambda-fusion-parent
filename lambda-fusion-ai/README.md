@@ -94,7 +94,7 @@
 ## 能力详解
 
 ### LLM 提供方与模型
-提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
+提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；EMBEDDING 模型必须配置默认向量维度，新建知识库会采用并固化该维度（也可在建库时显式覆盖）；API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
 
 ### 智能应用
 应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。

@@ -23,6 +23,10 @@ public class UpdateLlmModel {
     @Schema(description = "模型类型: CHAT/EMBEDDING/IMAGE_GEN/VIDEO_GEN/AUDIO_GEN")
     private ModelType modelType;
 
+    @Schema(description = "嵌入模型默认向量维度；EMBEDDING 类型必填，切换为其他类型时由服务端清空")
+    @Min(value = 1, message = "嵌入模型默认向量维度必须大于0")
+    private Integer embeddingDimensions;
+
     @Schema(description = "媒体创作操作；切换为非媒体模型时由服务端清空")
     private MediaGenerationOperation mediaOperation;
 

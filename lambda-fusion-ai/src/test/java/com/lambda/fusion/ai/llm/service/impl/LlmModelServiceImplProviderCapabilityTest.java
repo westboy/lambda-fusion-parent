@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.llm.service.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -20,6 +21,7 @@ import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
 class LlmModelServiceImplProviderCapabilityTest {
@@ -82,6 +84,37 @@ class LlmModelServiceImplProviderCapabilityTest {
 
         verify(llmModelMapper).insert(any(LlmModelEntity.class));
         verify(eventPublisher).publishEvent(any(ConfigChangedEvent.class));
+    }
+
+    @Test
+    void requiresDefaultDimensionsForEmbeddingModel() {
+        when(llmProviderService.loadById("openai-provider")).thenReturn(provider("openai-provider", "openai"));
+        CreateLlmModel dto = new CreateLlmModel();
+        dto.setProviderId("openai-provider");
+        dto.setName("嵌入模型");
+        dto.setModelName("text-embedding-3-small");
+        dto.setModelType(ModelType.EMBEDDING);
+
+        assertThatThrownBy(() -> service.create(dto)).isInstanceOf(AiBusinessException.class);
+
+        verifyNoInteractions(llmModelMapper, eventPublisher);
+    }
+
+    @Test
+    void persistsDefaultDimensionsForEmbeddingModel() {
+        when(llmProviderService.loadById("openai-provider")).thenReturn(provider("openai-provider", "openai"));
+        CreateLlmModel dto = new CreateLlmModel();
+        dto.setProviderId("openai-provider");
+        dto.setName("嵌入模型");
+        dto.setModelName("text-embedding-3-small");
+        dto.setModelType(ModelType.EMBEDDING);
+        dto.setEmbeddingDimensions(1536);
+
+        service.create(dto);
+
+        ArgumentCaptor<LlmModelEntity> captor = ArgumentCaptor.forClass(LlmModelEntity.class);
+        verify(llmModelMapper).insert(captor.capture());
+        assertThat(captor.getValue().getEmbeddingDimensions()).isEqualTo(1536);
     }
 
     private static LlmProviderEntity provider(String id, String providerType) {

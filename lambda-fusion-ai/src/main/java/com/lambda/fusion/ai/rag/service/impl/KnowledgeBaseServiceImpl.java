@@ -53,7 +53,12 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public KnowledgeBaseEntity create(CreateKnowledgeBase dto) {
-        validateEmbeddingModel(dto.getEmbeddingModelId());
+        LlmModelEntity embeddingModel = validateEmbeddingModel(dto.getEmbeddingModelId());
+        Integer dimensions =
+                dto.getDimensions() != null ? dto.getDimensions() : embeddingModel.getEmbeddingDimensions();
+        if (dimensions == null || dimensions <= 0) {
+            throw new AiBusinessException(AiErrorCode.LLM_EMBEDDING_DIMENSIONS_INVALID, "请先为嵌入模型配置默认向量维度，或在知识库中显式填写");
+        }
         ensureNameUnique(dto.getName(), null);
         KnowledgeBaseEntity entity = new KnowledgeBaseEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
@@ -61,7 +66,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         entity.setName(dto.getName());
         entity.setDescription(dto.getDescription());
         entity.setEmbeddingModelId(dto.getEmbeddingModelId());
-        entity.setDimensions(dto.getDimensions());
+        entity.setDimensions(dimensions);
         // 每知识库一张向量表，表名由系统生成（SearchDocumentDto 无 payload 过滤，无法单表按 KB 隔离）
         entity.setVectorTable("ai_kb_" + entity.getId());
         entity.setRetrieveLimit(dto.getRetrieveLimit());
@@ -149,11 +154,12 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
     }
 
-    private void validateEmbeddingModel(String modelId) {
+    private LlmModelEntity validateEmbeddingModel(String modelId) {
         LlmModelEntity model = llmModelService.loadById(modelId);
         if (model.getModelType() != ModelType.EMBEDDING || Boolean.FALSE.equals(model.getEnabled())) {
             throw new AiBusinessException(AiErrorCode.KB_EMBEDDING_MODEL_INVALID, modelId);
         }
+        return model;
     }
 
     private KnowledgeBaseEntity requireExists(String id) {

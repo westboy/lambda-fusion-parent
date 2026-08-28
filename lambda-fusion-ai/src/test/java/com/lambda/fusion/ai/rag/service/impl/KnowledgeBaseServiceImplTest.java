@@ -6,32 +6,62 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeBaseMapper;
+import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
 import com.lambda.fusion.ai.rag.runtime.RetrievalProbe;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.KnowledgeDocumentService;
+import com.lambda.fusion.core.utils.AuthUtils;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.beans.factory.ObjectProvider;
 
 /** 验证检索测试的知识库状态、RAG 装配和失败语义。 */
 class KnowledgeBaseServiceImplTest {
 
     private final KnowledgeBaseMapper mapper = mock(KnowledgeBaseMapper.class);
+    private final LlmModelService modelService = mock(LlmModelService.class);
     private final SimpleKnowledgeAdapter adapter = mock(SimpleKnowledgeAdapter.class);
     private final ObjectProvider<SimpleKnowledgeAdapter> adapterProvider = provider(adapter);
     private final KnowledgeBaseServiceImpl service = new KnowledgeBaseServiceImpl(
-            mapper, mock(LlmModelService.class), adapterProvider, provider(mock(KnowledgeDocumentService.class)));
+            mapper, modelService, adapterProvider, provider(mock(KnowledgeDocumentService.class)));
+
+    @Test
+    void createMaterializesEmbeddingModelDefaultDimensions() {
+        LlmModelEntity model = new LlmModelEntity();
+        model.setId("embedding-1");
+        model.setModelType(ModelType.EMBEDDING);
+        model.setEmbeddingDimensions(1024);
+        model.setEnabled(true);
+        when(modelService.loadById("embedding-1")).thenReturn(model);
+        CreateKnowledgeBase command = new CreateKnowledgeBase();
+        command.setName("知识库");
+        command.setEmbeddingModelId("embedding-1");
+
+        try (MockedStatic<AuthUtils> auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getTenantId).thenReturn("tenant-1");
+
+            KnowledgeBaseEntity created = service.create(command);
+
+            assertThat(created.getDimensions()).isEqualTo(1024);
+            assertThat(created.getTenantId()).isEqualTo("tenant-1");
+            verify(mapper).insert(same(created));
+        }
+    }
 
     @Test
     void retrievalTestUsesEnabledKnowledgeBaseAndTrimsQuery() {

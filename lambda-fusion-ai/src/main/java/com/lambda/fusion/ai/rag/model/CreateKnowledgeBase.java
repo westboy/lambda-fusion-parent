@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.rag.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import lombok.Data;
@@ -21,6 +22,7 @@ public class CreateKnowledgeBase {
     private String embeddingModelId;
 
     @Schema(description = "向量维度(空取嵌入模型默认维度;建表后不可变)")
+    @Min(value = 1, message = "向量维度必须大于0")
     private Integer dimensions;
 
     @Schema(description = "检索条数(空走全局默认)")

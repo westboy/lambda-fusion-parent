@@ -35,6 +35,10 @@ public class LlmModelEntity {
     @Schema(description = "模型类型: CHAT|EMBEDDING|IMAGE_GEN|VIDEO_GEN|AUDIO_GEN")
     private ModelType modelType;
 
+    @TableField("embedding_dimensions")
+    @Schema(description = "嵌入模型默认向量维度；仅 EMBEDDING 类型使用")
+    private Integer embeddingDimensions;
+
     @TableField("media_operation")
     @Schema(description = "媒体创作操作；非媒体模型为空")
     private MediaGenerationOperation mediaOperation;

@@ -47,7 +47,8 @@ public class LlmModelServiceImpl implements LlmModelService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public LlmModelEntity create(CreateLlmModel dto) {
-        validateConfiguration(dto.getProviderId(), dto.getModelType(), dto.getMediaOperation());
+        validateConfiguration(
+                dto.getProviderId(), dto.getModelType(), dto.getEmbeddingDimensions(), dto.getMediaOperation());
         ensureNameUnique(dto.getName(), null);
         LlmModelEntity entity = new LlmModelEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
@@ -55,6 +56,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         entity.setName(dto.getName());
         entity.setModelName(dto.getModelName());
         entity.setModelType(dto.getModelType());
+        entity.setEmbeddingDimensions(dto.getEmbeddingDimensions());
         entity.setMediaOperation(dto.getMediaOperation());
         entity.setDefaultTemperature(dto.getDefaultTemperature());
         entity.setDefaultMaxTokens(dto.getDefaultMaxTokens());
@@ -74,10 +76,13 @@ public class LlmModelServiceImpl implements LlmModelService {
         LlmModelEntity entity = requireExists(id);
         String targetProviderId = StringUtils.defaultIfBlank(dto.getProviderId(), entity.getProviderId());
         ModelType targetModelType = dto.getModelType() == null ? entity.getModelType() : dto.getModelType();
+        Integer targetEmbeddingDimensions = targetModelType == ModelType.EMBEDDING
+                ? dto.getEmbeddingDimensions() != null ? dto.getEmbeddingDimensions() : entity.getEmbeddingDimensions()
+                : dto.getEmbeddingDimensions();
         MediaGenerationOperation targetOperation = dto.getMediaOperation() != null
                 ? dto.getMediaOperation()
                 : isMedia(targetModelType) ? entity.getMediaOperation() : null;
-        validateConfiguration(targetProviderId, targetModelType, targetOperation);
+        validateConfiguration(targetProviderId, targetModelType, targetEmbeddingDimensions, targetOperation);
         if (!targetProviderId.equals(entity.getProviderId())) {
             entity.setProviderId(targetProviderId);
         }
@@ -91,6 +96,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         if (dto.getModelType() != null) {
             entity.setModelType(dto.getModelType());
         }
+        entity.setEmbeddingDimensions(targetEmbeddingDimensions);
         entity.setMediaOperation(targetOperation);
         if (dto.getDefaultTemperature() != null) {
             entity.setDefaultTemperature(dto.getDefaultTemperature());
@@ -144,7 +150,10 @@ public class LlmModelServiceImpl implements LlmModelService {
     }
 
     private void validateConfiguration(
-            String providerId, ModelType modelType, MediaGenerationOperation mediaOperation) {
+            String providerId,
+            ModelType modelType,
+            Integer embeddingDimensions,
+            MediaGenerationOperation mediaOperation) {
         LlmProviderEntity provider = llmProviderService.loadById(providerId);
         ProviderType providerType = ProviderType.of(provider.getProviderType());
         if (providerType == null) {
@@ -153,6 +162,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         if (!providerType.supports(modelType)) {
             throw new AiBusinessException(AiErrorCode.LLM_MODEL_TYPE_NOT_SUPPORTED, modelType);
         }
+        validateEmbeddingDimensions(modelType, embeddingDimensions);
         if (!isMedia(modelType)) {
             if (mediaOperation != null) {
                 throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "非媒体模型不能设置创作操作");
@@ -167,6 +177,19 @@ public class LlmModelServiceImpl implements LlmModelService {
         }
         if (!providerType.supports(mediaOperation)) {
             throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "当前提供方不支持该创作操作");
+        }
+    }
+
+    private static void validateEmbeddingDimensions(ModelType modelType, Integer embeddingDimensions) {
+        if (modelType == ModelType.EMBEDDING) {
+            if (embeddingDimensions == null || embeddingDimensions <= 0) {
+                throw new AiBusinessException(
+                        AiErrorCode.LLM_EMBEDDING_DIMENSIONS_INVALID, "EMBEDDING 类型必须配置大于0的默认向量维度");
+            }
+            return;
+        }
+        if (embeddingDimensions != null) {
+            throw new AiBusinessException(AiErrorCode.LLM_EMBEDDING_DIMENSIONS_INVALID, "非 EMBEDDING 类型不能配置默认向量维度");
         }
     }
 

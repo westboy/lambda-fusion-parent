@@ -29,6 +29,10 @@ public class CreateLlmModel {
     @NotNull(message = "模型类型不能为空")
     private ModelType modelType;
 
+    @Schema(description = "嵌入模型默认向量维度；EMBEDDING 类型必填")
+    @Min(value = 1, message = "嵌入模型默认向量维度必须大于0")
+    private Integer embeddingDimensions;
+
     @Schema(description = "媒体创作操作；媒体模型必填，非媒体模型不填")
     private MediaGenerationOperation mediaOperation;
 

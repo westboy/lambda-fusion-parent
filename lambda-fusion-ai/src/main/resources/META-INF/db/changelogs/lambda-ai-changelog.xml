@@ -921,4 +921,19 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-ai-2026082800010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_llm_model"/>
+                <not>
+                    <columnExists tableName="ai_llm_model" columnName="embedding_dimensions"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="ai_llm_model">
+            <column name="embedding_dimensions" type="int"
+                    remarks="嵌入模型默认向量维度(仅 model_type=2 使用)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>
