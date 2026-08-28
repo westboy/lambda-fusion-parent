@@ -131,7 +131,7 @@ lambda:
             jdbc-url: ${AI_PGVECTOR_JDBC_URL:${AI_DB_URL}}
             username: ${AI_PGVECTOR_USERNAME:${AI_DB_USERNAME}}
             password: ${AI_PGVECTOR_PASSWORD:${AI_DB_PASSWORD}}
-            schema: ${AI_PGVECTOR_SCHEMA:public}
+            schema: ${AI_PGVECTOR_SCHEMA:public}   
         #### AI 文件存储：知识库原文件、聊天附件、工具生成媒体共用 LOCAL/OSS 后端 ####
         document-storage:
           type: ${AI_KB_STORAGE_TYPE:OSS}
