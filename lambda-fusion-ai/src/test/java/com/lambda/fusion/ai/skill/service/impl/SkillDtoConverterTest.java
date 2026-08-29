@@ -43,6 +43,27 @@ class SkillDtoConverterTest {
         assertThat(view.getMarkdown()).isEqualTo("md");
         assertThat(view.getResources()).containsEntry("r", "c");
         assertThat(view.getResourceCount()).isEqualTo(1);
+        assertThat(view.getResourceFiles()).singleElement().satisfies(resource -> {
+            assertThat(resource.getPath()).isEqualTo("r");
+            assertThat(resource.getContent()).isNull();
+            assertThat(resource.getContentLength()).isEqualTo(1);
+            assertThat(resource.isBinary()).isFalse();
+        });
+    }
+
+    @Test
+    void toViewCanOmitResourceContent() {
+        AgentSkill skill = SkillServiceImpl.toAgentSkill("s", "d", "md", Map.of("r", "content"));
+
+        SkillView view = SkillServiceImpl.toView(skill, false);
+
+        assertThat(view.getMarkdown()).isEqualTo("md");
+        assertThat(view.getResources()).isNull();
+        assertThat(view.getResourceFiles()).singleElement().satisfies(resource -> {
+            assertThat(resource.getPath()).isEqualTo("r");
+            assertThat(resource.getContent()).isNull();
+            assertThat(resource.getContentLength()).isEqualTo(7);
+        });
     }
 
     @Test

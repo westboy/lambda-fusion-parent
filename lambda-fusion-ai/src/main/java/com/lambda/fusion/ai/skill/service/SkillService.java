@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.skill.service;
 import com.lambda.fusion.ai.skill.model.CreateSkill;
 import com.lambda.fusion.ai.skill.model.SkillPackageImportResult;
 import com.lambda.fusion.ai.skill.model.SkillPackageInspection;
+import com.lambda.fusion.ai.skill.model.SkillResourceView;
 import com.lambda.fusion.ai.skill.model.SkillView;
 import com.lambda.fusion.ai.skill.model.UpdateSkill;
 import java.util.List;
@@ -18,7 +19,9 @@ public interface SkillService {
 
     List<SkillView> list(boolean includeResources);
 
-    SkillView get(String name);
+    SkillView get(String name, boolean includeResources);
+
+    SkillResourceView getResource(String name, String path);
 
     SkillView create(CreateSkill dto);
 

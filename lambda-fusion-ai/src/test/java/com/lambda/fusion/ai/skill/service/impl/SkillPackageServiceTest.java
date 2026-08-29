@@ -14,6 +14,7 @@ import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.skill.model.SkillPackageImportResult;
 import com.lambda.fusion.ai.skill.model.SkillPackageInspection;
 import com.lambda.fusion.ai.skill.model.SkillPackageType;
+import com.lambda.fusion.ai.skill.model.SkillResourceView;
 import com.lambda.fusion.ai.skill.model.UpdateSkill;
 import com.lambda.fusion.ai.skill.runtime.SkillRepositoryResolver;
 import io.agentscope.core.skill.AgentSkill;
@@ -111,6 +112,46 @@ class SkillPackageServiceTest {
                         argThat(skills -> skills.size() == 1
                                 && skills.getFirst().getDescription().equals("新描述")
                                 && skills.getFirst().getMetadataValue("license").equals("MIT")),
+                        eq(true));
+    }
+
+    @Test
+    void readsSingleResourceOnDemand() {
+        AgentSkillRepository repository = writableRepository();
+        AgentSkill existing = new AgentSkill("pptx", "desc", "instructions", Map.of("scripts/render.py", "render"));
+        when(repository.getSkill("pptx")).thenReturn(existing);
+        SkillServiceImpl service = service(repository);
+
+        SkillResourceView resource = service.getResource("pptx", "scripts/render.py");
+
+        assertThat(resource.getPath()).isEqualTo("scripts/render.py");
+        assertThat(resource.getContent()).isEqualTo("render");
+        assertThat(resource.getContentLength()).isEqualTo(6);
+        assertThat(resource.isBinary()).isFalse();
+    }
+
+    @Test
+    void updateAppliesResourceChangesWithoutDroppingUntouchedFiles() {
+        AgentSkillRepository repository = writableRepository();
+        AgentSkill existing = new AgentSkill(
+                "pptx",
+                "desc",
+                "instructions",
+                Map.of("keep.txt", "keep", "change.txt", "old", "delete.txt", "remove"));
+        when(repository.getSkill("pptx")).thenReturn(existing);
+        when(repository.save(anyList(), eq(true))).thenReturn(true);
+        SkillServiceImpl service = service(repository);
+        UpdateSkill update = new UpdateSkill();
+        update.setResourceUpserts(Map.of("change.txt", "new", "add.txt", "added"));
+        update.setResourceDeletes(List.of("delete.txt"));
+
+        service.update("pptx", update);
+
+        verify(repository)
+                .save(
+                        argThat(skills -> skills.getFirst()
+                                .getResources()
+                                .equals(Map.of("keep.txt", "keep", "change.txt", "new", "add.txt", "added"))),
                         eq(true));
     }
 

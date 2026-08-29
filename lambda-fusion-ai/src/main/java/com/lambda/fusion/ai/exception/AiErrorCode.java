@@ -48,6 +48,8 @@ public enum AiErrorCode implements ErrorCode {
 
     SKILL_PACKAGE_IMPORT_FAILED(30973, "技能包导入失败"),
 
+    SKILL_RESOURCE_NOT_FOUND(30974, "技能资源不存在"),
+
     LLM_PROVIDER_NOT_FOUND(30401, "LLM提供方不存在"),
 
     LLM_PROVIDER_NAME_EXISTS(30402, "LLM提供方名称已存在"),

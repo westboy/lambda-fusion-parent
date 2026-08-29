@@ -7,6 +7,7 @@ import com.lambda.fusion.ai.skill.model.SkillPackageImportResult;
 import com.lambda.fusion.ai.skill.model.SkillPackageInspection;
 import com.lambda.fusion.ai.skill.model.SkillPackageItem;
 import com.lambda.fusion.ai.skill.model.SkillPackageType;
+import com.lambda.fusion.ai.skill.model.SkillResourceView;
 import com.lambda.fusion.ai.skill.model.SkillView;
 import com.lambda.fusion.ai.skill.model.UpdateSkill;
 import com.lambda.fusion.ai.skill.runtime.SkillPackageReader;
@@ -17,6 +18,7 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -52,13 +54,22 @@ public class SkillServiceImpl implements SkillService {
     }
 
     @Override
-    public SkillView get(String name) {
+    public SkillView get(String name, boolean includeResources) {
         AgentSkillRepository repo = requireRepo();
-        AgentSkill skill = repo.getSkill(name);
-        if (skill == null) {
-            throw new AiBusinessException(AiErrorCode.SKILL_NOT_FOUND, name);
+        return toView(requireSkill(repo, name), includeResources);
+    }
+
+    @Override
+    public SkillResourceView getResource(String name, String path) {
+        if (path == null || path.isBlank()) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "资源路径不能为空");
         }
-        return toView(skill);
+        AgentSkill skill = requireSkill(requireRepo(), name);
+        String content = skill.getResource(path);
+        if (content == null) {
+            throw new AiBusinessException(AiErrorCode.SKILL_RESOURCE_NOT_FOUND, path);
+        }
+        return toResourceView(path, content, true);
     }
 
     @Override
@@ -134,9 +145,7 @@ public class SkillServiceImpl implements SkillService {
         if (dto.getMarkdown() != null) {
             builder.skillContent(dto.getMarkdown());
         }
-        if (dto.getResources() != null) {
-            builder.resources(dto.getResources());
-        }
+        applyResourceChanges(builder, existing, dto);
         repo.save(List.of(builder.build()), true);
     }
 
@@ -163,6 +172,43 @@ public class SkillServiceImpl implements SkillService {
             throw new AiBusinessException(AiErrorCode.OPERATION_NOT_SUPPORTED, "技能仓库只读，不支持写操作");
         }
         return repo;
+    }
+
+    private static AgentSkill requireSkill(AgentSkillRepository repo, String name) {
+        AgentSkill skill = repo.getSkill(name);
+        if (skill == null) {
+            throw new AiBusinessException(AiErrorCode.SKILL_NOT_FOUND, name);
+        }
+        return skill;
+    }
+
+    private static void applyResourceChanges(AgentSkill.Builder builder, AgentSkill existing, UpdateSkill dto) {
+        if (dto.getResources() != null) {
+            if (dto.getResourceUpserts() != null || dto.getResourceDeletes() != null) {
+                throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "资源全量覆盖与增量更新不能同时提交");
+            }
+            builder.resources(dto.getResources());
+            return;
+        }
+        if (dto.getResourceUpserts() == null && dto.getResourceDeletes() == null) {
+            return;
+        }
+
+        Map<String, String> resources = new LinkedHashMap<>(existing.getResources());
+        if (dto.getResourceDeletes() != null) {
+            dto.getResourceDeletes().stream()
+                    .filter(path -> path != null && !path.isBlank())
+                    .forEach(resources::remove);
+        }
+        if (dto.getResourceUpserts() != null) {
+            dto.getResourceUpserts().forEach((path, content) -> {
+                if (path == null || path.isBlank() || content == null) {
+                    throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "资源路径和正文不能为空");
+                }
+                resources.put(path, content);
+            });
+        }
+        builder.resources(resources);
     }
 
     private SkillPackageReader.ParsedPackage readPackage(MultipartFile file) {
@@ -237,13 +283,34 @@ public class SkillServiceImpl implements SkillService {
     }
 
     static SkillView toView(AgentSkill skill) {
+        return toView(skill, true);
+    }
+
+    static SkillView toView(AgentSkill skill, boolean includeResources) {
         SkillView view = new SkillView();
         view.setName(skill.getName());
         view.setDescription(skill.getDescription());
         view.setMarkdown(skill.getSkillContent());
-        view.setResources(skill.getResources());
+        if (includeResources) {
+            view.setResources(skill.getResources());
+        }
         view.setResourceCount(skill.getResourcePaths().size());
+        view.setResourceFiles(skill.getResources().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> toResourceView(entry.getKey(), entry.getValue(), false))
+                .toList());
         view.setMetadata(skill.getMetadata());
+        return view;
+    }
+
+    private static SkillResourceView toResourceView(String path, String content, boolean includeContent) {
+        SkillResourceView view = new SkillResourceView();
+        view.setPath(path);
+        view.setContentLength(content.length());
+        view.setBinary(content.startsWith("base64:"));
+        if (includeContent) {
+            view.setContent(content);
+        }
         return view;
     }
 

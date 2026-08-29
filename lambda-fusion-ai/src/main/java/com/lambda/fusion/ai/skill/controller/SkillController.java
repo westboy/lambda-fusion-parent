@@ -5,6 +5,7 @@ import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.skill.model.CreateSkill;
 import com.lambda.fusion.ai.skill.model.SkillPackageImportResult;
 import com.lambda.fusion.ai.skill.model.SkillPackageInspection;
+import com.lambda.fusion.ai.skill.model.SkillResourceView;
 import com.lambda.fusion.ai.skill.model.SkillView;
 import com.lambda.fusion.ai.skill.model.UpdateSkill;
 import com.lambda.fusion.ai.skill.service.SkillService;
@@ -45,8 +46,19 @@ public class SkillController {
 
     @Operation(summary = "查询技能")
     @GetMapping("/{name}")
-    public SkillView get(@Parameter(description = "技能名", required = true) @PathVariable String name) {
-        return skillService.get(name);
+    public SkillView get(
+            @Parameter(description = "技能名", required = true) @PathVariable String name,
+            @Parameter(description = "是否返回全部资源正文") @RequestParam(value = "includeResources", defaultValue = "true")
+                    boolean includeResources) {
+        return skillService.get(name, includeResources);
+    }
+
+    @Operation(summary = "查询单个技能资源")
+    @GetMapping("/{name}/resources/content")
+    public SkillResourceView getResource(
+            @Parameter(description = "技能名", required = true) @PathVariable String name,
+            @Parameter(description = "资源路径", required = true) @RequestParam("path") String path) {
+        return skillService.getResource(name, path);
     }
 
     @OperationLog

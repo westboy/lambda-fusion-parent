@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.skill.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 import java.util.Map;
 import lombok.Data;
 
@@ -22,6 +23,9 @@ public class SkillView {
 
     @Schema(description = "资源文件数量")
     private int resourceCount;
+
+    @Schema(description = "资源文件索引（不包含正文）")
+    private List<SkillResourceView> resourceFiles;
 
     @Schema(description = "SKILL.md YAML Front Matter 元数据")
     private Map<String, Object> metadata;
