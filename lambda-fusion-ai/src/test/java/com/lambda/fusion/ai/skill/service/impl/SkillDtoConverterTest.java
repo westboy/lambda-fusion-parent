@@ -42,5 +42,19 @@ class SkillDtoConverterTest {
         assertThat(view.getDescription()).isEqualTo("d");
         assertThat(view.getMarkdown()).isEqualTo("md");
         assertThat(view.getResources()).containsEntry("r", "c");
+        assertThat(view.getResourceCount()).isEqualTo(1);
+    }
+
+    @Test
+    void toSummaryOmitsResourceContent() {
+        AgentSkill skill = SkillServiceImpl.toAgentSkill("s", "d", "md", Map.of("r", "c"));
+
+        SkillView view = SkillServiceImpl.toSummary(skill);
+
+        assertThat(view.getName()).isEqualTo("s");
+        assertThat(view.getDescription()).isEqualTo("d");
+        assertThat(view.getResourceCount()).isEqualTo(1);
+        assertThat(view.getResources()).isNull();
+        assertThat(view.getMarkdown()).isNull();
     }
 }

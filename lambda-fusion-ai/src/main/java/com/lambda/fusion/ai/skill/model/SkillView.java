@@ -19,4 +19,10 @@ public class SkillView {
 
     @Schema(description = "资源 map(name->content)")
     private Map<String, String> resources;
+
+    @Schema(description = "资源文件数量")
+    private int resourceCount;
+
+    @Schema(description = "SKILL.md YAML Front Matter 元数据")
+    private Map<String, Object> metadata;
 }
