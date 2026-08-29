@@ -102,9 +102,15 @@ public enum AiErrorCode implements ErrorCode {
 
     KB_RAG_NOT_ENABLED(30805, "知识库检索功能未启用(lambda.fusion.ai.rag.enabled)"),
 
-    KB_VECTOR_STORE_NOT_CONFIGURED(30806, "pgvector连接未配置(lambda.fusion.ai.rag.pgvector.jdbc-url)"),
+    KB_VECTOR_STORE_NOT_CONFIGURED(30806, "向量库连接未配置(lambda.fusion.ai.rag.store.pg-vector/ocean-base)"),
 
-    KB_RETRIEVAL_FAILED(30807, "知识库检索失败，请检查嵌入模型与向量库配置"),
+    KB_RETRIEVAL_FAILED(30807, "知识库检索失败，请检查全文索引、嵌入模型与向量库配置"),
+
+    KB_RETRIEVAL_MODE_INVALID(30808, "不支持的知识库内容检索策略(FULL_TEXT/VECTOR/HYBRID)"),
+
+    KB_EMBEDDING_MODEL_REQUIRED(30809, "VECTOR/HYBRID 知识库必须配置嵌入模型"),
+
+    KB_FULL_TEXT_NOT_CONFIGURED(30810, "全文检索未启用(lambda.lucene.enabled)"),
 
     DOCUMENT_NOT_FOUND(30811, "知识库文档不存在"),
 

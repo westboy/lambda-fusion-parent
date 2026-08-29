@@ -94,7 +94,7 @@
 ## 能力详解
 
 ### LLM 提供方与模型
-提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；EMBEDDING 模型必须配置默认向量维度，新建知识库会采用并固化该维度（也可在建库时显式覆盖）；API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
+提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；VECTOR/HYBRID 知识库使用的 EMBEDDING 模型必须配置默认向量维度，新建知识库会采用并固化该维度（也可在建库时显式覆盖）；FULL_TEXT 知识库不需要嵌入模型。API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（向量 RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
 
 ### 智能应用
 应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
@@ -108,11 +108,13 @@
 传输 `stdio`/`sse`/`http`/`streamable_http`；`ToolkitAssembler` 按应用装载，单个失败不影响其余；`POST /v1/ai/mcp-servers/{id}/test` 测连通性。
 
 ### 知识库（RAG）
-- 知识库管理（嵌入模型绑定、检索条数/阈值）+ 文档上传切块入库（向量库 MEMORY 默认 / PGVECTOR 可选）+ 原文件存储（LOCAL 默认 / OSS 可选）。
+- 内容检索策略 `ai_knowledge_base.retrieval_mode`：`FULL_TEXT`（Lucene/SmartChineseAnalyzer/BM25，无需嵌入模型）、`VECTOR`（默认，向量余弦召回）、`HYBRID`（两路候选按 RRF 融合）。
+- 文档上传只切割一次，再按策略写入 Lucene 和/或向量库；向量库支持 MEMORY（默认）/ PGVECTOR / OCEANBASE，原文件支持 LOCAL（默认）/ OSS。
 - 检索模式 `ai_app.rag_mode`：`GENERIC`（默认，中间件自动检索注入）/ `AGENTIC`（注册 `retrieve_knowledge` 工具，模型自主调用）/ `BOTH`（两者兼有）。
 - 默认关闭，由 `lambda.fusion.ai.rag.enabled` 开启；关闭时管理 CRUD 仍可用，检索注入不装配。
+- Lucene 由 `lambda.lucene.enabled` 独立控制，索引为本地可重建投影，面向单机部署；多实例不要共同写入同一网络目录。
 - 端点：`/v1/ai/knowledge-bases`、`/v1/ai/knowledge-bases/{kbId}/documents`（上传/下载/删除）。
-- 详见 `docs/skills/lambda-fusion-ai/SKILL.md`「知识库（RAG）」。
+- 详见 [RAG 文档切割与来源契约](../docs/design/rag-document-chunking.md)。
 
 ### 子代理
 DB 驱动子代理定义（`ai_sub_agent`：`name`/`description`/`prompt`/`modelId`/`steps`/`toolsAllow`/`skillsAllow`/`workspaceMode`）。按应用绑定（`ai_app.sub_agent_ids`，仅 WORKSPACE 型），`AgentFactory` 构建期注册为 `SubagentDeclaration`，主 agent 经 harness 子代理体系（`agent_spawn`/`agent_send`）调度，**路由由 LLM 按 description 自主决策**。同名 `workspace/subagents/*.md` 文件覆盖 DB 声明。端点 `/v1/ai/sub-agents`。详见 SKILL.md「子代理」。
@@ -147,10 +149,13 @@ bootstrap 后关闭 SSE；用户可显式停止旧 Run 并创建新 Run。已持
 
 ## 配置
 
-配置前缀 `lambda.fusion.ai`：
+AI 配置前缀为 `lambda.fusion.ai`，单机全文索引使用独立前缀 `lambda.lucene`：
 
 ```yaml
 lambda:
+  lucene:
+    enabled: true                                # FULL_TEXT/HYBRID 所需；本地单机索引
+    directory: ${user.home}/.agentscope/fusion/rag/lucene
   fusion:
     ai:
       runtime:
@@ -196,6 +201,7 @@ lambda:
           nacos:    { server-addr, namespace-id, access-key, secret-key }
       rag:
         enabled: false                              # 默认关闭；开启后装配检索注入
+        default-retrieval-mode: VECTOR              # FULL_TEXT / VECTOR / HYBRID
         default-limit: 5
         default-score-threshold: 0.5
         max-inject-chars: 4000
@@ -219,12 +225,14 @@ lambda:
 | `memory.flush.min-gap` | THROTTLED 模式最小刷新间隔，默认 10m；实际发生刷新时仍会等待本次记忆提取完成 |
 | `sandbox.*` | 各沙箱后端凭据；对应扩展需在 classpath（ai 模块已 optional 引入） |
 | `skill.repository.type` | 技能仓库源；`NONE` 或扩展缺失时技能市场禁用 |
+| `lambda.lucene.*` | 本地全文索引开关和根目录；仅适合单机，关闭后不装配 Lucene Bean |
 | `rag.enabled` | 知识库检索注入总开关（默认 false）；关闭时管理 CRUD 仍可用 |
+| `rag.default-retrieval-mode` | 新建知识库未显式指定时的内容检索策略：FULL_TEXT / VECTOR / HYBRID |
 | `rag.store.type` | 向量库后端；PGVECTOR 使用 `store.pg-vector.*` JDBC 连接；OCEANBASE 使用 `store.ocean-base.*` JDBC 连接 |
 | `rag.document-storage.type` | AI 文件存储后端；知识库原文件、聊天附件和工具生成媒体共用 LOCAL / OSS |
 | `chat.attachment.generated-media.*` | 工具结果 URL/Base64 媒体物化的大小、连接、请求和重定向限制 |
 | `chat.attachment.preview.*` | 附件与生成媒体预览签名密钥和有效期；OSS 预览会二次重定向到短期预签名地址 |
-| 数据源 | 元数据表使用 MySQL `master`；pgvector 连接走 `rag.pgvector.*` |
+| 数据源 | 元数据表使用 MySQL `master`；pgvector 连接走 `rag.store.pg-vector.*`；Lucene 不依赖 MySQL 全文索引版本 |
 
 ## 数据库对象
 
@@ -318,7 +326,7 @@ POST /v1/ai/apps   { "appType":"WORKSPACE", "selfEvolve":true, "sandboxBackend":
 
 ## 路线图
 
-已完成：CHAT / WORKSPACE(ASSISTANT+AUTONOMOUS) / 自演化审计 / 多后端沙箱(Docker+K8s+E2B+Daytona+AgentRun) / audience+owner_id 可见性 / **知识库 RAG（MEMORY+PGVECTOR，三检索模式，原文件 LOCAL+OSS）** / **子代理（DB 驱动 + REST）** / **技能市场（MYSQL/POSTGRES/GIT/NACOS）** / **通道配置管理 + 钉钉/飞书/企微适配器** / **Agent 状态存储多后端（MEMORY/FILE/MYSQL/POSTGRES/REDIS/OSS/COS）** / **Workspace 分布式存储（LOCAL/MYSQL/POSTGRES）** / **Lambda 层子 Agent 共享注册、身份补全、跨节点恢复与执行串行** / HarnessGateway（per-session 串行 + 外部通道 SPI + 主动出站）。
+已完成：CHAT / WORKSPACE(ASSISTANT+AUTONOMOUS) / 自演化审计 / 多后端沙箱(Docker+K8s+E2B+Daytona+AgentRun) / audience+owner_id 可见性 / **知识库 RAG（Lucene FULL_TEXT + 向量 VECTOR + RRF HYBRID，原文件 LOCAL+OSS）** / **子代理（DB 驱动 + REST）** / **技能市场（MYSQL/POSTGRES/GIT/NACOS）** / **通道配置管理 + 钉钉/飞书/企微适配器** / **Agent 状态存储多后端（MEMORY/FILE/MYSQL/POSTGRES/REDIS/OSS/COS）** / **Workspace 分布式存储（LOCAL/MYSQL/POSTGRES）** / **Lambda 层子 Agent 共享注册、身份补全、跨节点恢复与执行串行** / HarnessGateway（per-session 串行 + 外部通道 SPI + 主动出站）。
 
 待跟进：
 - `WakeupDispatcher` + `MessageBus`（异步子代理完成 announce、团队消息、定时触发）

@@ -25,7 +25,8 @@ final class KnowledgeContextFormatter {
         } else if (StringUtils.isNotBlank(chunk.chunkId())) {
             metadata.add("Chunk ID: " + inline(chunk.chunkId()));
         }
-        metadata.add("Score: " + String.format(Locale.ROOT, "%.3f", chunk.score()));
+        metadata.add("Score: " + String.format(Locale.ROOT, "%.3f", chunk.score()) + " ("
+                + StringUtils.defaultIfBlank(chunk.scoreType(), "UNKNOWN") + ")");
         return "[" + metadata + "]\n" + StringUtils.defaultString(chunk.content());
     }
 

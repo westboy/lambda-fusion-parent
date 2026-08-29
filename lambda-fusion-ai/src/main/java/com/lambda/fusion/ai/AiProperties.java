@@ -594,6 +594,9 @@ public class AiProperties {
         /** 是否为对话启用知识库检索。 */
         private boolean enabled = false;
 
+        /** 新建知识库未指定检索策略时使用的值：FULL_TEXT / VECTOR / HYBRID。 */
+        private String defaultRetrievalMode = "VECTOR";
+
         /** 知识库未指定检索条数时使用的值。 */
         private int defaultLimit = 5;
 
@@ -614,6 +617,11 @@ public class AiProperties {
         /** 知识库文档和对话附件共用的原文件存储。 */
         @NestedConfigurationProperty
         private DocumentStorage documentStorage = new DocumentStorage();
+
+        @AssertTrue(message = "lambda.fusion.ai.rag.default-retrieval-mode 必须为 FULL_TEXT、VECTOR 或 HYBRID")
+        public boolean isDefaultRetrievalModeValid() {
+            return AiConstants.KnowledgeRetrievalMode.of(defaultRetrievalMode) != null;
+        }
 
         /** 文档切块的全局参数。 */
         @Data

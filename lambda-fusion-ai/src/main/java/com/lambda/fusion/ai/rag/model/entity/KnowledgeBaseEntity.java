@@ -29,8 +29,12 @@ public class KnowledgeBaseEntity {
     @Schema(description = "知识库描述")
     private String description;
 
+    @TableField("retrieval_mode")
+    @Schema(description = "检索策略: FULL_TEXT/VECTOR/HYBRID")
+    private String retrievalMode;
+
     @TableField("embedding_model_id")
-    @Schema(description = "嵌入模型ID")
+    @Schema(description = "嵌入模型ID(FULL_TEXT 可空)")
     private String embeddingModelId;
 
     @TableField("dimensions")

@@ -24,11 +24,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.scheduling.annotation.Async;
 
 /**
- * 文档入库管线：从已持久化的原文件读取 → 抽取全文 → 按文档策略切块 → 向量库写入 → 更新文档行状态。
+ * 文档入库管线：从已持久化的原文件读取 → 抽取全文 → 按文档策略切块 → 按知识库模式写入派生索引 → 更新文档行状态。
  * 按 document 行记录的 {@code storageType} 路由取回原文件（临时文件生命周期闭合在
  * {@link #ingest(String)} 内，不跨同步/异步边界传递）；异步执行，调用方在 {@code afterCommit}
  * 触发保证行已提交可见；格式解析与切割语义收敛到 {@link DocumentChunker}，
- * 向量文档组装由 {@link SimpleKnowledgeAdapter} 完成。
+ * 全文/向量文档组装与一致性由 {@link SimpleKnowledgeAdapter} 完成。
  *
  * @author Jin
  */

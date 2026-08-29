@@ -6,6 +6,7 @@ import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.lambda.cloud.lucene.manager.LuceneManagerFactory;
 import com.lambda.cloud.oss.manager.OssClientManager;
 import com.lambda.fusion.ai.AiConstants.WorkspaceStorageType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -14,6 +15,7 @@ import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
+import com.lambda.fusion.ai.rag.store.LuceneKnowledgeIndex;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
@@ -620,11 +622,22 @@ public class AiConfigure {
     public static class RagConfiguration {
 
         @Bean
+        @ConditionalOnBean(LuceneManagerFactory.class)
+        public LuceneKnowledgeIndex luceneKnowledgeIndex(LuceneManagerFactory managerFactory) {
+            return new LuceneKnowledgeIndex(managerFactory);
+        }
+
+        @Bean
         public SimpleKnowledgeAdapter simpleKnowledgeAdapter(
                 KnowledgeBaseService knowledgeBaseService,
                 EmbeddingModelResolver embeddingModelResolver,
-                AiProperties aiProperties) {
-            return new SimpleKnowledgeAdapter(knowledgeBaseService, embeddingModelResolver, aiProperties);
+                AiProperties aiProperties,
+                ObjectProvider<LuceneKnowledgeIndex> luceneKnowledgeIndexProvider) {
+            return new SimpleKnowledgeAdapter(
+                    knowledgeBaseService,
+                    embeddingModelResolver,
+                    aiProperties,
+                    luceneKnowledgeIndexProvider.getIfAvailable());
         }
 
         @Bean

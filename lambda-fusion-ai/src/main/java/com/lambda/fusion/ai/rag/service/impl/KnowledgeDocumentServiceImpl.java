@@ -26,6 +26,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -113,19 +114,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } finally {
             deleteQuietly(tempFile);
         }
-        // 主事务提交后才触发异步入库，保证异步线程 selectById 能读到已提交的 document 行
-        String documentId = entity.getId();
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    ingestionService.ingest(documentId);
-                }
-            });
-        } else {
-            // 无事务上下文（upload 标了 @Transactional，正常不会走到）时回退为直接异步触发
-            ingestionService.ingest(documentId);
-        }
+        scheduleIngestion(ingestionService, List.of(entity.getId()));
         return entity;
     }
 
@@ -142,7 +131,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(String kbId, String documentId) {
         KnowledgeDocumentEntity entity = requireOwned(kbId, documentId);
-        deleteVectorData(entity);
+        deleteIndexData(entity);
         deleteStoredFile(entity);
         knowledgeDocumentMapper.deleteById(documentId);
     }
@@ -153,7 +142,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         List<KnowledgeDocumentEntity> documents = knowledgeDocumentMapper.selectList(
                 new LambdaQueryWrapper<KnowledgeDocumentEntity>().eq(KnowledgeDocumentEntity::getKbId, kbId));
         for (KnowledgeDocumentEntity document : documents) {
-            deleteVectorData(document);
+            deleteIndexData(document);
             deleteStoredFile(document);
         }
         knowledgeDocumentMapper.delete(
@@ -173,8 +162,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
         DocumentChunkStrategy resolvedStrategy =
                 resolveChunkStrategy(StringUtils.defaultIfBlank(chunkStrategy, entity.getChunkStrategy()));
-        // 先删旧向量数据：addChunks 为追加语义，不删会残留重复 chunk
-        deleteVectorData(entity);
         // 显式 set null 清空 errorMsg/chunkCount（updateById 默认跳过 null 字段，无法清空）
         knowledgeDocumentMapper.update(
                 null,
@@ -189,18 +176,40 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         entity.setChunkStrategy(resolvedStrategy.getCode());
         entity.setErrorMsg(null);
         entity.setChunkCount(null);
-        // 主事务提交后才触发异步入库（与 upload 一致），保证异步线程读到重置后的 PENDING 行
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    ingestionService.ingest(documentId);
-                }
-            });
-        } else {
-            ingestionService.ingest(documentId);
-        }
+        scheduleIngestion(ingestionService, List.of(documentId));
         return entity;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void reingestByKbId(String kbId) {
+        List<KnowledgeDocumentEntity> documents =
+                knowledgeDocumentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocumentEntity>()
+                        .eq(KnowledgeDocumentEntity::getKbId, kbId)
+                        .eq(KnowledgeDocumentEntity::getStatus, DocumentStatus.READY.getCode()));
+        if (documents.isEmpty()) {
+            return;
+        }
+        DocumentIngestionService ingestionService = ingestionServiceProvider.getIfAvailable();
+        if (ingestionService == null) {
+            throw new AiBusinessException(AiErrorCode.KB_RAG_NOT_ENABLED);
+        }
+        List<String> documentIds = new ArrayList<>(documents.size());
+        for (KnowledgeDocumentEntity document : documents) {
+            if (StringUtils.isBlank(document.getStorageType()) || StringUtils.isBlank(document.getStoragePath())) {
+                throw new AiBusinessException(AiErrorCode.DOCUMENT_STORAGE_ERROR, "文档原文件缺失: " + document.getId());
+            }
+            knowledgeDocumentMapper.update(
+                    null,
+                    new LambdaUpdateWrapper<KnowledgeDocumentEntity>()
+                            .eq(KnowledgeDocumentEntity::getId, document.getId())
+                            .set(KnowledgeDocumentEntity::getStatus, DocumentStatus.PENDING.getCode())
+                            .set(KnowledgeDocumentEntity::getErrorMsg, null)
+                            .set(KnowledgeDocumentEntity::getChunkCount, null)
+                            .set(KnowledgeDocumentEntity::getUpdatedAt, LocalDateTime.now()));
+            documentIds.add(document.getId());
+        }
+        scheduleIngestion(ingestionService, documentIds);
     }
 
     // 按 entity 记录的 storageType（而非当前配置）路由清理，配置变更后旧文件仍可删；失败仅告警不阻断
@@ -215,14 +224,27 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
-    // 检索功能未启用（无 adapter Bean）时仅删库行并告警，向量数据由人工清理
-    private void deleteVectorData(KnowledgeDocumentEntity document) {
+    // 检索功能未启用（无 adapter Bean）时仅删库行并告警，派生索引由人工清理
+    private void deleteIndexData(KnowledgeDocumentEntity document) {
         SimpleKnowledgeAdapter adapter = adapterProvider.getIfAvailable();
         if (adapter == null) {
-            log.warn("知识库检索功能未启用，跳过向量数据删除(doc={})", document.getId());
+            log.warn("知识库检索功能未启用，跳过派生索引删除(doc={})", document.getId());
             return;
         }
         adapter.deleteDocument(document.getKbId(), document.getId());
+    }
+
+    private static void scheduleIngestion(DocumentIngestionService ingestionService, List<String> documentIds) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    documentIds.forEach(ingestionService::ingest);
+                }
+            });
+        } else {
+            documentIds.forEach(ingestionService::ingest);
+        }
     }
 
     private void markFailed(KnowledgeDocumentEntity entity, String errorMsg) {

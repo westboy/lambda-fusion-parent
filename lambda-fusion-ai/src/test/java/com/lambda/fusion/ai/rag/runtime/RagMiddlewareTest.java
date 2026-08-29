@@ -172,6 +172,6 @@ class RagMiddlewareTest {
     }
 
     private static RetrievedChunk chunk(String content, double score, String fileName) {
-        return new RetrievedChunk(content, score, "kb1", "doc1", fileName, "doc1-0", 0, 1, "第一章");
+        return new RetrievedChunk(content, score, "kb1", "doc1", fileName, "doc1-0", 0, 1, "第一章", "COSINE");
     }
 }

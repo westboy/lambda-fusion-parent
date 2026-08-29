@@ -17,8 +17,10 @@ public class CreateKnowledgeBase {
     @Schema(description = "知识库描述")
     private String description;
 
-    @Schema(description = "嵌入模型ID(需为已启用的 EMBEDDING 类型模型)")
-    @NotBlank(message = "嵌入模型ID不能为空")
+    @Schema(description = "检索策略: FULL_TEXT/VECTOR/HYBRID；空取全局默认")
+    private String retrievalMode;
+
+    @Schema(description = "嵌入模型ID(VECTOR/HYBRID 必填，需为已启用的 EMBEDDING 类型模型)")
     private String embeddingModelId;
 
     @Schema(description = "向量维度(空取嵌入模型默认维度;建表后不可变)")

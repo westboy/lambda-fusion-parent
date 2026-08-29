@@ -86,6 +86,10 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-lucene</artifactId>
+        </dependency>
         <!-- ========== agentscope ========== -->
         <dependency>
             <groupId>io.agentscope</groupId>

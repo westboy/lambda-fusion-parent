@@ -1,11 +1,13 @@
 package com.lambda.fusion.ai.rag.runtime;
 
+import com.lambda.fusion.ai.AiConstants.KnowledgeRetrievalMode;
 import com.lambda.fusion.ai.AiConstants.VectorStoreType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
+import com.lambda.fusion.ai.rag.store.LuceneKnowledgeIndex;
 import com.lambda.fusion.ai.rag.store.OceanBaseVectorStore;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -23,38 +25,50 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * 基于 AgentScope {@link SimpleKnowledge} 的知识库适配器：集中转换 AgentScope 已弃用的
- * RAG 文档类型，业务侧只依赖 {@link KnowledgeRetriever}、{@link RetrievedChunk} 和
- * {@link IngestChunk}；每个知识库独立缓存配置和向量存储实例。
+ * 知识库默认适配器：VECTOR 委托 AgentScope {@link SimpleKnowledge}，FULL_TEXT 委托 Lucene，HYBRID
+ * 对两路候选执行 RRF。业务侧只依赖 {@link KnowledgeRetriever}、{@link RetrievedChunk} 与 {@link IngestChunk}。
  *
  * @author Jin
  */
 @Slf4j
-@RequiredArgsConstructor
 @SuppressWarnings("removal")
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
 
-    /** 向量库连接有效性探测超时（秒）。 */
     private static final int CONNECTION_VALID_CHECK_SECONDS = 2;
+    private static final int RRF_K = 60;
+    private static final int MIN_HYBRID_CANDIDATES = 20;
+    private static final int HYBRID_CANDIDATE_MULTIPLIER = 4;
 
     private final KnowledgeBaseService knowledgeBaseService;
     private final EmbeddingModelResolver embeddingModelResolver;
     private final AiProperties aiProperties;
+    private final LuceneKnowledgeIndex luceneKnowledgeIndex;
 
     private final Map<String, SimpleKnowledge> knowledgeCache = new ConcurrentHashMap<>();
     private final Map<String, KnowledgeBaseEntity> kbCache = new ConcurrentHashMap<>();
+
+    public SimpleKnowledgeAdapter(
+            KnowledgeBaseService knowledgeBaseService,
+            EmbeddingModelResolver embeddingModelResolver,
+            AiProperties aiProperties,
+            LuceneKnowledgeIndex luceneKnowledgeIndex) {
+        this.knowledgeBaseService = knowledgeBaseService;
+        this.embeddingModelResolver = embeddingModelResolver;
+        this.aiProperties = aiProperties;
+        this.luceneKnowledgeIndex = luceneKnowledgeIndex;
+    }
 
     @Override
     public Mono<List<RetrievedChunk>> retrieve(List<String> kbIds, String query) {
@@ -63,44 +77,61 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
 
     @Override
     public Mono<List<RetrievedChunk>> retrieve(List<String> kbIds, String query, Integer limit) {
-        // Embedding 请求和向量检索可能阻塞，交给弹性线程池执行。
         return Mono.fromCallable(() -> doRetrieve(kbIds, query, limit)).subscribeOn(Schedulers.boundedElastic());
     }
 
     private List<RetrievedChunk> doRetrieve(List<String> kbIds, String query, Integer limit) {
         AiProperties.Rag rag = aiProperties.getRag();
-        List<RetrievedChunk> merged = new ArrayList<>();
+        List<List<RetrievedChunk>> rankedLists = new ArrayList<>();
         for (String kbId : kbIds) {
             KnowledgeBaseEntity kb = loadKb(kbId);
             if (kb == null || !Boolean.TRUE.equals(kb.getEnabled())) {
                 continue;
             }
             try {
-                merged.addAll(retrieveOne(kb, query, resolveLimit(kb, rag, limit), resolveScoreThreshold(kb, rag)));
+                KnowledgeRetrievalMode mode = resolveMode(kb, rag);
+                rankedLists.add(
+                        retrieveOne(kb, mode, query, resolveLimit(kb, rag, limit), resolveScoreThreshold(kb, rag)));
             } catch (Exception e) {
                 // 单个知识库检索失败不影响其他知识库。
                 log.warn("知识库 {} 检索失败，跳过: {}", kbId, e.getMessage());
             }
         }
-        return mergeAndTruncate(merged, resolveFinalLimit(rag, limit));
+        return mergeRankedLists(rankedLists, resolveFinalLimit(rag, limit));
     }
 
-    /**
-     * 使用生产检索路径执行单知识库诊断。与多知识库检索不同，本方法不吞掉底层异常，
-     * 以便管理端区分“没有命中”与“检索失败”。
-     */
+    /** 管理端诊断使用生产检索路径，但不吞掉底层异常。 */
     public RetrievalProbe probe(KnowledgeBaseEntity kb, String query, Integer limit, BigDecimal scoreThreshold) {
         AiProperties.Rag rag = aiProperties.getRag();
+        KnowledgeRetrievalMode mode = resolveMode(kb, rag);
         int effectiveLimit = resolveLimit(kb, rag, limit);
-        double effectiveScoreThreshold = resolveScoreThreshold(kb, rag, scoreThreshold);
+        Double effectiveScoreThreshold =
+                mode.isVectorRequired() ? resolveScoreThreshold(kb, rag, scoreThreshold) : null;
         long startedAt = System.nanoTime();
-        List<RetrievedChunk> hits = mergeAndTruncate(
-                new ArrayList<>(retrieveOne(kb, query, effectiveLimit, effectiveScoreThreshold)), effectiveLimit);
+        List<RetrievedChunk> hits = retrieveOne(
+                kb, mode, query, effectiveLimit, effectiveScoreThreshold != null ? effectiveScoreThreshold : 0d);
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
-        return new RetrievalProbe(effectiveLimit, effectiveScoreThreshold, durationMs, hits);
+        return new RetrievalProbe(mode.getCode(), effectiveLimit, effectiveScoreThreshold, durationMs, hits);
     }
 
-    private List<RetrievedChunk> retrieveOne(KnowledgeBaseEntity kb, String query, int limit, double scoreThreshold) {
+    private List<RetrievedChunk> retrieveOne(
+            KnowledgeBaseEntity kb, KnowledgeRetrievalMode mode, String query, int limit, double vectorScoreThreshold) {
+        if (mode == KnowledgeRetrievalMode.FULL_TEXT) {
+            return mergeAndTruncate(new ArrayList<>(requireLucene().search(kb, query, limit)), limit);
+        }
+        if (mode == KnowledgeRetrievalMode.VECTOR) {
+            return mergeAndTruncate(new ArrayList<>(retrieveVector(kb, query, limit, vectorScoreThreshold)), limit);
+        }
+        int candidateLimit = resolveHybridCandidateLimit(limit);
+        return fuseRankedLists(
+                List.of(
+                        retrieveVector(kb, query, candidateLimit, vectorScoreThreshold),
+                        requireLucene().search(kb, query, candidateLimit)),
+                limit);
+    }
+
+    private List<RetrievedChunk> retrieveVector(
+            KnowledgeBaseEntity kb, String query, int limit, double scoreThreshold) {
         RetrieveConfig config = RetrieveConfig.builder()
                 .limit(limit)
                 .scoreThreshold(scoreThreshold)
@@ -116,19 +147,74 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         return chunks;
     }
 
-    /** 按分数降序排列检索结果，并截断到指定条数。 */
+    /** 单一可比分数列表按分数降序截断；用于单知识库、单召回通道。 */
     static List<RetrievedChunk> mergeAndTruncate(List<RetrievedChunk> merged, int limit) {
         merged.sort(Comparator.comparingDouble(RetrievedChunk::score).reversed());
         return merged.size() > limit ? new ArrayList<>(merged.subList(0, limit)) : merged;
     }
 
-    /** 将文档切块转换为 AgentScope 文档并写入指定知识库。 */
+    /** 多知识库或多召回通道使用排名而非原始分数融合，避免 BM25 与余弦分数直接相加。 */
+    static List<RetrievedChunk> fuseRankedLists(List<List<RetrievedChunk>> rankedLists, int limit) {
+        Map<String, FusedCandidate> candidates = new LinkedHashMap<>();
+        for (List<RetrievedChunk> rankedList : rankedLists) {
+            for (int index = 0; index < rankedList.size(); index++) {
+                RetrievedChunk chunk = rankedList.get(index);
+                candidates
+                        .computeIfAbsent(chunkKey(chunk), ignored -> new FusedCandidate(chunk))
+                        .add(1d / (RRF_K + index + 1));
+            }
+        }
+        return candidates.values().stream()
+                .sorted(Comparator.comparingDouble(FusedCandidate::score).reversed())
+                .limit(limit)
+                .map(candidate -> candidate.chunk().withScore(candidate.score(), "RRF"))
+                .toList();
+    }
+
+    private static List<RetrievedChunk> mergeRankedLists(List<List<RetrievedChunk>> rankedLists, int limit) {
+        List<List<RetrievedChunk>> nonEmpty =
+                rankedLists.stream().filter(list -> !list.isEmpty()).toList();
+        if (nonEmpty.isEmpty()) {
+            return List.of();
+        }
+        if (nonEmpty.size() == 1) {
+            return mergeAndTruncate(new ArrayList<>(nonEmpty.getFirst()), limit);
+        }
+        return fuseRankedLists(nonEmpty, limit);
+    }
+
+    private static String chunkKey(RetrievedChunk chunk) {
+        return chunk.kbId() + '\u0000' + chunk.docId() + '\u0000' + chunk.chunkId();
+    }
+
+    /** 按知识库检索模式写入所需索引；HYBRID 任一路失败都会尽力补偿已写入的数据。 */
     public void addChunks(String kbId, String docId, String tenantId, String fileName, List<IngestChunk> chunks) {
         KnowledgeBaseEntity kb = requireKb(kbId);
+        KnowledgeRetrievalMode mode = resolveMode(kb, aiProperties.getRag());
+        boolean vectorAttempted = false;
+        boolean fullTextAttempted = false;
+        try {
+            if (mode.isVectorRequired()) {
+                vectorAttempted = true;
+                replaceVectorChunks(kb, docId, tenantId, fileName, chunks);
+            }
+            if (mode.isFullTextRequired()) {
+                fullTextAttempted = true;
+                requireLucene().replaceDocument(kb, docId, tenantId, fileName, chunks);
+            }
+        } catch (RuntimeException e) {
+            compensateFailedWrite(kb, docId, vectorAttempted, fullTextAttempted, e);
+            throw e;
+        }
+        cleanupInactiveIndexes(kb, mode, docId);
+    }
+
+    private void replaceVectorChunks(
+            KnowledgeBaseEntity kb, String docId, String tenantId, String fileName, List<IngestChunk> chunks) {
+        deleteVectorDocument(kb, docId);
         List<Document> documents = new ArrayList<>(chunks.size());
-        // tenantId 允许为空，不能使用 Map.of。
         Map<String, Object> documentPayload = new HashMap<>();
-        documentPayload.put("kbId", kbId);
+        documentPayload.put("kbId", kb.getId());
         documentPayload.put("tenantId", tenantId);
         documentPayload.put("fileName", fileName);
         for (IngestChunk chunk : chunks) {
@@ -149,6 +235,46 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         knowledge(kb).addDocuments(documents).block();
     }
 
+    private void compensateFailedWrite(
+            KnowledgeBaseEntity kb,
+            String docId,
+            boolean vectorAttempted,
+            boolean fullTextAttempted,
+            RuntimeException original) {
+        if (vectorAttempted) {
+            try {
+                deleteVectorDocument(kb, docId);
+            } catch (RuntimeException cleanupError) {
+                original.addSuppressed(cleanupError);
+            }
+        }
+        if (fullTextAttempted && luceneKnowledgeIndex != null) {
+            try {
+                luceneKnowledgeIndex.deleteDocument(kb, docId);
+            } catch (RuntimeException cleanupError) {
+                original.addSuppressed(cleanupError);
+            }
+        }
+    }
+
+    /** 目标通道写入成功后清理旧策略遗留的索引；清理失败不影响新策略已经可检索。 */
+    private void cleanupInactiveIndexes(KnowledgeBaseEntity kb, KnowledgeRetrievalMode mode, String docId) {
+        if (!mode.isVectorRequired() && hasVectorConfiguration(kb)) {
+            try {
+                deleteVectorDocument(kb, docId);
+            } catch (RuntimeException e) {
+                log.warn("清理知识库 {} 文档 {} 的旧向量索引失败: {}", kb.getId(), docId, e.getMessage());
+            }
+        }
+        if (!mode.isFullTextRequired() && luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
+            try {
+                luceneKnowledgeIndex.deleteDocument(kb, docId);
+            } catch (RuntimeException e) {
+                log.warn("清理知识库 {} 文档 {} 的旧全文索引失败: {}", kb.getId(), docId, e.getMessage());
+            }
+        }
+    }
+
     static RetrievedChunk toRetrievedChunk(Document document, String kbId) {
         DocumentMetadata metadata = document.getMetadata();
         Map<String, Object> payload = metadata.getPayload();
@@ -165,7 +291,8 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 metadata.getChunkId(),
                 chunkIndex,
                 asInteger(payload.get("chunkCount")),
-                asString(payload.get("sectionPath")));
+                asString(payload.get("sectionPath")),
+                "COSINE");
     }
 
     private static String asString(Object value) {
@@ -197,26 +324,61 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
     }
 
-    /** 删除指定文档的全部向量切块。知识库不存在时不处理。 */
+    /** 删除指定文档的全部派生索引；任一必需后端失败都会向上抛出。 */
     public void deleteDocument(String kbId, String docId) {
         KnowledgeBaseEntity kb = loadKb(kbId);
         if (kb == null) {
             return;
         }
-        try {
-            knowledge(kb).getEmbeddingStore().delete(docId).block();
-        } catch (Exception e) {
-            log.warn("删除文档向量数据失败(kb={}, doc={}): {}", kbId, docId, e.getMessage());
+        RuntimeException failure = null;
+        if (hasVectorConfiguration(kb)) {
+            try {
+                deleteVectorDocument(kb, docId);
+            } catch (RuntimeException e) {
+                failure = e;
+            }
+        }
+        KnowledgeRetrievalMode mode = resolveMode(kb, aiProperties.getRag());
+        if (mode.isFullTextRequired() || (luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb))) {
+            try {
+                requireLucene().deleteDocument(kb, docId);
+            } catch (RuntimeException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
-    /** 清除知识库实体与向量存储缓存，并关闭已创建的存储连接。 */
-    public void evict(String kbId) {
-        kbCache.remove(kbId);
-        closeQuietly(kbId, knowledgeCache.remove(kbId));
+    public void deleteKnowledgeBase(String kbId) {
+        KnowledgeBaseEntity kb = loadKb(kbId);
+        if (kb == null) {
+            return;
+        }
+        if (luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
+            luceneKnowledgeIndex.deleteKnowledgeBase(kb);
+        }
+        evict(kbId);
     }
 
-    /** 静默关闭向量库连接；实例为空或不支持关闭时不处理。 */
+    /** 清除知识库实体、向量连接与 Lucene 句柄缓存。 */
+    public void evict(String kbId) {
+        KnowledgeBaseEntity kb = kbCache.remove(kbId);
+        closeQuietly(kbId, knowledgeCache.remove(kbId));
+        if (kb != null && luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
+            luceneKnowledgeIndex.evict(kb);
+        }
+    }
+
+    private void deleteVectorDocument(KnowledgeBaseEntity kb, String docId) {
+        knowledge(kb).getEmbeddingStore().delete(docId).block();
+    }
+
     private void closeQuietly(String kbId, SimpleKnowledge knowledge) {
         if (knowledge != null && knowledge.getEmbeddingStore() instanceof AutoCloseable closeable) {
             try {
@@ -227,7 +389,6 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
     }
 
-    /** 加载并缓存知识库；查询不到时不写入缓存。 */
     private KnowledgeBaseEntity loadKb(String kbId) {
         return kbCache.computeIfAbsent(kbId, id -> {
             try {
@@ -246,14 +407,19 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         return kb;
     }
 
+    private LuceneKnowledgeIndex requireLucene() {
+        if (luceneKnowledgeIndex == null) {
+            throw new AiBusinessException(AiErrorCode.KB_FULL_TEXT_NOT_CONFIGURED);
+        }
+        return luceneKnowledgeIndex;
+    }
+
     private SimpleKnowledge knowledge(KnowledgeBaseEntity kb) {
         String kbId = kb.getId();
         SimpleKnowledge cached = knowledgeCache.get(kbId);
         if (cached != null && isAlive(cached)) {
             return cached;
         }
-        // 缓存缺失或底层连接已失效（pgvector 为单条长连接，空闲会被服务端断开），
-        // 按知识库维度串行重建，避免并发检索重复建连。
         synchronized (kbId.intern()) {
             cached = knowledgeCache.get(kbId);
             if (cached != null && isAlive(cached)) {
@@ -275,11 +441,6 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
     }
 
-    /**
-     * 判断向量库连接是否仍然可用（抽出以便单测）。{@link PgVectorStore} 是构造时建立的
-     * 单条 JDBC 长连接，无连接池/保活/重连，{@code ensureNotClosed} 只检查内存标志，
-     * 故用 {@code isValid} 轻量探测底层连接，失效触发重建；非 pgvector 存储视为始终可用。
-     */
     static boolean isAlive(VDBStoreBase store) throws Exception {
         if (!(store instanceof PgVectorStore pgStore)) {
             return true;
@@ -288,6 +449,9 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
     }
 
     private SimpleKnowledge buildKnowledge(KnowledgeBaseEntity kb) {
+        if (!hasVectorConfiguration(kb)) {
+            throw new AiBusinessException(AiErrorCode.KB_EMBEDDING_MODEL_REQUIRED);
+        }
         EmbeddingModel embeddingModel = embeddingModelResolver.resolve(kb.getEmbeddingModelId(), kb.getDimensions());
         int dimensions = kb.getDimensions() != null ? kb.getDimensions() : embeddingModel.getDimensions();
         VDBStoreBase store = createStore(aiProperties.getRag(), kb, dimensions);
@@ -297,7 +461,6 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 .build();
     }
 
-    /** 根据知识库与模块配置创建向量存储。 */
     static VDBStoreBase createStore(AiProperties.Rag rag, KnowledgeBaseEntity kb, int dimensions) {
         VectorStoreType type = VectorStoreType.of(rag.getStore().getType());
         if (type == null) {
@@ -342,35 +505,79 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
     }
 
-    /** 解析单个知识库的检索条数，知识库配置优先于全局配置。 */
+    static KnowledgeRetrievalMode resolveMode(KnowledgeBaseEntity kb, AiProperties.Rag rag) {
+        String code = StringUtils.defaultIfBlank(kb.getRetrievalMode(), rag.getDefaultRetrievalMode());
+        KnowledgeRetrievalMode mode = KnowledgeRetrievalMode.of(code);
+        if (mode == null) {
+            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_MODE_INVALID, code);
+        }
+        return mode;
+    }
+
+    private static boolean hasVectorConfiguration(KnowledgeBaseEntity kb) {
+        return StringUtils.isNotBlank(kb.getEmbeddingModelId())
+                && kb.getDimensions() != null
+                && StringUtils.isNotBlank(kb.getVectorTable());
+    }
+
     static int resolveLimit(KnowledgeBaseEntity kb, AiProperties.Rag rag) {
         return resolveLimit(kb, rag, null);
     }
 
-    /** 解析单个知识库的检索条数，调用参数优先于知识库和全局配置。 */
     static int resolveLimit(KnowledgeBaseEntity kb, AiProperties.Rag rag, Integer overrideLimit) {
-        if (overrideLimit != null) {
-            return overrideLimit;
+        int limit = overrideLimit != null
+                ? overrideLimit
+                : kb.getRetrieveLimit() != null ? kb.getRetrieveLimit() : rag.getDefaultLimit();
+        if (limit <= 0) {
+            throw new AiBusinessException(AiErrorCode.CONFIGURATION_ERROR, "知识库检索条数必须大于 0");
         }
-        return kb.getRetrieveLimit() != null ? kb.getRetrieveLimit() : rag.getDefaultLimit();
+        return limit;
     }
 
-    /** 解析跨知识库合并后的结果上限，调用参数优先于全局配置。 */
     static int resolveFinalLimit(AiProperties.Rag rag, Integer overrideLimit) {
-        return overrideLimit != null ? overrideLimit : rag.getDefaultLimit();
+        int limit = overrideLimit != null ? overrideLimit : rag.getDefaultLimit();
+        if (limit <= 0) {
+            throw new AiBusinessException(AiErrorCode.CONFIGURATION_ERROR, "知识库检索条数必须大于 0");
+        }
+        return limit;
     }
 
-    /** 解析检索分数阈值，知识库配置优先于全局配置。 */
+    static int resolveHybridCandidateLimit(int limit) {
+        long expanded = Math.max(MIN_HYBRID_CANDIDATES, (long) limit * HYBRID_CANDIDATE_MULTIPLIER);
+        return (int) Math.min(Integer.MAX_VALUE, expanded);
+    }
+
     static double resolveScoreThreshold(KnowledgeBaseEntity kb, AiProperties.Rag rag) {
         return resolveScoreThreshold(kb, rag, null);
     }
 
-    /** 解析检索分数阈值，调用参数优先于知识库和全局配置。 */
     static double resolveScoreThreshold(
             KnowledgeBaseEntity kb, AiProperties.Rag rag, BigDecimal overrideScoreThreshold) {
         if (overrideScoreThreshold != null) {
             return overrideScoreThreshold.doubleValue();
         }
         return kb.getScoreThreshold() != null ? kb.getScoreThreshold().doubleValue() : rag.getDefaultScoreThreshold();
+    }
+
+    private static final class FusedCandidate {
+
+        private final RetrievedChunk chunk;
+        private double score;
+
+        private FusedCandidate(RetrievedChunk chunk) {
+            this.chunk = chunk;
+        }
+
+        private void add(double value) {
+            score += value;
+        }
+
+        private RetrievedChunk chunk() {
+            return chunk;
+        }
+
+        private double score() {
+            return score;
+        }
     }
 }

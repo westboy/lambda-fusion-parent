@@ -32,7 +32,16 @@ class KnowledgeRetrievalToolTest {
         when(retriever.retrieve(anyList(), anyString(), any()))
                 .thenReturn(Mono.just(List.of(
                         new RetrievedChunk(
-                                "Lambda Fusion 支持 RAG", 0.9, "kb1", "doc1", "产品手册.pdf", "doc1-0", 0, 2, "第一章"),
+                                "Lambda Fusion 支持 RAG",
+                                0.9,
+                                "kb1",
+                                "doc1",
+                                "产品手册.pdf",
+                                "doc1-0",
+                                0,
+                                2,
+                                "第一章",
+                                "COSINE"),
                         new RetrievedChunk(
                                 "Lambda Fusion 基于 Spring Boot",
                                 0.75,
@@ -42,7 +51,8 @@ class KnowledgeRetrievalToolTest {
                                 "doc2-0",
                                 0,
                                 1,
-                                null))));
+                                null,
+                                "BM25"))));
         KnowledgeRetrievalTool tool = new KnowledgeRetrievalTool(retriever, KB_IDS);
 
         String result = tool.retrieveKnowledge("Lambda Fusion 是什么?", null);
@@ -53,11 +63,11 @@ class KnowledgeRetrievalToolTest {
                 .contains("Source: 产品手册.pdf")
                 .contains("Section: 第一章")
                 .contains("Chunk: 1/2")
-                .contains("Score: 0.900")
+                .contains("Score: 0.900 (COSINE)")
                 .contains("Lambda Fusion 支持 RAG")
                 .contains("Document 2:")
                 .contains("Source: 架构说明.md")
-                .contains("Score: 0.750")
+                .contains("Score: 0.750 (BM25)")
                 .contains("Lambda Fusion 基于 Spring Boot");
     }
 

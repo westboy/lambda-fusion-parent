@@ -31,4 +31,16 @@ class AiPropertiesValidationTest {
                     .contains("chat.attachment.maxInlineChars", "chat.attachment.maxToolReadChars");
         }
     }
+
+    @Test
+    void shouldRejectUnknownDefaultRetrievalMode() {
+        AiProperties properties = new AiProperties();
+        properties.getRag().setDefaultRetrievalMode("ELASTICSEARCH");
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("rag.defaultRetrievalModeValid");
+        }
+    }
 }

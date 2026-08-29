@@ -65,6 +65,10 @@ mybatis-plus:
     default-enum-type-handler: org.apache.ibatis.type.EnumOrdinalTypeHandler
 ################################# Lambda 配置 #################################
 lambda:
+  #### 单机 Lucene 全文索引；多实例部署应关闭并改用共享检索服务 ####
+  lucene:
+    enabled: ${AI_LUCENE_ENABLED:true}
+    directory: ${AI_LUCENE_DIRECTORY:${user.home}/.agentscope/fusion/rag/lucene}
   fusion:
     permission:
       server:
@@ -124,6 +128,8 @@ lambda:
       #### 知识库(RAG)：默认关闭；pgvector 连接默认复用 ai-postgres 环境变量 ####
       rag:
         enabled: ${AI_RAG_ENABLED:true}
+        #### 新建知识库默认内容检索策略：FULL_TEXT/VECTOR/HYBRID ####
+        default-retrieval-mode: ${AI_RAG_DEFAULT_RETRIEVAL_MODE:VECTOR}
         #### 向量库后端：MEMORY(进程内)/PGVECTOR/OCEANBASE(OceanBase MySQL 模式) ####
         store:
           type: ${AI_RAG_STORE_TYPE:PGVECTOR}

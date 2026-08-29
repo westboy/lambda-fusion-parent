@@ -14,7 +14,10 @@ public class UpdateKnowledgeBase {
     @Schema(description = "知识库描述")
     private String description;
 
-    @Schema(description = "嵌入模型ID(需为已启用的 EMBEDDING 类型模型)")
+    @Schema(description = "检索策略: FULL_TEXT/VECTOR/HYBRID")
+    private String retrievalMode;
+
+    @Schema(description = "嵌入模型ID(VECTOR/HYBRID 必填，需为已启用的 EMBEDDING 类型模型)")
     private String embeddingModelId;
 
     @Schema(description = "检索条数(空走全局默认)")

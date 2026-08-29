@@ -936,4 +936,32 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-ai-2026082900010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_knowledge_base"/>
+                <not>
+                    <columnExists tableName="ai_knowledge_base" columnName="retrieval_mode"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="ai_knowledge_base">
+            <column name="retrieval_mode" type="varchar(16)" defaultValue="VECTOR"
+                    remarks="内容检索策略: FULL_TEXT/VECTOR/HYBRID">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="lambda-ai-2026082900020" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_knowledge_base"/>
+                <columnExists tableName="ai_knowledge_base" columnName="embedding_model_id"/>
+            </and>
+        </preConditions>
+        <dropNotNullConstraint tableName="ai_knowledge_base" columnName="embedding_model_id"
+                               columnDataType="varchar(32)"/>
+    </changeSet>
+
 </databaseChangeLog>

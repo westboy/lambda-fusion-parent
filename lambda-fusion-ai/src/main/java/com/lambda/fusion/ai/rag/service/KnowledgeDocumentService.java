@@ -32,7 +32,7 @@ public interface KnowledgeDocumentService {
     void download(String kbId, String documentId, OutputStream out);
 
     /**
-     * 删除文档：同步删除向量库中的整文档切块与原文件。
+     * 删除文档：同步删除整文档的全部派生索引与原文件。
      */
     void delete(String kbId, String documentId);
 
@@ -49,4 +49,9 @@ public interface KnowledgeDocumentService {
      * @return 重置为 PENDING 的文档行
      */
     KnowledgeDocumentEntity reingest(String kbId, String documentId, String chunkStrategy);
+
+    /**
+     * 知识库检索模式或嵌入模型变化后，清理全部旧索引并重新异步入库。
+     */
+    void reingestByKbId(String kbId);
 }

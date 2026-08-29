@@ -59,7 +59,7 @@ Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全
 |-------------------|------|
 | ♻️ **自演化**     | 应用在运行过程中持续自我优化演进 |
 | 🖥️ **多沙箱后端** | 代码与工具执行环境隔离，支持多种沙箱实现按需切换 |
-| 📚 **知识库 RAG** | 文档切块入库，基于 pgvector 的向量检索，提供 `GENERIC` / `AGENTIC` / `BOTH` 三种检索注入模式 |
+| 📚 **知识库 RAG** | 支持 Lucene 全文、向量及 RRF 混合召回；FULL_TEXT 模式无需嵌入模型，应用侧提供 `GENERIC` / `AGENTIC` / `BOTH` 三种注入模式 |
 | 🧠 **LLM 管理**   | 大模型统一接入与集中管理，模型能力即插即用 |
 | 🧩 **子代理**     | DB 驱动的子代理体系，定义持久化、运行可编排 |
 | 🛠️ **技能市场**   | 技能注册、沉淀与复用，Agent 能力可插拔扩展 |
@@ -95,6 +95,7 @@ lambda-fusion-parent/
 | 🍃 **Spring Boot** | 4.0.2 | 微服务开发框架 |
 | ☁️ **Spring Cloud** | 2025.1.x | 微服务生态组件 |
 | 🤖 **AgentScope** | 2.0 | AI 多智能体运行时（harness / 模型 / 沙箱 / 通道 / 技能 / RAG） |
+| 🔎 **Lucene** | 10.5.1 | 单机中文全文检索与 BM25 召回 |
 | 🐘 **pgvector** | Latest | PostgreSQL 向量检索（知识库 RAG） |
 | 🔐 **Sa-Token** | Latest | 轻量级权限认证框架 |
 | 💾 **MyBatis Plus** | Latest | 增强版 ORM 框架 |

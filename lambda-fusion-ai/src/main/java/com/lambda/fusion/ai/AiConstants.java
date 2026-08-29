@@ -521,6 +521,40 @@ public interface AiConstants {
     }
 
     /**
+     * 知识库内容检索策略。FULL_TEXT 仅使用 Lucene 全文索引；VECTOR 仅使用嵌入向量；
+     * HYBRID 同时召回两路候选并按 RRF 融合。
+     */
+    @Getter
+    @AllArgsConstructor
+    enum KnowledgeRetrievalMode {
+        FULL_TEXT("FULL_TEXT", "全文检索", true, false),
+
+        VECTOR("VECTOR", "向量检索", false, true),
+
+        HYBRID("HYBRID", "混合检索", true, true);
+
+        private final String code;
+
+        private final String label;
+
+        private final boolean fullTextRequired;
+
+        private final boolean vectorRequired;
+
+        public static KnowledgeRetrievalMode of(String code) {
+            if (code == null) {
+                return null;
+            }
+            for (KnowledgeRetrievalMode mode : values()) {
+                if (mode.code.equalsIgnoreCase(code.trim())) {
+                    return mode;
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
      * 知识库向量库后端类型。MEMORY 进程内存（零配置、重启丢失、单节点）；PGVECTOR PostgreSQL pgvector；
      * OCEANBASE OceanBase MySQL 模式向量存储。
      */
