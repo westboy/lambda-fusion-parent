@@ -19,6 +19,8 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.IndexFormatTooNewException;
+import org.apache.lucene.index.IndexFormatTooOldException;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.ParseException;
 
@@ -66,7 +68,7 @@ public class LuceneKnowledgeIndex {
         try {
             manager(kb).replaceDocuments(new Term(FIELD_DOC_ID, docId), documents);
         } catch (IOException | RuntimeException e) {
-            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
+            throw translateFailure(e);
         }
     }
 
@@ -92,10 +94,7 @@ public class LuceneKnowledgeIndex {
             }
             return chunks;
         } catch (IOException | ParseException | RuntimeException e) {
-            if (e instanceof AiBusinessException aiBusinessException) {
-                throw aiBusinessException;
-            }
-            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
+            throw translateFailure(e);
         }
     }
 
@@ -103,7 +102,7 @@ public class LuceneKnowledgeIndex {
         try {
             manager(kb).deleteDocuments(new Term(FIELD_DOC_ID, docId));
         } catch (IOException | RuntimeException e) {
-            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
+            throw translateFailure(e);
         }
     }
 
@@ -117,6 +116,18 @@ public class LuceneKnowledgeIndex {
 
     public void deleteKnowledgeBase(KnowledgeBaseEntity kb) {
         managerFactory.delete(indexName(kb));
+    }
+
+    static AiBusinessException translateFailure(Throwable failure) {
+        if (failure instanceof AiBusinessException aiBusinessException) {
+            return aiBusinessException;
+        }
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof IndexFormatTooOldException || current instanceof IndexFormatTooNewException) {
+                return new AiBusinessException(AiErrorCode.KB_FULL_TEXT_INDEX_INCOMPATIBLE, failure);
+            }
+        }
+        return new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, failure);
     }
 
     private LuceneManager manager(KnowledgeBaseEntity kb) {

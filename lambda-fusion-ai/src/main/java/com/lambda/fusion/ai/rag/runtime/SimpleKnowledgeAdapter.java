@@ -355,6 +355,34 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         }
     }
 
+    /**
+     * 清空当前检索模式使用的派生索引，为知识库级重建做准备。全文索引按逻辑目录直接删除，
+     * 因而不需要先打开可能由旧 Lucene 版本创建的索引；向量索引按文档 ID 删除且不会调用嵌入模型。
+     */
+    public void resetIndexes(String kbId, List<String> documentIds) {
+        KnowledgeBaseEntity kb = requireKb(kbId);
+        KnowledgeRetrievalMode mode = resolveMode(kb, aiProperties.getRag());
+        try {
+            // 先完成后端可用性校验，再执行清理，减少配置错误造成的部分清理。
+            if (mode.isVectorRequired()) {
+                knowledge(kb);
+            }
+            if (mode.isFullTextRequired()) {
+                requireLucene();
+            }
+            if (mode.isVectorRequired()) {
+                documentIds.forEach(docId -> deleteVectorDocument(kb, docId));
+            }
+            if (luceneKnowledgeIndex != null && (mode.isFullTextRequired() || luceneKnowledgeIndex.exists(kb))) {
+                luceneKnowledgeIndex.deleteKnowledgeBase(kb);
+            }
+        } catch (AiBusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
+        }
+    }
+
     public void deleteKnowledgeBase(String kbId) {
         KnowledgeBaseEntity kb = loadKb(kbId);
         if (kb == null) {

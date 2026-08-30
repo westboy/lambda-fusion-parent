@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.KnowledgeBasePage;
+import com.lambda.fusion.ai.rag.model.KnowledgeIndexRebuildResult;
 import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.UpdateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
@@ -62,7 +63,7 @@ public class KnowledgeBaseController {
     }
 
     @OperationLog
-    @Operation(summary = "删除知识库(级联删文档与向量数据)")
+    @Operation(summary = "删除知识库(级联删除文档、派生索引与原文件)")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "知识库ID", required = true) @PathVariable String id) {
         knowledgeBaseService.delete(id);
@@ -74,5 +75,13 @@ public class KnowledgeBaseController {
             @Parameter(description = "知识库ID", required = true) @PathVariable String id,
             @RequestBody @Valid TestKnowledgeRetrieval command) {
         return knowledgeBaseService.testRetrieval(id, command);
+    }
+
+    @OperationLog
+    @Operation(summary = "重建知识库派生索引(复用原文件并异步重新入库)")
+    @PostMapping("/{id}/indexes/rebuild")
+    public KnowledgeIndexRebuildResult rebuildIndexes(
+            @Parameter(description = "知识库ID", required = true) @PathVariable String id) {
+        return knowledgeBaseService.rebuildIndexes(id);
     }
 }

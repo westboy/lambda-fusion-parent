@@ -225,6 +225,29 @@ class SimpleKnowledgeAdapterTest {
     }
 
     @Test
+    void fullTextResetDeletesLogicalIndexWithoutEmbeddingModel(@TempDir Path tempDir) throws Exception {
+        KnowledgeBaseService knowledgeBaseService = mock(KnowledgeBaseService.class);
+        EmbeddingModelResolver embeddingModelResolver = mock(EmbeddingModelResolver.class);
+        KnowledgeBaseEntity kb = fullTextKnowledgeBase();
+        when(knowledgeBaseService.loadById("kb1")).thenReturn(kb);
+
+        try (LuceneManagerFactory managerFactory = new LuceneManagerFactory(tempDir, SmartChineseAnalyzer::new)) {
+            SimpleKnowledgeAdapter adapter = new SimpleKnowledgeAdapter(
+                    knowledgeBaseService,
+                    embeddingModelResolver,
+                    new AiProperties(),
+                    new LuceneKnowledgeIndex(managerFactory));
+            adapter.addChunks(
+                    "kb1", "doc1", "tenant1", "设备指南.txt", List.of(new IngestChunk("doc1-0", "设备复位操作。", 0, null)));
+
+            adapter.resetIndexes("kb1", List.of("doc1"));
+
+            assertThat(managerFactory.exists("rag/tenant1/kb1")).isFalse();
+            verifyNoInteractions(embeddingModelResolver);
+        }
+    }
+
+    @Test
     void fullTextModeReportsMissingLuceneConfiguration() {
         KnowledgeBaseService knowledgeBaseService = mock(KnowledgeBaseService.class);
         EmbeddingModelResolver embeddingModelResolver = mock(EmbeddingModelResolver.class);

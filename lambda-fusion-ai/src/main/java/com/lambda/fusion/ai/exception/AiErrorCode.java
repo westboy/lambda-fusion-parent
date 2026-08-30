@@ -124,6 +124,10 @@ public enum AiErrorCode implements ErrorCode {
 
     DOCUMENT_CHUNK_STRATEGY_INVALID(30816, "不支持的文档切割策略(AUTO/WHOLE/HEADING/PARAGRAPH/TOKEN)"),
 
+    KB_FULL_TEXT_INDEX_INCOMPATIBLE(30817, "全文索引版本不兼容，请执行知识库索引重建"),
+
+    KB_INDEX_REBUILD_CONFLICT(30818, "知识库存在正在入库的文档，请稍后再重建索引"),
+
     SUB_AGENT_NOT_FOUND(30821, "子代理不存在"),
 
     SUB_AGENT_NAME_EXISTS(30822, "子代理名称已存在"),

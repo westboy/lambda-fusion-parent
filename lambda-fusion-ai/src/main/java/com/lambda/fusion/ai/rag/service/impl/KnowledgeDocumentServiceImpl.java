@@ -212,6 +212,44 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         scheduleIngestion(ingestionService, documentIds);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int rebuildIndexesByKbId(String kbId) {
+        knowledgeBaseService.loadById(kbId);
+        List<KnowledgeDocumentEntity> documents = knowledgeDocumentMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeDocumentEntity>().eq(KnowledgeDocumentEntity::getKbId, kbId));
+        if (documents.stream()
+                .anyMatch(document -> DocumentStatus.PENDING.getCode().equals(document.getStatus()))) {
+            throw new AiBusinessException(AiErrorCode.KB_INDEX_REBUILD_CONFLICT);
+        }
+        for (KnowledgeDocumentEntity document : documents) {
+            if (StringUtils.isBlank(document.getStorageType()) || StringUtils.isBlank(document.getStoragePath())) {
+                throw new AiBusinessException(AiErrorCode.DOCUMENT_STORAGE_ERROR, "文档原文件缺失: " + document.getId());
+            }
+        }
+        SimpleKnowledgeAdapter adapter = adapterProvider.getIfAvailable();
+        DocumentIngestionService ingestionService = ingestionServiceProvider.getIfAvailable();
+        if (adapter == null || ingestionService == null) {
+            throw new AiBusinessException(AiErrorCode.KB_RAG_NOT_ENABLED);
+        }
+        List<String> documentIds =
+                documents.stream().map(KnowledgeDocumentEntity::getId).toList();
+        adapter.resetIndexes(kbId, documentIds);
+        LocalDateTime now = LocalDateTime.now();
+        for (String documentId : documentIds) {
+            knowledgeDocumentMapper.update(
+                    null,
+                    new LambdaUpdateWrapper<KnowledgeDocumentEntity>()
+                            .eq(KnowledgeDocumentEntity::getId, documentId)
+                            .set(KnowledgeDocumentEntity::getStatus, DocumentStatus.PENDING.getCode())
+                            .set(KnowledgeDocumentEntity::getErrorMsg, null)
+                            .set(KnowledgeDocumentEntity::getChunkCount, null)
+                            .set(KnowledgeDocumentEntity::getUpdatedAt, now));
+        }
+        scheduleIngestion(ingestionService, documentIds);
+        return documentIds.size();
+    }
+
     // 按 entity 记录的 storageType（而非当前配置）路由清理，配置变更后旧文件仍可删；失败仅告警不阻断
     private void deleteStoredFile(KnowledgeDocumentEntity document) {
         if (StringUtils.isBlank(document.getStorageType()) || StringUtils.isBlank(document.getStoragePath())) {

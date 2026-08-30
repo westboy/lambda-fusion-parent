@@ -20,6 +20,7 @@ import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeBaseMapper;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
+import com.lambda.fusion.ai.rag.model.KnowledgeIndexRebuildResult;
 import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.UpdateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
@@ -179,6 +180,34 @@ class KnowledgeBaseServiceImplTest {
         assertThatThrownBy(() -> service.testRetrieval("kb-1", command("问题")))
                 .isInstanceOfSatisfying(AiBusinessException.class, error -> assertThat(error.getCode())
                         .isEqualTo(AiErrorCode.KB_RETRIEVAL_FAILED.getCode()));
+    }
+
+    @Test
+    void fullTextIndexRebuildReportsNoEmbeddingTokenUsage() {
+        KnowledgeBaseEntity kb = knowledgeBase(true);
+        kb.setRetrievalMode("FULL_TEXT");
+        when(mapper.selectOne(any())).thenReturn(kb);
+        when(documentService.rebuildIndexesByKbId("kb-1")).thenReturn(2);
+
+        KnowledgeIndexRebuildResult result = service.rebuildIndexes("kb-1");
+
+        assertThat(result.retrievalMode()).isEqualTo("FULL_TEXT");
+        assertThat(result.queuedDocumentCount()).isEqualTo(2);
+        assertThat(result.embeddingTokensRequired()).isFalse();
+    }
+
+    @Test
+    void hybridIndexRebuildReportsEmbeddingTokenUsage() {
+        KnowledgeBaseEntity kb = knowledgeBase(true);
+        kb.setRetrievalMode("HYBRID");
+        when(mapper.selectOne(any())).thenReturn(kb);
+        when(documentService.rebuildIndexesByKbId("kb-1")).thenReturn(3);
+
+        KnowledgeIndexRebuildResult result = service.rebuildIndexes("kb-1");
+
+        assertThat(result.retrievalMode()).isEqualTo("HYBRID");
+        assertThat(result.queuedDocumentCount()).isEqualTo(3);
+        assertThat(result.embeddingTokensRequired()).isTrue();
     }
 
     private static KnowledgeBaseEntity knowledgeBase(boolean enabled) {

@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeBaseMapper;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.KnowledgeBasePage;
+import com.lambda.fusion.ai.rag.model.KnowledgeIndexRebuildResult;
 import com.lambda.fusion.ai.rag.model.TestKnowledgeRetrieval;
 import com.lambda.fusion.ai.rag.model.UpdateKnowledgeBase;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
@@ -160,6 +161,15 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             log.warn("知识库 {} 检索测试失败", id, e);
             throw new AiBusinessException(AiErrorCode.KB_RETRIEVAL_FAILED, e);
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public KnowledgeIndexRebuildResult rebuildIndexes(String id) {
+        KnowledgeBaseEntity kb = requireExists(id);
+        KnowledgeRetrievalMode mode = resolveRetrievalMode(kb.getRetrievalMode());
+        int queuedDocumentCount = documentServiceProvider.getObject().rebuildIndexesByKbId(id);
+        return new KnowledgeIndexRebuildResult(mode.getCode(), queuedDocumentCount, mode.isVectorRequired());
     }
 
     @Override

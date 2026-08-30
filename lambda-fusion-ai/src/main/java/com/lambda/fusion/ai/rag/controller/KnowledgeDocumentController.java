@@ -58,7 +58,7 @@ public class KnowledgeDocumentController {
     }
 
     @OperationLog
-    @Operation(summary = "删除文档(同步删除向量数据与原文件)")
+    @Operation(summary = "删除文档(同步删除派生索引与原文件)")
     @DeleteMapping("/{documentId}")
     public void delete(
             @Parameter(description = "知识库ID", required = true) @PathVariable String kbId,
@@ -67,7 +67,7 @@ public class KnowledgeDocumentController {
     }
 
     @OperationLog
-    @Operation(summary = "重新解析切块入库(复用原文件, 先删旧向量)")
+    @Operation(summary = "重新解析切块入库(复用原文件并异步替换派生索引)")
     @PostMapping("/{documentId}/reingest")
     public KnowledgeDocumentEntity reingest(
             @Parameter(description = "知识库ID", required = true) @PathVariable String kbId,
