@@ -131,7 +131,6 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-scheduler-quartz</artifactId>
         </dependency>
-        <!-- Quartz 调度持久化:Spring 装配 JDBC JobStore(版本由 BOM 托管,不写版本,§1.2) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-quartz</artifactId>
