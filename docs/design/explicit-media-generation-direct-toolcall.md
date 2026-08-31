@@ -30,9 +30,26 @@ CHAT/WORKSPACE 都受益;skill+沙箱作第二步,按厂商配 SKILL.md,工作�
 2. 工具实现被 AgentScope 写死的 SDK 绑架(DashScope baseUrl 进不去、OpenAI 只认 dall-e、MiniMax 没工具)。
 3. 三件套(Hook/Middleware/标记 record)+ 注册入口,纯粹是为了"直调一个工具"这件本可很简单的事。
 
-**地基已验证**:`Toolkit.callTool(ToolCallParam)` 是公开 API(`Toolkit.java:490`),返回
-`Mono<ToolResultBlock>`,内部含工具查找/参数校验/超时重试/异常转换,`ToolCallParam` 可携带
-`RuntimeContext`(物化要用的 runId/tenantId/sessionId 照常)。可完全脱离 ReAct 循环直调。
+**地基已验证(实测核对)**:`Toolkit.callTool(ToolCallParam)` 是公开 API(`Toolkit.java:490`),返回
+`Mono<ToolResultBlock>`,含工具查找/Schema 校验/入参合并/异常转 `ToolResultBlock.error`;`ToolCallParam`
+可携带 `RuntimeContext`(物化要用的 runId/tenantId/sessionId 照常)。可完全脱离 ReAct 循环直调。
+
+**但有两个实测纠偏**:
+- `callTool` **不含超时/重试/id 回填**——这些只在 ReAct 专用的 `callTools`→`executeWithInfrastructure` 里。
+  直调需自己包 `Mono.timeout`,并对结果 `.map(r -> r.withIdAndName(toolCall.getId(), toolCall.getName()))`,
+  否则事件与记忆里的 id/name 为空。
+- **Toolkit 经 `agent.getDelegate().getToolkit()` 获取**(`ReActAgent.getToolkit():3739` 公开),无需改装配。
+
+**直调必须手动合成的事件序列**(喂给现有 `ChatExecutionInstance.onEvent`,才能走通快照/物化/终态):
+根 `AgentStartEvent(null, replyId, agentName)` → `ToolCallStartEvent` + `ToolCallDeltaEvent`(保 args)→
+`ToolResultStartEvent` → 对物化后每个 output 块发 `ToolResultDataDeltaEvent`(非 TextBlock)/
+`ToolResultTextDeltaEvent` → `ToolResultEndEvent(state)` → 根 `AgentEndEvent(replyId)`。
+缺根 `AGENT_END`,`onEvent:344-356` 不 finalize;state 判定参照 `ReActAgent.determineToolResultState`。
+
+**记忆写回**:现状由 ReAct 自动写(含 ToolUseBlock 的 AssistantMessage + buildToolResultMsg 的 TOOL Msg)。
+直调须手动成对写回(`state.contextMutable().add(...)` + `saveAgentState`),否则下一轮模型不知道生成过图,
+且 `readSuspendedToolBlocks`/`denyPendingToolCalls` 会把"只写 ToolUseBlock 没写结果"误判为挂起。
+先例:`AgentExecutionAdapter.denyPendingToolCalls:294-300`。
 
 ## 目标
 
