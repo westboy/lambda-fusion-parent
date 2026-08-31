@@ -964,4 +964,47 @@
                                columnDataType="varchar(32)"/>
     </changeSet>
 
+    <!-- ========== 知识库全文索引(OceanBase) ========== -->
+    <changeSet id="lambda-ai-2026083100010" author="Jin" dbms="mysql,oceanbase">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="ai_kb_full_text_chunk"/>
+            </not>
+        </preConditions>
+        <createTable tableName="ai_kb_full_text_chunk" remarks="知识库全文索引chunk(OceanBase后端,所有知识库共享,按kb_id隔离)">
+            <column name="id" type="varchar(32)" remarks="主键(雪花ID)">
+                <constraints primaryKey="true" primaryKeyName="pk_ai_kb_full_text_chunk_id" nullable="false"/>
+            </column>
+            <column name="kb_id" type="varchar(32)" remarks="知识库ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="tenant_id" type="varchar(64)" remarks="租户ID"/>
+            <column name="doc_id" type="varchar(256)" remarks="文档ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="chunk_id" type="varchar(256)" remarks="块ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content" type="longtext" remarks="块文本">
+                <constraints nullable="false"/>
+            </column>
+            <column name="file_name" type="varchar(512)" remarks="文件名"/>
+            <column name="chunk_index" type="int" remarks="文档内零基块序号"/>
+            <column name="chunk_count" type="int" remarks="文档块总数"/>
+            <column name="section_path" type="varchar(1024)" remarks="章节路径"/>
+        </createTable>
+        <createIndex tableName="ai_kb_full_text_chunk" indexName="idx_kbft_kb_doc">
+            <column name="kb_id"/>
+            <column name="doc_id"/>
+        </createIndex>
+        <!-- OB 的 FULLTEXT WITH PARSER IK 语法无标准 Liquibase 标签，使用原生 SQL；需 OB 4.3.5+。 -->
+        <sql>
+            CREATE FULLTEXT INDEX ft_kbft_content ON ai_kb_full_text_chunk (content)
+            WITH PARSER IK PARSER_PROPERTIES = (ik_mode = "max_word")
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS ai_kb_full_text_chunk
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

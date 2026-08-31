@@ -614,6 +614,10 @@ public class AiProperties {
         /** 向量存储参数。 */
         private Store store = new Store();
 
+        /** 全文索引参数。 */
+        @NestedConfigurationProperty
+        private FullText fullText = new FullText();
+
         /** 知识库文档和对话附件共用的原文件存储。 */
         @NestedConfigurationProperty
         private DocumentStorage documentStorage = new DocumentStorage();
@@ -621,6 +625,21 @@ public class AiProperties {
         @AssertTrue(message = "lambda.fusion.ai.rag.default-retrieval-mode 必须为 FULL_TEXT、VECTOR 或 HYBRID")
         public boolean isDefaultRetrievalModeValid() {
             return AiConstants.KnowledgeRetrievalMode.of(defaultRetrievalMode) != null;
+        }
+
+        @AssertTrue(message = "lambda.fusion.ai.rag.full-text.type 必须为 LUCENE 或 OCEANBASE")
+        public boolean isFullTextTypeValid() {
+            return AiConstants.FullTextStoreType.of(fullText.getType()) != null;
+        }
+
+        /** 全文索引类型：LUCENE / OCEANBASE。 */
+        @Data
+        public static class FullText {
+
+            private String type = "LUCENE";
+
+            /** OceanBase 全文索引共享表名，所有知识库共用并按 kbId 隔离。 */
+            private String tableName = "ai_kb_full_text_chunk";
         }
 
         /** 文档切块的全局参数。 */

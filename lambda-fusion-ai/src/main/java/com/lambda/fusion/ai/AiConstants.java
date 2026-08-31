@@ -521,7 +521,7 @@ public interface AiConstants {
     }
 
     /**
-     * 知识库内容检索策略。FULL_TEXT 仅使用 Lucene 全文索引；VECTOR 仅使用嵌入向量；
+     * 知识库内容检索策略。FULL_TEXT 仅使用全文索引后端（见 {@link FullTextStoreType}）；VECTOR 仅使用嵌入向量；
      * HYBRID 同时召回两路候选并按 RRF 融合。
      */
     @Getter
@@ -548,6 +548,34 @@ public interface AiConstants {
             for (KnowledgeRetrievalMode mode : values()) {
                 if (mode.code.equalsIgnoreCase(code.trim())) {
                     return mode;
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
+     * 知识库全文索引后端类型。LUCENE 本地 Lucene 索引目录（每知识库一个目录，依赖
+     * {@code LuceneManagerFactory}）；OCEANBASE OceanBase MySQL 模式全文索引（共享表，需 OB 4.3.5+）。
+     */
+    @Getter
+    @AllArgsConstructor
+    enum FullTextStoreType {
+        LUCENE("LUCENE", "Lucene 本地索引"),
+
+        OCEANBASE("OCEANBASE", "OceanBase 全文索引");
+
+        private final String code;
+
+        private final String label;
+
+        public static FullTextStoreType of(String code) {
+            if (code == null) {
+                return null;
+            }
+            for (FullTextStoreType type : values()) {
+                if (type.code.equalsIgnoreCase(code.trim())) {
+                    return type;
                 }
             }
             return null;

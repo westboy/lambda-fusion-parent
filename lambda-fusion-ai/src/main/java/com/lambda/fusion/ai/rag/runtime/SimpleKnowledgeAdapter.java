@@ -7,7 +7,7 @@ import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.rag.model.entity.KnowledgeBaseEntity;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
-import com.lambda.fusion.ai.rag.store.LuceneKnowledgeIndex;
+import com.lambda.fusion.ai.rag.store.KnowledgeFullTextIndex;
 import com.lambda.fusion.ai.rag.store.OceanBaseVectorStore;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -54,7 +54,7 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
     private final KnowledgeBaseService knowledgeBaseService;
     private final EmbeddingModelResolver embeddingModelResolver;
     private final AiProperties aiProperties;
-    private final LuceneKnowledgeIndex luceneKnowledgeIndex;
+    private final KnowledgeFullTextIndex fullTextIndex;
 
     private final Map<String, SimpleKnowledge> knowledgeCache = new ConcurrentHashMap<>();
     private final Map<String, KnowledgeBaseEntity> kbCache = new ConcurrentHashMap<>();
@@ -63,11 +63,11 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
             KnowledgeBaseService knowledgeBaseService,
             EmbeddingModelResolver embeddingModelResolver,
             AiProperties aiProperties,
-            LuceneKnowledgeIndex luceneKnowledgeIndex) {
+            KnowledgeFullTextIndex fullTextIndex) {
         this.knowledgeBaseService = knowledgeBaseService;
         this.embeddingModelResolver = embeddingModelResolver;
         this.aiProperties = aiProperties;
-        this.luceneKnowledgeIndex = luceneKnowledgeIndex;
+        this.fullTextIndex = fullTextIndex;
     }
 
     @Override
@@ -117,7 +117,7 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
     private List<RetrievedChunk> retrieveOne(
             KnowledgeBaseEntity kb, KnowledgeRetrievalMode mode, String query, int limit, double vectorScoreThreshold) {
         if (mode == KnowledgeRetrievalMode.FULL_TEXT) {
-            return mergeAndTruncate(new ArrayList<>(requireLucene().search(kb, query, limit)), limit);
+            return mergeAndTruncate(new ArrayList<>(requireFullTextIndex().search(kb, query, limit)), limit);
         }
         if (mode == KnowledgeRetrievalMode.VECTOR) {
             return mergeAndTruncate(new ArrayList<>(retrieveVector(kb, query, limit, vectorScoreThreshold)), limit);
@@ -126,7 +126,7 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         return fuseRankedLists(
                 List.of(
                         retrieveVector(kb, query, candidateLimit, vectorScoreThreshold),
-                        requireLucene().search(kb, query, candidateLimit)),
+                        requireFullTextIndex().search(kb, query, candidateLimit)),
                 limit);
     }
 
@@ -200,7 +200,7 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
             }
             if (mode.isFullTextRequired()) {
                 fullTextAttempted = true;
-                requireLucene().replaceDocument(kb, docId, tenantId, fileName, chunks);
+                requireFullTextIndex().replaceDocument(kb, docId, tenantId, fileName, chunks);
             }
         } catch (RuntimeException e) {
             compensateFailedWrite(kb, docId, vectorAttempted, fullTextAttempted, e);
@@ -248,9 +248,9 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 original.addSuppressed(cleanupError);
             }
         }
-        if (fullTextAttempted && luceneKnowledgeIndex != null) {
+        if (fullTextAttempted && fullTextIndex != null) {
             try {
-                luceneKnowledgeIndex.deleteDocument(kb, docId);
+                fullTextIndex.deleteDocument(kb, docId);
             } catch (RuntimeException cleanupError) {
                 original.addSuppressed(cleanupError);
             }
@@ -266,9 +266,9 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 log.warn("清理知识库 {} 文档 {} 的旧向量索引失败: {}", kb.getId(), docId, e.getMessage());
             }
         }
-        if (!mode.isFullTextRequired() && luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
+        if (!mode.isFullTextRequired() && fullTextIndex != null && fullTextIndex.exists(kb)) {
             try {
-                luceneKnowledgeIndex.deleteDocument(kb, docId);
+                fullTextIndex.deleteDocument(kb, docId);
             } catch (RuntimeException e) {
                 log.warn("清理知识库 {} 文档 {} 的旧全文索引失败: {}", kb.getId(), docId, e.getMessage());
             }
@@ -339,9 +339,9 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
             }
         }
         KnowledgeRetrievalMode mode = resolveMode(kb, aiProperties.getRag());
-        if (mode.isFullTextRequired() || (luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb))) {
+        if (mode.isFullTextRequired() || (fullTextIndex != null && fullTextIndex.exists(kb))) {
             try {
-                requireLucene().deleteDocument(kb, docId);
+                requireFullTextIndex().deleteDocument(kb, docId);
             } catch (RuntimeException e) {
                 if (failure == null) {
                     failure = e;
@@ -356,7 +356,7 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
     }
 
     /**
-     * 清空当前检索模式使用的派生索引，为知识库级重建做准备。全文索引按逻辑目录直接删除，
+     * 清空当前检索模式使用的派生索引，为知识库级重建做准备。Lucene 全文索引按逻辑目录直接删除，
      * 因而不需要先打开可能由旧 Lucene 版本创建的索引；向量索引按文档 ID 删除且不会调用嵌入模型。
      */
     public void resetIndexes(String kbId, List<String> documentIds) {
@@ -368,13 +368,13 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
                 knowledge(kb);
             }
             if (mode.isFullTextRequired()) {
-                requireLucene();
+                requireFullTextIndex();
             }
             if (mode.isVectorRequired()) {
                 documentIds.forEach(docId -> deleteVectorDocument(kb, docId));
             }
-            if (luceneKnowledgeIndex != null && (mode.isFullTextRequired() || luceneKnowledgeIndex.exists(kb))) {
-                luceneKnowledgeIndex.deleteKnowledgeBase(kb);
+            if (fullTextIndex != null && (mode.isFullTextRequired() || fullTextIndex.exists(kb))) {
+                fullTextIndex.deleteKnowledgeBase(kb);
             }
         } catch (AiBusinessException e) {
             throw e;
@@ -388,18 +388,18 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         if (kb == null) {
             return;
         }
-        if (luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
-            luceneKnowledgeIndex.deleteKnowledgeBase(kb);
+        if (fullTextIndex != null && fullTextIndex.exists(kb)) {
+            fullTextIndex.deleteKnowledgeBase(kb);
         }
         evict(kbId);
     }
 
-    /** 清除知识库实体、向量连接与 Lucene 句柄缓存。 */
+    /** 清除知识库实体、向量连接与全文索引句柄缓存。 */
     public void evict(String kbId) {
         KnowledgeBaseEntity kb = kbCache.remove(kbId);
         closeQuietly(kbId, knowledgeCache.remove(kbId));
-        if (kb != null && luceneKnowledgeIndex != null && luceneKnowledgeIndex.exists(kb)) {
-            luceneKnowledgeIndex.evict(kb);
+        if (kb != null && fullTextIndex != null && fullTextIndex.exists(kb)) {
+            fullTextIndex.evict(kb);
         }
     }
 
@@ -435,11 +435,11 @@ public class SimpleKnowledgeAdapter implements KnowledgeRetriever {
         return kb;
     }
 
-    private LuceneKnowledgeIndex requireLucene() {
-        if (luceneKnowledgeIndex == null) {
+    private KnowledgeFullTextIndex requireFullTextIndex() {
+        if (fullTextIndex == null) {
             throw new AiBusinessException(AiErrorCode.KB_FULL_TEXT_NOT_CONFIGURED);
         }
-        return luceneKnowledgeIndex;
+        return fullTextIndex;
     }
 
     private SimpleKnowledge knowledge(KnowledgeBaseEntity kb) {

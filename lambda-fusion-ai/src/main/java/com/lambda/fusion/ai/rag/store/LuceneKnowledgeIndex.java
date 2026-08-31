@@ -26,7 +26,7 @@ import org.apache.lucene.queryparser.classic.ParseException;
 
 /** 知识库 chunk 在 Lucene 中的字段契约与索引生命周期。 */
 @RequiredArgsConstructor
-public class LuceneKnowledgeIndex {
+public class LuceneKnowledgeIndex implements KnowledgeFullTextIndex {
 
     private static final Pattern SAFE_PATH_SEGMENT = Pattern.compile("[A-Za-z0-9_-]+");
 
@@ -72,6 +72,7 @@ public class LuceneKnowledgeIndex {
         }
     }
 
+    @Override
     public List<RetrievedChunk> search(KnowledgeBaseEntity kb, String queryText, int limit) {
         try {
             LuceneManager manager = manager(kb);

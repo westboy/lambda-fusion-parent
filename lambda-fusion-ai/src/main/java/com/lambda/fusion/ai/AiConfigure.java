@@ -15,7 +15,9 @@ import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
 import com.lambda.fusion.ai.rag.service.KnowledgeBaseService;
+import com.lambda.fusion.ai.rag.store.KnowledgeFullTextIndex;
 import com.lambda.fusion.ai.rag.store.LuceneKnowledgeIndex;
+import com.lambda.fusion.ai.rag.store.OceanBaseFullTextIndex;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.EmbeddingModelResolver;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
@@ -621,10 +623,28 @@ public class AiConfigure {
     @ConditionalOnProperty(prefix = "lambda.fusion.ai.rag", name = "enabled", havingValue = "true")
     public static class RagConfiguration {
 
+        /** 默认 LUCENE 后端；缺少 {@code LuceneManagerFactory} 时不注册，检索适配器判空降级。 */
         @Bean
         @ConditionalOnBean(LuceneManagerFactory.class)
-        public LuceneKnowledgeIndex luceneKnowledgeIndex(LuceneManagerFactory managerFactory) {
+        @ConditionalOnProperty(
+                prefix = "lambda.fusion.ai.rag.full-text",
+                name = "type",
+                havingValue = "LUCENE",
+                matchIfMissing = true)
+        public KnowledgeFullTextIndex luceneKnowledgeIndex(LuceneManagerFactory managerFactory) {
             return new LuceneKnowledgeIndex(managerFactory);
+        }
+
+        /** OceanBase 全文索引后端；连接参数复用向量存储的 OceanBase 配置。 */
+        @Bean
+        @ConditionalOnProperty(prefix = "lambda.fusion.ai.rag.full-text", name = "type", havingValue = "OCEANBASE")
+        public KnowledgeFullTextIndex oceanBaseFullTextIndex(AiProperties aiProperties) {
+            AiProperties.Rag rag = aiProperties.getRag();
+            return new OceanBaseFullTextIndex(
+                    rag.getStore().getOceanBase().getJdbcUrl(),
+                    rag.getStore().getOceanBase().getUsername(),
+                    rag.getStore().getOceanBase().getPassword(),
+                    rag.getFullText().getTableName());
         }
 
         @Bean
@@ -632,12 +652,9 @@ public class AiConfigure {
                 KnowledgeBaseService knowledgeBaseService,
                 EmbeddingModelResolver embeddingModelResolver,
                 AiProperties aiProperties,
-                ObjectProvider<LuceneKnowledgeIndex> luceneKnowledgeIndexProvider) {
+                ObjectProvider<KnowledgeFullTextIndex> fullTextIndexProvider) {
             return new SimpleKnowledgeAdapter(
-                    knowledgeBaseService,
-                    embeddingModelResolver,
-                    aiProperties,
-                    luceneKnowledgeIndexProvider.getIfAvailable());
+                    knowledgeBaseService, embeddingModelResolver, aiProperties, fullTextIndexProvider.getIfAvailable());
         }
 
         @Bean
