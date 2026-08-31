@@ -965,7 +965,7 @@
     </changeSet>
 
     <!-- ========== 知识库全文索引(OceanBase) ========== -->
-    <changeSet id="lambda-ai-2026083100010" author="Jin" dbms="mysql,oceanbase">
+    <changeSet id="lambda-ai-2026083100010" author="Jin" dbms="oceanbase">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="ai_kb_full_text_chunk"/>
@@ -1005,6 +1005,21 @@
         <rollback>
             DROP TABLE IF EXISTS ai_kb_full_text_chunk
         </rollback>
+    </changeSet>
+
+    <changeSet id="lambda-ai-2026083100020" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_llm_model"/>
+                <not>
+                    <columnExists tableName="ai_llm_model" columnName="custom_media_tool"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="ai_llm_model">
+            <column name="custom_media_tool" type="boolean" defaultValueBoolean="false"
+                    remarks="媒体模型是否走自定义HTTP工具(true=自定义,false=官方SDK);仅媒体模型使用"/>
+        </addColumn>
     </changeSet>
 
 </databaseChangeLog>

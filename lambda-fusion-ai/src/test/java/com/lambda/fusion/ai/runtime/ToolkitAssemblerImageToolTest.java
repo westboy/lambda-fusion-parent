@@ -95,14 +95,8 @@ class ToolkitAssemblerImageToolTest {
     }
 
     @Test
-    void shouldSkipOpenAiImageModelOutsideOfficialDallEProtocol() {
-        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "gpt-image-1");
-
-        assertThat(assembler.build(app("img-1", null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
-    }
-
-    @Test
-    void shouldRegisterOfficialOpenAiDallEImageModel() {
+    void shouldRegisterOpenAiImageModelViaNativeTool() {
+        // 原生 OpenAI 生图：非自定义标记的 openai 模型走官方 SDK 薄适配器（具体模型可用性由端点决定）
         stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "openai", Boolean.TRUE, "dall-e-3");
 
         assertThat(assembler.build(app("img-1", null)).getToolNames()).contains(ImageGenerationTool.TOOL_NAME);
@@ -111,6 +105,15 @@ class ToolkitAssemblerImageToolTest {
     @Test
     void shouldSkipImageToolWhenAppHasNoBinding() {
         assertThat(assembler.build(app(null, null)).getToolNames()).doesNotContain(ImageGenerationTool.TOOL_NAME);
+    }
+
+    @Test
+    void shouldRegisterCustomHttpImageToolWhenModelMarkedCustom() {
+        // 厂商运行时未接通文生图（minimax 目录声明但 SDK 未实现），模型标记 customMediaTool 后走自定义 HTTP 工具
+        stubMediaModel("img-1", ModelType.IMAGE_GEN, Boolean.TRUE, "minimax", Boolean.TRUE, "qwen-image-2.0");
+        stubCustomMediaTool("img-1", Boolean.TRUE);
+
+        assertThat(assembler.build(app("img-1", null)).getToolNames()).contains(ImageGenerationTool.TOOL_NAME);
     }
 
     @Test
@@ -177,6 +180,11 @@ class ToolkitAssemblerImageToolTest {
         provider.setApiKeyEncrypted("enc");
         when(llmProviderService.loadById("p-1")).thenReturn(provider);
         when(keyEncryptionService.decrypt("enc")).thenReturn("sk-test");
+    }
+
+    private void stubCustomMediaTool(String modelId, Boolean customMediaTool) {
+        LlmModelEntity model = llmModelService.loadById(modelId);
+        model.setCustomMediaTool(customMediaTool);
     }
 
     private static MediaGenerationOperation operation(ModelType modelType) {

@@ -58,6 +58,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         entity.setModelType(dto.getModelType());
         entity.setEmbeddingDimensions(dto.getEmbeddingDimensions());
         entity.setMediaOperation(dto.getMediaOperation());
+        entity.setCustomMediaTool(isMedia(dto.getModelType()) && Boolean.TRUE.equals(dto.getCustomMediaTool()));
         entity.setDefaultTemperature(dto.getDefaultTemperature());
         entity.setDefaultMaxTokens(dto.getDefaultMaxTokens());
         entity.setContextWindowTokens(dto.getContextWindowTokens());
@@ -82,6 +83,10 @@ public class LlmModelServiceImpl implements LlmModelService {
         MediaGenerationOperation targetOperation = dto.getMediaOperation() != null
                 ? dto.getMediaOperation()
                 : isMedia(targetModelType) ? entity.getMediaOperation() : null;
+        boolean targetCustomMediaTool = isMedia(targetModelType)
+                && (dto.getCustomMediaTool() != null
+                        ? dto.getCustomMediaTool()
+                        : Boolean.TRUE.equals(entity.getCustomMediaTool()));
         validateConfiguration(targetProviderId, targetModelType, targetEmbeddingDimensions, targetOperation);
         if (!targetProviderId.equals(entity.getProviderId())) {
             entity.setProviderId(targetProviderId);
@@ -98,6 +103,7 @@ public class LlmModelServiceImpl implements LlmModelService {
         }
         entity.setEmbeddingDimensions(targetEmbeddingDimensions);
         entity.setMediaOperation(targetOperation);
+        entity.setCustomMediaTool(targetCustomMediaTool);
         if (dto.getDefaultTemperature() != null) {
             entity.setDefaultTemperature(dto.getDefaultTemperature());
         }

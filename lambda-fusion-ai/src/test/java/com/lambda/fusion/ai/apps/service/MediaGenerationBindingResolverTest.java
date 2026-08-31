@@ -56,23 +56,27 @@ class MediaGenerationBindingResolverTest {
     }
 
     @Test
-    void shouldRejectOpenAiImageModelsOutsideOfficialDallEProtocol() {
-        when(modelService.loadById("image-1"))
-                .thenReturn(model("image-1", ModelType.IMAGE_GEN, "gpt-image-1", "provider-1"));
-        when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
-
-        assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
-                .isInstanceOf(AiBusinessException.class);
-    }
-
-    @Test
-    void shouldResolveAnOfficialOpenAiDallEImageModel() {
+    void shouldResolveOpenAiImageModelViaNativeTool() {
+        // 原生 OpenAI 生图：非自定义标记的 openai 模型通过校验，走官方 SDK 薄适配器
         when(modelService.loadById("image-1"))
                 .thenReturn(model("image-1", ModelType.IMAGE_GEN, "dall-e-3", "provider-1"));
         when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
 
         var binding = resolver.requireExecutable("image-1", ModelType.IMAGE_GEN);
         assertThat(binding.providerType()).isEqualTo(ProviderType.OPENAI);
+        assertThat(binding.capability().getKind()).isEqualTo("image");
+    }
+
+    @Test
+    void shouldResolveCustomToolModelBypassingNativeRuntimeSupport() {
+        // minimax 目录声明文生图但官方 SDK 未接通；模型标记自定义 HTTP 工具后绕过原生运行时校验
+        LlmModelEntity custom = model("image-1", ModelType.IMAGE_GEN, "qwen-image-2.0", "provider-1");
+        custom.setCustomMediaTool(Boolean.TRUE);
+        when(modelService.loadById("image-1")).thenReturn(custom);
+        when(providerService.loadById("provider-1")).thenReturn(provider("minimax", true));
+
+        var binding = resolver.requireExecutable("image-1", ModelType.IMAGE_GEN);
+        assertThat(binding.providerType()).isEqualTo(ProviderType.MINIMAX);
         assertThat(binding.capability().getKind()).isEqualTo("image");
     }
 

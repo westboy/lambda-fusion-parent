@@ -11,7 +11,6 @@ import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
-import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -63,11 +62,12 @@ public class MediaGenerationBindingResolver {
         if (operation == null || operation.getModelType() != expectedType) {
             throw invalid("媒体模型未配置与类型匹配的创作操作: " + modelLabel(model));
         }
-        if (providerType == null || !providerType.supportsRuntime(operation)) {
-            throw invalid("AgentScope 官方工具暂不支持该模型与提供方组合: " + modelLabel(model));
+        if (providerType == null) {
+            throw invalid("媒体模型提供方类型不受支持: " + modelLabel(model));
         }
-        if (providerType == ProviderType.OPENAI && !isOpenAiDallE(model.getModelName())) {
-            throw invalid("AgentScope 2.0.1 的 OpenAI 生图工具仅支持 DALL·E 2/3: " + modelLabel(model));
+        // 模型标记自定义 HTTP 工具时绕过官方 SDK 能力校验：任意提供方皆可，由自定义工具直连其 baseUrl。
+        if (!Boolean.TRUE.equals(model.getCustomMediaTool()) && !providerType.supportsRuntime(operation)) {
+            throw invalid("AgentScope 官方工具暂不支持该模型与提供方组合: " + modelLabel(model));
         }
         MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
         return new Binding(model, provider, providerType, capability);
@@ -84,11 +84,6 @@ public class MediaGenerationBindingResolver {
 
     private static String modelLabel(LlmModelEntity model) {
         return StringUtils.defaultIfBlank(model.getName(), model.getModelName());
-    }
-
-    private static boolean isOpenAiDallE(String modelName) {
-        String normalized = StringUtils.defaultString(modelName).trim().toLowerCase(Locale.ROOT);
-        return normalized.equals("dall-e-2") || normalized.equals("dall-e-3");
     }
 
     private static AiBusinessException invalid(String message) {

@@ -17,6 +17,7 @@ import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.annotation.RequireConfirm;
 import com.lambda.fusion.ai.runtime.media.MaterializingMediaTool;
 import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
+import com.lambda.fusion.ai.runtime.tools.CustomHttpImageTool;
 import com.lambda.fusion.ai.runtime.tools.ImageGenerationTool;
 import com.lambda.fusion.ai.runtime.tools.VideoGenerationTool;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
@@ -155,35 +156,54 @@ public class ToolkitAssembler {
         }
     }
 
-    /** 只负责解密凭据并为统一工具名创建官方能力薄适配器。 */
+    /**
+     * 解密凭据并创建媒体工具薄适配器。模型标记 {@code customMediaTool} 时走自定义 HTTP 工具
+     * （用提供方 baseUrl + 解密 key 直连，适配各家兼容端点），否则走平台内置的官方 SDK 薄适配器。
+     */
     private AgentTool buildMediaTool(Binding binding) {
         String apiKey = keyEncryptionService.decrypt(binding.provider().getApiKeyEncrypted());
+        MediaGenerationOperation operation = binding.model().getMediaOperation();
+        Object adapter = Boolean.TRUE.equals(binding.model().getCustomMediaTool())
+                ? customHttpAdapter(binding, apiKey)
+                : builtInAdapter(binding, apiKey);
+        return materializingTool(adapter, operation.getToolName());
+    }
+
+    /** 自定义 HTTP 薄适配器：请求体按 DashScope 多模态会话格式，用提供方 baseUrl 直连。 */
+    private Object customHttpAdapter(Binding binding, String apiKey) {
+        String baseUrl = binding.provider().getBaseUrl();
+        String modelName = binding.model().getModelName();
+        return switch (binding.model().getMediaOperation()) {
+            case TEXT_TO_IMAGE -> CustomHttpImageTool.create(apiKey, baseUrl, modelName);
+            default -> throw unsupportedMediaBinding(binding);
+        };
+    }
+
+    /** 平台内置薄适配器：走 AgentScope 官方多模态工具的厂商（DashScope / OpenAI）。 */
+    private Object builtInAdapter(Binding binding, String apiKey) {
         String modelName = binding.model().getModelName();
         MediaGenerationOperation operation = binding.model().getMediaOperation();
-        Object adapter =
-                switch (operation) {
-                    case TEXT_TO_IMAGE ->
-                        switch (binding.providerType()) {
-                            case DASHSCOPE -> ImageGenerationTool.dashscope(apiKey, modelName);
-                            case OPENAI ->
-                                ImageGenerationTool.openai(
-                                        apiKey, binding.provider().getBaseUrl(), modelName);
-                            default -> throw unsupportedMediaBinding(binding);
-                        };
-                    case TEXT_TO_VIDEO, IMAGE_TO_VIDEO, FIRST_LAST_FRAME_TO_VIDEO -> {
-                        if (binding.providerType() != ProviderType.DASHSCOPE) {
-                            throw unsupportedMediaBinding(binding);
-                        }
-                        yield VideoGenerationTool.dashscope(apiKey, modelName);
-                    }
-                    case TEXT_TO_SPEECH -> {
-                        if (binding.providerType() != ProviderType.DASHSCOPE) {
-                            throw unsupportedMediaBinding(binding);
-                        }
-                        yield AudioGenerationTool.dashscope(apiKey, modelName);
-                    }
+        return switch (operation) {
+            case TEXT_TO_IMAGE ->
+                switch (binding.providerType()) {
+                    case DASHSCOPE -> ImageGenerationTool.dashscope(apiKey, modelName);
+                    case OPENAI ->
+                        ImageGenerationTool.openai(apiKey, binding.provider().getBaseUrl(), modelName);
+                    default -> throw unsupportedMediaBinding(binding);
                 };
-        return materializingTool(adapter, operation.getToolName());
+            case TEXT_TO_VIDEO, IMAGE_TO_VIDEO, FIRST_LAST_FRAME_TO_VIDEO -> {
+                if (binding.providerType() != ProviderType.DASHSCOPE) {
+                    throw unsupportedMediaBinding(binding);
+                }
+                yield VideoGenerationTool.dashscope(apiKey, modelName);
+            }
+            case TEXT_TO_SPEECH -> {
+                if (binding.providerType() != ProviderType.DASHSCOPE) {
+                    throw unsupportedMediaBinding(binding);
+                }
+                yield AudioGenerationTool.dashscope(apiKey, modelName);
+            }
+        };
     }
 
     /**
