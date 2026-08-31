@@ -8,12 +8,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.lambda.fusion.ai.runtime.media.ExplicitToolCall;
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.AgentInput;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,7 +22,7 @@ import reactor.core.publisher.Mono;
 /**
  * 验证 {@link RagMiddleware#onAgent}：命中时尾部追加带 {@link Msg#METADATA_SYNTHETIC}
  * 的合成 USER 消息；无 USER 消息/空 query/未命中/检索失败一律原样放行；
- * 显式工具调用不检索，注入总长受 maxInjectChars 截断。
+ * 注入总长受 maxInjectChars 截断。
  *
  * @author Jin
  */
@@ -98,25 +95,6 @@ class RagMiddlewareTest {
         AtomicReference<AgentInput> seen = new AtomicReference<>();
 
         middleware.onAgent(null, null, input, recordingNext(seen)).blockLast();
-
-        assertThat(seen.get()).isSameAs(input);
-        verifyNoInteractions(retriever);
-    }
-
-    @Test
-    void explicitToolCallPassesThroughWithoutRetrieval() {
-        KnowledgeRetriever retriever = mock(KnowledgeRetriever.class);
-        RagMiddleware middleware = new RagMiddleware(retriever, KB_IDS, 4000);
-        Msg message = userMsg("生成一张图片");
-        AgentInput input = inputOf(message);
-        ExplicitToolCall explicitCall = new ExplicitToolCall(
-                ToolUseBlock.builder().id("media-call-1").name("text_to_image").build());
-        RuntimeContext context = RuntimeContext.builder()
-                .put(ExplicitToolCall.class, explicitCall)
-                .build();
-        AtomicReference<AgentInput> seen = new AtomicReference<>();
-
-        middleware.onAgent(null, context, input, recordingNext(seen)).blockLast();
 
         assertThat(seen.get()).isSameAs(input);
         verifyNoInteractions(retriever);

@@ -7,31 +7,44 @@ import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
-import com.lambda.fusion.ai.runtime.media.ExplicitToolCall;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * 对话运行与 {@link HarnessAgent} 之间的执行适配器。内部执行直接调用已选定的 Agent，不再经过 Harness 网关路由；
@@ -49,6 +62,13 @@ public final class AgentExecutionAdapter {
     private final String appId;
     private final String tenantId;
     private final FusionSubagentGateway subagentGateway;
+
+    /**
+     * 显式媒体直调超时上限。AgentScope 的默认执行配置只作用于 ReAct 循环内部的
+     * {@code Toolkit.callTools}，本适配器的 {@code Toolkit.callTool} 直调入口不含超时，
+     * 这里给一个对文生图/文生视频足够宽松的固定上限，防止慢源无限挂起事件流。
+     */
+    private static final Duration EXPLICIT_MEDIA_TIMEOUT = Duration.ofMinutes(5);
 
     /**
      * 创建 Agent 执行适配器。
@@ -75,21 +95,17 @@ public final class AgentExecutionAdapter {
 
     /** 启动事件流；显式媒体请求直接执行 AgentScope 工具，普通消息仍交给 Agent 自主编排。 */
     public Flux<AgentEvent> stream(Msg message, ToolUseBlock mediaToolCall) {
-        ExplicitToolCall explicitCall = mediaToolCall == null ? null : new ExplicitToolCall(mediaToolCall);
-        RuntimeContext.Builder contextBuilder = RuntimeContext.builder()
+        RuntimeContext context = RuntimeContext.builder()
                 .userId(userId)
                 .sessionId(sessionId)
                 .put(RuntimeProperty.KEY_RUN_ID, runId)
                 .put(RuntimeProperty.KEY_TENANT_ID, tenantId)
                 .put(RuntimeProperty.KEY_APP_ID, appId)
-                .put(RuntimeProperty.KEY_LF_SESSION_ID, sessionId);
-        if (explicitCall != null) {
-            contextBuilder.put(ExplicitToolCall.class, explicitCall);
-        }
-        RuntimeContext context = contextBuilder.build();
-        Flux<AgentEvent> source = explicitCall == null
+                .put(RuntimeProperty.KEY_LF_SESSION_ID, sessionId)
+                .build();
+        Flux<AgentEvent> source = mediaToolCall == null
                 ? agent.streamEvents(message, context)
-                : streamExplicitMediaTool(message, explicitCall, context);
+                : streamExplicitMediaTool(message, mediaToolCall, context);
         if (subagentGateway != null) {
             source = source.doOnNext(this::recordSubagentExposure);
         }
@@ -97,34 +113,122 @@ public final class AgentExecutionAdapter {
     }
 
     /**
-     * 执行页面明确选择的媒体工具。工具查找、参数 Schema 校验、预置参数合并、调用追踪和异常结果转换
-     * 全部委托 AgentScope {@link io.agentscope.core.tool.Toolkit}；这里只编排官方事件并维护同一会话记忆。
+     * 执行页面明确选择的媒体工具。不再驱动 ReAct 循环（旧实现靠假模型触发工具、PostActing 拦停），
+     * 改为 {@code Toolkit.callTool} 直调；工具查找、参数 Schema 校验、预置参数合并、调用追踪和异常结果转换
+     * 全部委托 AgentScope {@link io.agentscope.core.tool.Toolkit}；这里手动合成官方事件序列并维护同一会话记忆。
      */
-    private Flux<AgentEvent> streamExplicitMediaTool(
-            Msg message, ExplicitToolCall explicitCall, RuntimeContext context) {
-        ToolUseBlock toolCall = explicitCall.toolCall();
-        Flux<AgentEvent> source = agent.streamEvents(message, context);
-        return Flux.defer(() -> {
-            AtomicBoolean toolFailed = new AtomicBoolean();
-            return source.concatMap(
-                            event -> {
-                                if (event instanceof ToolResultEndEvent result
-                                        && toolCall.getId().equals(result.getToolCallId())
-                                        && result.getState() == ToolResultState.ERROR) {
-                                    toolFailed.set(true);
-                                }
-                                if (event instanceof AgentEndEvent && event.getSource() == null && toolFailed.get()) {
-                                    return Flux.error(new IllegalStateException("媒体工具执行失败: " + toolCall.getName()));
-                                }
-                                if (event.getType() == AgentEventType.MODEL_CALL_START
-                                        || event.getType() == AgentEventType.MODEL_CALL_END) {
-                                    return Flux.empty();
-                                }
-                                return Flux.just(event);
-                            },
-                            1)
-                    .cast(AgentEvent.class);
-        });
+    private Flux<AgentEvent> streamExplicitMediaTool(Msg message, ToolUseBlock mediaToolCall, RuntimeContext context) {
+        ReActAgent delegate = agent.getDelegate();
+        String replyId = UUID.randomUUID().toString().replace("-", "");
+        String toolCallId = mediaToolCall.getId();
+        String toolCallName = mediaToolCall.getName();
+        ToolCallParam param = ToolCallParam.builder()
+                .toolUseBlock(mediaToolCall)
+                .agent(delegate)
+                .runtimeContext(context)
+                .build();
+        // callTool 直调不含超时与 id/name 回填，这里统一补齐；结果异常（含超时）也转成 ERROR 结果块，
+        // 让失败走统一的事件序列。MaterializingMediaTool 已在 callAsync 内完成媒体物化，结果直接使用。
+        Mono<ToolResultBlock> resultMono = delegate.getToolkit()
+                .callTool(param)
+                .timeout(EXPLICIT_MEDIA_TIMEOUT)
+                .map(result -> result.withIdAndName(toolCallId, toolCallName))
+                .onErrorResume(error -> Mono.just(ToolResultBlock.error("媒体工具调用异常: " + error.getMessage())
+                        .withIdAndName(toolCallId, toolCallName)));
+        List<AgentEvent> headEvents = List.of(
+                new AgentStartEvent(null, replyId, agent.getName()),
+                new ToolCallStartEvent(replyId, toolCallId, toolCallName),
+                new ToolCallDeltaEvent(replyId, toolCallId, toolCallName, mediaToolCall.getContent()),
+                new ToolResultStartEvent(replyId, toolCallId, toolCallName));
+        return Flux.concat(
+                Flux.fromIterable(headEvents),
+                resultMono.flatMapMany(result -> buildMediaResultEvents(replyId, message, mediaToolCall, result)));
+    }
+
+    /**
+     * 依据物化后的工具结果合成尾部事件序列：输出增量、结果结束、记忆写回、根结束。
+     * 结果判定为 {@link ToolResultState#ERROR} 时事件照常下发（前端要渲染失败），
+     * 随后在 {@code AGENT_END} 之后让整个流以 {@link IllegalStateException} 收尾，与旧实现语义对齐。
+     */
+    private Flux<AgentEvent> buildMediaResultEvents(
+            String replyId, Msg message, ToolUseBlock toolCall, ToolResultBlock result) {
+        String toolCallId = toolCall.getId();
+        String toolCallName = toolCall.getName();
+        List<AgentEvent> events = new ArrayList<>();
+        // 与 ReActAgent.emitToolResultDelta 一致：按输出块类型分别发文本/数据增量。
+        List<ContentBlock> output = result.getOutput();
+        if (output != null) {
+            for (ContentBlock block : output) {
+                if (block instanceof TextBlock textBlock) {
+                    events.add(new ToolResultTextDeltaEvent(replyId, toolCallId, toolCallName, textBlock.getText()));
+                } else {
+                    events.add(new ToolResultDataDeltaEvent(replyId, toolCallId, toolCallName, block));
+                }
+            }
+        }
+        ToolResultState state = determineToolResultState(result);
+        events.add(new ToolResultEndEvent(replyId, toolCallId, toolCallName, state));
+        writeBackMediaToolMemory(message, toolCall, result);
+        events.add(new AgentEndEvent(replyId));
+        Flux<AgentEvent> flux = Flux.fromIterable(events);
+        if (state == ToolResultState.ERROR) {
+            flux = flux.concatWith(Flux.error(new IllegalStateException("媒体工具执行失败: " + toolCallName)));
+        }
+        return flux;
+    }
+
+    /** 判定工具结果状态，与 {@code ReActAgent.determineToolResultState} 的判定顺序保持一致。 */
+    private static ToolResultState determineToolResultState(ToolResultBlock result) {
+        if (result.isSuspended()) {
+            return ToolResultState.RUNNING;
+        }
+        if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
+            return result.getState();
+        }
+        if (result.getOutput() != null
+                && result.getOutput().stream()
+                        .anyMatch(block -> block instanceof TextBlock text
+                                && text.getText() != null
+                                && text.getText().startsWith("[ERROR]"))) {
+            return ToolResultState.ERROR;
+        }
+        return ToolResultState.SUCCESS;
+    }
+
+    /**
+     * 直调绕过 ReAct 循环，须手动把本轮输入与媒体调用写回 Agent 记忆：否则下一轮模型既读不到用户的创作意图、
+     * 也不知道已生成媒体，且 {@link #readSuspendedToolBlocks}/{@link #denyPendingToolCalls} 会把该调用误判为挂起。
+     * 顺序与 ReAct 一致：USER（用户输入，为 {@code null} 时跳过）→ ASSISTANT（工具调用）→ TOOL（结果）。
+     * 写回失败只记录日志，不阻断已成功下发的结果事件。
+     */
+    private void writeBackMediaToolMemory(Msg message, ToolUseBlock toolCall, ToolResultBlock result) {
+        try {
+            ReActAgent delegate = agent.getDelegate();
+            AgentState state = delegate.getAgentState(userId, sessionId);
+            if (state == null || state.getContext() == null) {
+                log.warn("媒体工具记忆写回跳过: Agent 状态不存在 runId={}", runId);
+                return;
+            }
+            if (message != null) {
+                // 用户消息按 ReAct 语义归一为 role=USER 后写回，保留原文内容。
+                Msg userMessage = message.getRole() == MsgRole.USER
+                        ? message
+                        : Msg.builderForRole(MsgRole.USER)
+                                .name(message.getName())
+                                .content(message.getContent())
+                                .build();
+                state.contextMutable().add(userMessage);
+            }
+            state.contextMutable()
+                    .add(AssistantMessage.builder()
+                            .name(agent.getName())
+                            .content(List.<ContentBlock>of(toolCall))
+                            .build());
+            state.contextMutable().add(ToolResultMessageBuilder.buildToolResultMsg(result, toolCall, agent.getName()));
+            delegate.saveAgentState(userId, sessionId);
+        } catch (RuntimeException error) {
+            log.warn("媒体工具记忆写回失败: runId={}", runId, error);
+        }
     }
 
     /**

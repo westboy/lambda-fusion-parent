@@ -12,8 +12,6 @@ import com.lambda.fusion.ai.rag.runtime.KnowledgeRetrievalTool;
 import com.lambda.fusion.ai.rag.runtime.KnowledgeRetriever;
 import com.lambda.fusion.ai.rag.runtime.RagMiddleware;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
-import com.lambda.fusion.ai.runtime.media.ExplicitToolCallHook;
-import com.lambda.fusion.ai.runtime.media.ExplicitToolCallMiddleware;
 import com.lambda.fusion.ai.runtime.sandbox.SandboxSpecResolver;
 import com.lambda.fusion.ai.runtime.state.StateStoreProvider;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
@@ -218,12 +216,11 @@ public class AgentFactory {
     }
 
     /**
-     * 组装运行期中间件。显式工具调用中间件始终挂载；配置 GENERIC/BOTH RAG 且检索器可用时，
-     * 再挂载 {@link RagMiddleware}。绑定变更经 {@code ConfigChangedEvent} 重建 agent。
+     * 组装运行期中间件。配置 GENERIC/BOTH RAG 且检索器可用时挂载 {@link RagMiddleware}，
+     * 否则不挂载任何中间件。绑定变更经 {@code ConfigChangedEvent} 重建 agent。
      */
     private List<MiddlewareBase> resolveMiddlewares(AppEntity app) {
         List<MiddlewareBase> middlewares = new ArrayList<>();
-        middlewares.add(new ExplicitToolCallMiddleware());
         RagMode ragMode = resolveRagMode(app);
         if (ragMode != RagMode.GENERIC && ragMode != RagMode.BOTH) {
             return List.copyOf(middlewares);
@@ -398,7 +395,6 @@ public class AgentFactory {
                 .disableMemoryHooks();
         configureChatAttachmentFilesystem(builder, app);
         builder.middlewares(middlewares);
-        registerExplicitToolCallStopHook(builder);
         return builder.build();
     }
 
@@ -462,7 +458,6 @@ public class AgentFactory {
             builder.disableFilesystemTools().disableMemoryTools().disableMemoryHooks();
         }
         builder.middlewares(middlewares);
-        registerExplicitToolCallStopHook(builder);
         if (!subAgents.isEmpty()) {
             // 数据库声明与 workspace/subagents/*.md 的文件声明合并；同名文件声明优先。
             builder.subagents(subAgents);
@@ -478,12 +473,6 @@ public class AgentFactory {
                 workspaceStorage.type(),
                 sandboxSpec.isPresent() ? "yes" : "HOST");
         return builder.build();
-    }
-
-    /** 将 AgentScope 2.0.1 尚未提供的 PostActing 停止点隔离在单一兼容注册入口。 */
-    @SuppressWarnings({"deprecation", "removal"})
-    private static void registerExplicitToolCallStopHook(HarnessAgent.Builder builder) {
-        builder.hook(new ExplicitToolCallHook());
     }
 
     /** 将系统级记忆刷新策略映射为 AgentScope 官方配置。 */
