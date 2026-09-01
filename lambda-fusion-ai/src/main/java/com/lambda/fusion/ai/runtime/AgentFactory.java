@@ -8,9 +8,9 @@ import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
-import com.lambda.fusion.ai.rag.runtime.KnowledgeRetrievalTool;
 import com.lambda.fusion.ai.rag.runtime.KnowledgeRetriever;
 import com.lambda.fusion.ai.rag.runtime.RagMiddleware;
+import com.lambda.fusion.ai.rag.runtime.RagModeResolver;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import com.lambda.fusion.ai.runtime.sandbox.SandboxSpecResolver;
 import com.lambda.fusion.ai.runtime.state.StateStoreProvider;
@@ -61,7 +61,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 按 {@code (appId, tenantId)} 构建并缓存智能应用的 {@link HarnessAgent}。
+ * 按 {@code (appId, tenantId, runtimeProfile)} 构建并缓存智能应用的 {@link HarnessAgent}。
  *
  * <p>CHAT 应用只使用数据库配置，不向模型开放工作区能力；附件工具仍复用会话隔离的 AgentScope
  * 文件系统，配置非 HOST 后端时进入真实沙箱，否则回退受限本地目录。WORKSPACE 应用拥有独立工作区，
@@ -74,6 +74,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class AgentFactory {
+
+    private static final String CHANNEL_AGENT_ID_SUFFIX = "-channel";
 
     private final AppService appService;
     private final ModelResolver modelResolver;
@@ -91,21 +93,30 @@ public class AgentFactory {
 
     /**
      * 状态存储缓存：同 {@code (appId, tenantId)} 共享同一实例。Agent 因配置变更重建后仍复用原存储，
-     * 进程内（MEMORY）会话状态不随重建丢失；存储类型变更需重启生效。缓存键与 {@link #cache} 一致，
-     * Agent 缓存失效时刻意不清空本缓存（保留会话记忆）。
+     * 进程内（MEMORY）会话状态不随重建丢失；存储类型变更需重启生效。ChatRun 与 Channel Agent 使用不同
+     * agentId，但复用同一存储实例；Agent 缓存失效时刻意不清空本缓存（保留会话记忆）。
      */
     private final Map<String, AgentStateStore> stateStores = new ConcurrentHashMap<>();
 
-    /** 按应用和租户获取 Agent；首次构建由 {@link ConcurrentHashMap#computeIfAbsent} 保证线程安全。 */
-    public HarnessAgent getOrBuild(String appId, String tenantId) {
-        String cacheKey = cacheKey(appId, tenantId);
-        return cache.computeIfAbsent(cacheKey, k -> build(appId, tenantId));
+    /** 获取平台 ChatRun 使用的 Agent；该实例可以包含依赖运行和附件上下文的工具。 */
+    public HarnessAgent getOrBuildForChatRun(String appId, String tenantId) {
+        return getOrBuild(appId, tenantId, RuntimeProfile.CHAT_RUN);
+    }
+
+    /** 获取 Channel 使用的 Agent；该实例不会暴露依赖平台 ChatRun 上下文的工具。 */
+    public HarnessAgent getOrBuildForChannel(String appId, String tenantId) {
+        return getOrBuild(appId, tenantId, RuntimeProfile.CHANNEL);
+    }
+
+    private HarnessAgent getOrBuild(String appId, String tenantId, RuntimeProfile profile) {
+        String cacheKey = agentCacheKey(appId, tenantId, profile);
+        return cache.computeIfAbsent(cacheKey, ignored -> build(appId, tenantId, profile));
     }
 
     /** 获取或创建同 {@code (appId, tenantId)} 共享的状态存储。 */
     private AgentStateStore sharedStateStore(String appId, String tenantId) {
         return stateStores.computeIfAbsent(
-                cacheKey(appId, tenantId), key -> resolveStateStore(aiProperties, stateStoreProviders));
+                stateStoreKey(appId, tenantId), key -> resolveStateStore(aiProperties, stateStoreProviders));
     }
 
     public String buildStableAgentId(String appId, String tenantId) {
@@ -178,14 +189,15 @@ public class AgentFactory {
         }
     }
 
-    private HarnessAgent build(String appId, String tenantId) {
+    private HarnessAgent build(String appId, String tenantId, RuntimeProfile profile) {
         AppEntity app = appService.loadById(appId);
         if (Boolean.FALSE.equals(app.getEnabled())) {
             throw new AiBusinessException(AiErrorCode.APP_DISABLED, appId);
         }
         Model model = modelResolver.apply(app.getModelId());
-        Toolkit toolkit = toolkitAssembler.build(app);
-        registerKnowledgeTool(toolkit, app);
+        Toolkit toolkit = profile == RuntimeProfile.CHAT_RUN
+                ? toolkitAssembler.buildForChatRun(app)
+                : toolkitAssembler.buildForChannel(app);
         int maxIters = Objects.requireNonNullElse(
                 app.getMaxIters(), aiProperties.getRuntime().getDefaultMaxIters());
         if (maxIters < 1) {
@@ -194,7 +206,7 @@ public class AgentFactory {
         AppType appType = AppType.of(Objects.toString(app.getAppType(), AppType.CHAT.getCode()));
         List<MiddlewareBase> middlewares = resolveMiddlewares(app);
         HarnessAgent agent;
-        String stableAgentId = buildStableAgentId(app.getId(), tenantId);
+        String stableAgentId = agentId(app.getId(), tenantId, profile);
         if (appType == AppType.WORKSPACE) {
             agent = buildWorkspace(
                     stableAgentId, app, tenantId, model, toolkit, maxIters, middlewares, resolveSubAgents(app));
@@ -216,12 +228,12 @@ public class AgentFactory {
     }
 
     /**
-     * 组装运行期中间件。配置 GENERIC/BOTH RAG 且检索器可用时挂载 {@link RagMiddleware}，
-     * 否则不挂载任何中间件。绑定变更经 {@code ConfigChangedEvent} 重建 agent。
+     * 组装运行期中间件。配置 GENERIC/BOTH RAG 且检索器可用时挂载 {@link RagMiddleware}。
+     * 绑定变更经 {@code ConfigChangedEvent} 重建 agent。
      */
     private List<MiddlewareBase> resolveMiddlewares(AppEntity app) {
         List<MiddlewareBase> middlewares = new ArrayList<>();
-        RagMode ragMode = resolveRagMode(app);
+        RagMode ragMode = RagModeResolver.resolve(app);
         if (ragMode != RagMode.GENERIC && ragMode != RagMode.BOTH) {
             return List.copyOf(middlewares);
         }
@@ -232,35 +244,6 @@ public class AgentFactory {
         middlewares.add(new RagMiddleware(
                 retriever, app.getKnowledgeBaseIds(), aiProperties.getRag().getMaxInjectChars()));
         return List.copyOf(middlewares);
-    }
-
-    /**
-     * 为 AGENTIC/BOTH 模式注册应用专属的知识检索工具。工具在构建期绑定知识库列表，
-     * 不参与 {@link ToolkitAssembler} 的全局扫描，避免跨应用扩大检索范围。
-     */
-    private void registerKnowledgeTool(Toolkit toolkit, AppEntity app) {
-        RagMode ragMode = resolveRagMode(app);
-        if (ragMode != RagMode.AGENTIC && ragMode != RagMode.BOTH) {
-            return;
-        }
-        KnowledgeRetriever retriever = retrieverProvider.getIfAvailable();
-        if (retriever == null) {
-            return;
-        }
-        toolkit.registerTool(new KnowledgeRetrievalTool(retriever, app.getKnowledgeBaseIds()));
-        log.info("应用 {} 启用 Agentic 知识检索工具(kbs={})", app.getId(), app.getKnowledgeBaseIds());
-    }
-
-    /**
-     * 解析应用的知识检索模式。未绑定知识库时禁用检索；模式为空或无法识别时按 GENERIC
-     * 兼容历史数据，新增和更新入口仍负责拒绝非法值。
-     */
-    static RagMode resolveRagMode(AppEntity app) {
-        if (app.getKnowledgeBaseIds() == null || app.getKnowledgeBaseIds().isEmpty()) {
-            return null;
-        }
-        RagMode ragMode = RagMode.of(app.getRagMode());
-        return ragMode != null ? ragMode : RagMode.GENERIC;
     }
 
     private void registerWithGateway(String stableAgentId, HarnessAgent agent) {
@@ -497,8 +480,23 @@ public class AgentFactory {
         return builder.build();
     }
 
-    /** 缓存键格式须与 {@link #invalidateApp(String)} 的应用前缀匹配规则保持一致。 */
-    private String cacheKey(String appId, String tenantId) {
+    private String agentId(String appId, String tenantId, RuntimeProfile profile) {
+        String stableAgentId = buildStableAgentId(appId, tenantId);
+        return profile == RuntimeProfile.CHANNEL ? stableAgentId + CHANNEL_AGENT_ID_SUFFIX : stableAgentId;
+    }
+
+    /** Agent 缓存按运行场景隔离，同时保留应用前缀以支持统一失效。 */
+    private String agentCacheKey(String appId, String tenantId, RuntimeProfile profile) {
+        return stateStoreKey(appId, tenantId) + "|" + profile.name();
+    }
+
+    /** 不同运行场景仍共享同一应用/租户状态存储实例，具体状态由不同 agentId 隔离。 */
+    private String stateStoreKey(String appId, String tenantId) {
         return appId + "|" + StringUtils.defaultString(tenantId);
+    }
+
+    private enum RuntimeProfile {
+        CHAT_RUN,
+        CHANNEL
     }
 }

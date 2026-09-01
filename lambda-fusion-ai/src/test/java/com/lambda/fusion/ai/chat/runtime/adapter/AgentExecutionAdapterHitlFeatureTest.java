@@ -57,7 +57,7 @@ class AgentExecutionAdapterHitlFeatureTest {
             AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-feature", null);
 
             List<AgentEvent> events =
-                    adapter.stream(userMessage(), null).collectList().block(TIMEOUT);
+                    adapter.stream(userMessage()).collectList().block(TIMEOUT);
 
             assertThat(events).isNotNull();
             assertThat(events)

@@ -30,9 +30,6 @@ public class UpdateLlmModel {
     @Schema(description = "媒体创作操作；切换为非媒体模型时由服务端清空")
     private MediaGenerationOperation mediaOperation;
 
-    @Schema(description = "媒体模型是否走自定义HTTP工具(true=自定义HTTP,false=官方SDK)；切换为非媒体模型时由服务端清空")
-    private Boolean customMediaTool;
-
     @Schema(description = "默认温度")
     private BigDecimal defaultTemperature;
 

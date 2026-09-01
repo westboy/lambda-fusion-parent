@@ -94,15 +94,15 @@
 ## 能力详解
 
 ### LLM 提供方与模型
-提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 是后端校验和管理端类型选项的能力来源；VECTOR/HYBRID 知识库使用的 EMBEDDING 模型必须配置默认向量维度，新建知识库会采用并固化该维度（也可在建库时显式覆盖）；FULL_TEXT 知识库不需要嵌入模型。API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（向量 RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
+提供方类型 `dashscope`/`openai`/`ollama`/`anthropic`/`gemini`/`deepseek`/`glm`/`kimi`/`minimax`；模型类型 `CHAT`/`EMBEDDING`/`IMAGE_GEN`/`VIDEO_GEN`/`AUDIO_GEN`。`ProviderType.supportedModelTypes` 描述厂商理论模型目录；管理端可选项和媒体模型保存校验使用 `MediaToolAdapterRegistry` 从真实适配器注册键推导的 `runtimeModelTypes` / `runtimeMediaOperations`。VECTOR/HYBRID 知识库使用的 EMBEDDING 模型必须配置默认向量维度，新建知识库会采用并固化该维度（也可在建库时显式覆盖）；FULL_TEXT 知识库不需要嵌入模型。API Key 使用 AES-GCM 加密存储；`ModelResolver` 通过 AgentScope `ModelRegistry` 按 modelId 解析 CHAT 模型，`EmbeddingModelResolver` 解析 EMBEDDING 模型（向量 RAG 用）。端点 `/v1/ai/llm-providers`、`/v1/ai/llm-models`。
 
 ### 智能应用
 应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
 
 ### 媒体生成
-- `ToolkitAssembler` 根据应用绑定的 `IMAGE_GEN` / `VIDEO_GEN` / `AUDIO_GEN` 模型挂载薄适配工具：模型名由应用锁定，生成调用和媒体块结果复用 AgentScope 2.0.1 官方 `DashScopeMultiModalTool` / `OpenAIMultiModalTool`。
-- 聊天安全视图的 `mediaGenerationCapabilities` 仅返回模型展示名、推荐参数与可输入范围，不泄露实际模型名、provider、服务地址或凭据。前端以结构化 `mediaGeneration` 字段提交用户参数，服务端按应用绑定校验并强制路由到对应官方工具。
-- 官方 `ImageBlock` / `VideoBlock` / `AudioBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS），事件和历史消息均返回平台签名预览地址，避免把供应商临时 URL 或 Base64 持久化到聊天记录。
+- 前端 `mediaGeneration` 只提交 `image` / `video` / `audio` 类型，具体要求保留在原始消息正文中；模型在统一 ReAct 链路里依据真实 ToolSchema 自主选工具和参数，不按应用绑定强制路由。
+- `ToolkitAssembler` 为 Web Chat 和 Channel 构建不同工具集：Web Chat 可挂载应用绑定的 AgentScope 官方媒体工具和配置独立、默认关闭的 `qwen_text_to_image`；Channel 不暴露依赖 ChatRun/附件物化的工具。知识库、本地、媒体和 MCP 等全部已注册来源最后统一受应用 `toolsAllow` / `toolsDeny` 控制。
+- 官方 `ImageBlock` / `VideoBlock` / `AudioBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS）。客户端接收平台附件 `DataBlock` 和签名预览地址；模型侧结果由平台重新构造，只包含稳定 attachmentId，不透传供应商文本、metadata、临时 URL 或平台签名 URL。
 
 ### MCP 服务
 传输 `stdio`/`sse`/`http`/`streamable_http`；`ToolkitAssembler` 按应用装载，单个失败不影响其余；`POST /v1/ai/mcp-servers/{id}/test` 测连通性。
@@ -199,6 +199,12 @@ lambda:
           postgres: { datasource, create-if-not-exist, writeable }
           git:      { remote-url, branch, local-path, source }
           nacos:    { server-addr, namespace-id, access-key, secret-key }
+      tools:
+        qwen-image:
+          enabled: false                            # 独立普通工具，默认关闭
+          api-key: ${AI_QWEN_IMAGE_API_KEY:}
+          base-url: ${AI_QWEN_IMAGE_BASE_URL:}
+          model-name: ${AI_QWEN_IMAGE_MODEL_NAME:qwen-image-3.0-pro}
       rag:
         enabled: false                              # 默认关闭；开启后装配检索注入
         default-retrieval-mode: VECTOR              # FULL_TEXT / VECTOR / HYBRID
@@ -225,6 +231,7 @@ lambda:
 | `memory.flush.min-gap` | THROTTLED 模式最小刷新间隔，默认 10m；实际发生刷新时仍会等待本次记忆提取完成 |
 | `sandbox.*` | 各沙箱后端凭据；对应扩展需在 classpath（ai 模块已 optional 引入） |
 | `skill.repository.type` | 技能仓库源；`NONE` 或扩展缺失时技能市场禁用 |
+| `tools.qwen-image.*` | 独立 `qwen_text_to_image` 工具配置；不读取应用媒体模型或 Skill，启用时 key、地址和固定模型名必填 |
 | `lambda.lucene.*` | 本地全文索引开关和根目录；仅适合单机，关闭后不装配 Lucene Bean |
 | `rag.enabled` | 知识库检索注入总开关（默认 false）；关闭时管理 CRUD 仍可用 |
 | `rag.default-retrieval-mode` | 新建知识库未显式指定时的内容检索策略：FULL_TEXT / VECTOR / HYBRID |

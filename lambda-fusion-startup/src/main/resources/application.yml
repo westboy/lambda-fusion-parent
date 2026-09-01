@@ -107,6 +107,15 @@ lambda:
         datasource: ${AI_SCHEDULE_DATASOURCE:master}
       security:
         encryption-key: ${AI_ENCRYPTION_KEY:dev-only-please-change-in-production-32chars}
+      #### 独立普通 Agent 工具；不关联应用媒体模型或 Skill ####
+      tools:
+        qwen-image:
+          enabled: ${AI_QWEN_IMAGE_TOOL_ENABLED:true}
+          api-key: ${AI_QWEN_IMAGE_API_KEY:}
+          base-url: ${AI_QWEN_IMAGE_BASE_URL:}
+          model-name: ${AI_QWEN_IMAGE_MODEL_NAME:qwen-image-3.0-pro}
+          connect-timeout-seconds: ${AI_QWEN_IMAGE_CONNECT_TIMEOUT_SECONDS:10}
+          request-timeout-seconds: ${AI_QWEN_IMAGE_REQUEST_TIMEOUT_SECONDS:120}
       #### 对话附件与工具生成媒体（生产请配 AI_ATTACHMENT_PREVIEW_SECRET） ####
       chat:
         attachment:

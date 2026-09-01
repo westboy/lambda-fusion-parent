@@ -96,9 +96,8 @@ public interface AiConstants {
     }
 
     /**
-     * AgentScope 提供方。{@code supportedModelTypes} 表示厂商可配置的模型类型，供模型管理使用；
-     * {@code runtimeModelTypes} 表示当前 AgentScope 运行时已经接通的模型类型，供应用绑定与工具装配使用。
-     * 两者语义不同，不得用当前运行时实现范围裁剪厂商模型目录。
+     * AgentScope 提供方。核心模型的理论能力与运行能力在此声明；媒体理论能力也在此声明，媒体运行能力
+     * 由 {@code MediaToolAdapterRegistry} 的实际适配器注册键推导，不在枚举中维护第二份矩阵。
      *
      * @author Jin
      */
@@ -109,7 +108,6 @@ public interface AiConstants {
                 "通义千问 DashScope",
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
-                Set.of(MediaGenerationOperation.values()),
                 Set.of(MediaGenerationOperation.values())),
 
         OPENAI(
@@ -117,7 +115,6 @@ public interface AiConstants {
                 "OpenAI",
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
-                Set.of(MediaGenerationOperation.TEXT_TO_IMAGE),
                 Set.of(MediaGenerationOperation.TEXT_TO_IMAGE)),
 
         OLLAMA(
@@ -125,18 +122,17 @@ public interface AiConstants {
                 "Ollama 本地部署",
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
                 Set.of(ModelType.CHAT, ModelType.EMBEDDING),
-                Set.of(),
                 Set.of()),
 
-        ANTHROPIC("anthropic", "Anthropic", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
+        ANTHROPIC("anthropic", "Anthropic", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of()),
 
-        GEMINI("gemini", "Google Gemini", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
+        GEMINI("gemini", "Google Gemini", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of()),
 
-        DEEPSEEK("deepseek", "DeepSeek", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
+        DEEPSEEK("deepseek", "DeepSeek", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of()),
 
-        GLM("glm", "智谱 GLM", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
+        GLM("glm", "智谱 GLM", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of()),
 
-        KIMI("kimi", "月之暗面 Kimi", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of(), Set.of()),
+        KIMI("kimi", "月之暗面 Kimi", Set.of(ModelType.CHAT), Set.of(ModelType.CHAT), Set.of()),
 
         MINIMAX(
                 "minimax",
@@ -147,8 +143,7 @@ public interface AiConstants {
                         MediaGenerationOperation.TEXT_TO_IMAGE,
                         MediaGenerationOperation.TEXT_TO_VIDEO,
                         MediaGenerationOperation.IMAGE_TO_VIDEO,
-                        MediaGenerationOperation.TEXT_TO_SPEECH),
-                Set.of());
+                        MediaGenerationOperation.TEXT_TO_SPEECH));
 
         private final String code;
 
@@ -160,41 +155,25 @@ public interface AiConstants {
 
         private final Set<MediaGenerationOperation> supportedMediaOperations;
 
-        private final Set<MediaGenerationOperation> runtimeMediaOperations;
-
         ProviderType(
                 String code,
                 String label,
                 Set<ModelType> supportedCoreModelTypes,
                 Set<ModelType> runtimeCoreModelTypes,
-                Set<MediaGenerationOperation> supportedMediaOperations,
-                Set<MediaGenerationOperation> runtimeMediaOperations) {
+                Set<MediaGenerationOperation> supportedMediaOperations) {
             this.code = code;
             this.label = label;
             this.supportedCoreModelTypes = supportedCoreModelTypes;
             this.runtimeCoreModelTypes = runtimeCoreModelTypes;
             this.supportedMediaOperations = supportedMediaOperations;
-            this.runtimeMediaOperations = runtimeMediaOperations;
         }
 
         public boolean supports(ModelType modelType) {
             return modelType != null && getSupportedModelTypes().contains(modelType);
         }
 
-        public boolean supportsRuntime(ModelType modelType) {
-            return modelType != null && getRuntimeModelTypes().contains(modelType);
-        }
-
         public boolean supports(MediaGenerationOperation operation) {
             return operation != null && supportedMediaOperations.contains(operation);
-        }
-
-        public boolean supportsRuntime(MediaGenerationOperation operation) {
-            return operation != null && runtimeMediaOperations.contains(operation);
-        }
-
-        public Set<ModelType> getRuntimeModelTypes() {
-            return modelTypes(runtimeCoreModelTypes, runtimeMediaOperations);
         }
 
         public Set<ModelType> getSupportedModelTypes() {

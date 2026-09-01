@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiConstants.AppAudience;
-import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.mapper.AppConfigAuditMapper;
@@ -22,7 +21,6 @@ import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
-import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.workspace.WorkspacePaths;
@@ -46,7 +44,6 @@ class AppServiceImplAudienceTest {
 
     private AppMapper appMapper;
     private LlmModelService llmModelService;
-    private LlmProviderService llmProviderService;
     private AiProperties properties;
     private AppServiceImpl service;
     private UserDetails user;
@@ -58,7 +55,7 @@ class AppServiceImplAudienceTest {
         properties.getAudience().getBRoles().add("ROLE_B");
         properties.getAudience().getCRoles().add("ROLE_C");
         llmModelService = mock(LlmModelService.class);
-        llmProviderService = mock(LlmProviderService.class);
+        LlmProviderService llmProviderService = mock(LlmProviderService.class);
         // 绑定校验：应用绑定/回填视图都会按 modelId 查模型，统一返回 CHAT 型
         LlmModelEntity chatModel = new LlmModelEntity();
         chatModel.setModelType(ModelType.CHAT);
@@ -119,7 +116,7 @@ class AppServiceImplAudienceTest {
     }
 
     @Test
-    void shouldLoadAvailableViewWithVisionAndMediaCapabilities() {
+    void shouldLoadAvailableViewWithVisionWithoutInternalMediaBindings() {
         AppEntity stored = app("a1", "ALL");
         stored.setModelId("m-1");
         stored.setImageModelId("image-1");
@@ -129,27 +126,13 @@ class AppServiceImplAudienceTest {
         LlmModelEntity chatModel = new LlmModelEntity();
         chatModel.setSupportsVision(Boolean.TRUE);
         when(llmModelService.loadById("m-1")).thenReturn(chatModel);
-        LlmModelEntity imageModel = mediaModel("image-1", ModelType.IMAGE_GEN, "海报模型", "wanx-v1");
-        LlmModelEntity videoModel = mediaModel("video-1", ModelType.VIDEO_GEN, "视频模型", "wan2.6-t2v");
-        LlmModelEntity audioModel = mediaModel("audio-1", ModelType.AUDIO_GEN, "语音模型", "qwen3-tts-flash");
-        when(llmModelService.loadById("image-1")).thenReturn(imageModel);
-        when(llmModelService.loadById("video-1")).thenReturn(videoModel);
-        when(llmModelService.loadById("audio-1")).thenReturn(audioModel);
-        LlmProviderEntity provider = new LlmProviderEntity();
-        provider.setId("p-1");
-        provider.setProviderType("dashscope");
-        provider.setEnabled(Boolean.TRUE);
-        when(llmProviderService.loadById("p-1")).thenReturn(provider);
-
         try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
             auth.when(AuthUtils::getUser).thenReturn(user);
             AvailableApp view = service.loadAvailableView("a1");
 
             assertThat(view.getId()).isEqualTo("a1");
             assertThat(view.getSupportsVision()).isTrue();
-            assertThat(view.getMediaGenerationCapabilities())
-                    .extracting(capability -> capability.getKind() + ":" + capability.getModelLabel())
-                    .containsExactly("image:海报模型", "video:视频模型", "audio:语音模型");
+            assertThat(view.getName()).isEqualTo("a1");
         }
     }
 
@@ -171,23 +154,5 @@ class AppServiceImplAudienceTest {
         app.setAppType("CHAT");
         app.setEnabled(Boolean.TRUE);
         return app;
-    }
-
-    private static LlmModelEntity mediaModel(String id, ModelType type, String name, String modelName) {
-        LlmModelEntity model = new LlmModelEntity();
-        model.setId(id);
-        model.setModelType(type);
-        model.setMediaOperation(
-                switch (type) {
-                    case IMAGE_GEN -> MediaGenerationOperation.TEXT_TO_IMAGE;
-                    case VIDEO_GEN -> MediaGenerationOperation.TEXT_TO_VIDEO;
-                    case AUDIO_GEN -> MediaGenerationOperation.TEXT_TO_SPEECH;
-                    default -> null;
-                });
-        model.setName(name);
-        model.setModelName(modelName);
-        model.setProviderId("p-1");
-        model.setEnabled(Boolean.TRUE);
-        return model;
     }
 }

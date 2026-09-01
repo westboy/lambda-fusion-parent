@@ -55,7 +55,7 @@ public class ChatExecutionInstanceFactory {
     /** 构建执行适配器：按需获取或构建 Agent，装配子智能体网关（若可用）并绑定租户上下文。 */
     private AgentExecutionAdapter createAgentExecution(ChatRunEntity run, ChatSessionEntity session) {
         String tenantId = tenantId(session);
-        HarnessAgent agent = agentFactory.getOrBuild(session.getAppId(), tenantId);
+        HarnessAgent agent = agentFactory.getOrBuildForChatRun(session.getAppId(), tenantId);
         FusionSubagentGateway subagentGateway = subagentGatewayProvider.getIfAvailable();
         if (subagentGateway != null) {
             subagentGateway.configureAgent(agent);

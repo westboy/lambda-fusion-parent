@@ -18,6 +18,8 @@ import org.apache.commons.lang3.StringUtils;
 @RequiredArgsConstructor
 public class KnowledgeRetrievalTool {
 
+    public static final String TOOL_NAME = "retrieve_knowledge";
+
     static final String EMPTY_QUERY_MESSAGE = "Please provide a non-empty search query.";
     static final String NO_RESULT_MESSAGE = "No relevant documents found in the knowledge base.";
 
@@ -25,7 +27,7 @@ public class KnowledgeRetrievalTool {
     private final List<String> kbIds;
 
     @Tool(
-            name = "retrieve_knowledge",
+            name = TOOL_NAME,
             description = "Retrieve relevant documents from the knowledge base. Use this tool when "
                     + "you need specific information or the user asks about stored knowledge.")
     public String retrieveKnowledge(

@@ -32,6 +32,7 @@ import com.lambda.fusion.ai.runtime.sandbox.SandboxBackendProvider;
 import com.lambda.fusion.ai.runtime.sandbox.SandboxSpecResolver;
 import com.lambda.fusion.ai.runtime.state.StateStoreDataSources;
 import com.lambda.fusion.ai.runtime.state.StateStoreProvider;
+import com.lambda.fusion.ai.runtime.tools.QwenImageGenerationTool;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceDistributedStoreProvider;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceStorage;
 import com.lambda.fusion.ai.schedule.AgentExecutionJobListener;
@@ -79,6 +80,7 @@ import io.agentscope.harness.agent.gateway.channel.ChannelFactory;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -95,6 +97,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.quartz.autoconfigure.SchedulerFactoryBeanCustomizer;
@@ -112,6 +115,24 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 @ComponentScan(basePackageClasses = AiConfigure.class)
 @EnableConfigurationProperties(AiProperties.class)
 public class AiConfigure {
+
+    /** 独立 Qwen Image 工具；是否存在仅由自身配置决定。 */
+    @Configuration
+    @ConditionalOnProperty(prefix = "lambda.fusion.ai.tools.qwen-image", name = "enabled", havingValue = "true")
+    public static class QwenImageToolConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(QwenImageGenerationTool.class)
+        public QwenImageGenerationTool qwenImageGenerationTool(AiProperties properties) {
+            AiProperties.Tools.QwenImage config = properties.getTools().getQwenImage();
+            return QwenImageGenerationTool.create(
+                    config.getApiKey(),
+                    config.getBaseUrl(),
+                    config.getModelName(),
+                    Duration.ofSeconds(config.getConnectTimeoutSeconds()),
+                    Duration.ofSeconds(config.getRequestTimeoutSeconds()));
+        }
+    }
 
     @Configuration
     @ConditionalOnProperty(

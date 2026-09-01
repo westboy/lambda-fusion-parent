@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
-import com.lambda.fusion.ai.AiConstants.ProviderType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -53,27 +53,19 @@ public class LlmProviderEntity {
     @Schema(description = "更新时间")
     private LocalDateTime updatedAt;
 
+    @TableField(exist = false)
     @Schema(description = "该厂商可配置的模型类型")
-    public Set<ModelType> getSupportedModelTypes() {
-        ProviderType type = ProviderType.of(providerType);
-        return type == null ? Set.of() : type.getSupportedModelTypes();
-    }
+    private Set<ModelType> supportedModelTypes = Set.of();
 
+    @TableField(exist = false)
     @Schema(description = "该提供方当前已由 AgentScope 运行时接通的模型类型")
-    public Set<ModelType> getRuntimeModelTypes() {
-        ProviderType type = ProviderType.of(providerType);
-        return type == null ? Set.of() : type.getRuntimeModelTypes();
-    }
+    private Set<ModelType> runtimeModelTypes = Set.of();
 
+    @TableField(exist = false)
     @Schema(description = "该厂商可配置的媒体创作操作")
-    public Set<com.lambda.fusion.ai.AiConstants.MediaGenerationOperation> getSupportedMediaOperations() {
-        ProviderType type = ProviderType.of(providerType);
-        return type == null ? Set.of() : type.getSupportedMediaOperations();
-    }
+    private Set<MediaGenerationOperation> supportedMediaOperations = Set.of();
 
+    @TableField(exist = false)
     @Schema(description = "该提供方当前已由 AgentScope 官方工具接通的媒体创作操作")
-    public Set<com.lambda.fusion.ai.AiConstants.MediaGenerationOperation> getRuntimeMediaOperations() {
-        ProviderType type = ProviderType.of(providerType);
-        return type == null ? Set.of() : type.getRuntimeMediaOperations();
-    }
+    private Set<MediaGenerationOperation> runtimeMediaOperations = Set.of();
 }

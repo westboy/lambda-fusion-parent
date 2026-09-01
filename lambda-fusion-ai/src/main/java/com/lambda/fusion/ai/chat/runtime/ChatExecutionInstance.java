@@ -27,7 +27,6 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -166,7 +165,7 @@ public final class ChatExecutionInstance {
         }
         try {
             beginConfirmedPhase();
-            startPhase(confirmMessage, null);
+            startPhase(confirmMessage);
         } catch (RuntimeException startFailure) {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
@@ -209,7 +208,7 @@ public final class ChatExecutionInstance {
         }
         try {
             beginConfirmedPhase();
-            startPhase(inputMessage, null);
+            startPhase(inputMessage);
         } catch (RuntimeException startFailure) {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
@@ -280,8 +279,7 @@ public final class ChatExecutionInstance {
      *
      * @param message 阶段输入消息
      */
-    /** 启动阶段；首阶段可携带服务端已构造的 AgentScope 媒体工具调用，确认/输入续跑不携带。 */
-    public synchronized void startPhase(Msg message, ToolUseBlock mediaToolCall) {
+    public synchronized void startPhase(Msg message) {
         if (terminal || isRunning()) {
             return;
         }
@@ -296,7 +294,7 @@ public final class ChatExecutionInstance {
         agentStreamLifecycle.scheduleInteractionTimeout(() -> runInTenant(this::onInteractionTimeout));
         Disposable next;
         try {
-            next = agentExecutionAdapter.stream(message, mediaToolCall)
+            next = agentExecutionAdapter.stream(message)
                     .doFinally(signal -> runInTenant(this::onSourceTerminated))
                     .subscribe(
                             event -> runInTenant(() -> onEvent(event)),

@@ -3,7 +3,6 @@ package com.lambda.fusion.ai.apps.service;
 import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
-import com.lambda.fusion.ai.apps.model.MediaGenerationCapability;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
@@ -11,13 +10,14 @@ import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
+import com.lambda.fusion.ai.runtime.media.MediaToolAdapterRegistry;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
- * 解析应用媒体模型绑定的唯一入口。安全视图与运行时工具装配共同消费本解析结果，避免分别解释
+ * 解析应用媒体模型绑定的唯一入口。应用保存校验与运行时工具装配共同消费本解析结果，避免分别解释
  * 模型类型、创作操作、启用状态和 AgentScope 实现范围。
  *
  * @author Jin
@@ -39,8 +39,8 @@ public class MediaGenerationBindingResolver {
     }
 
     /**
-     * 校验并解析一个媒体模型。应用保存、能力视图和工具装配共用此入口，避免管理端接受、
-     * 运行时再静默过滤同一份绑定。
+     * 校验并解析一个媒体模型。应用保存与工具装配共用此入口，避免管理端接受、运行时再静默过滤
+     * 同一份绑定。
      */
     public Binding requireExecutable(String modelId, ModelType expectedType) {
         if (StringUtils.isBlank(modelId)) {
@@ -53,9 +53,15 @@ public class MediaGenerationBindingResolver {
         if (!Boolean.TRUE.equals(model.getEnabled())) {
             throw invalid("媒体生成模型未启用: " + modelLabel(model));
         }
+        if (StringUtils.isBlank(model.getModelName())) {
+            throw invalid("媒体生成模型缺少提供方模型名称: " + modelLabel(model));
+        }
         LlmProviderEntity provider = llmProviderService.loadById(model.getProviderId());
         if (!Boolean.TRUE.equals(provider.getEnabled())) {
             throw invalid("媒体生成模型的提供方未启用: " + modelLabel(model));
+        }
+        if (StringUtils.isBlank(provider.getApiKeyEncrypted())) {
+            throw invalid("媒体生成模型的提供方缺少 API Key: " + modelLabel(model));
         }
         ProviderType providerType = ProviderType.of(provider.getProviderType());
         MediaGenerationOperation operation = model.getMediaOperation();
@@ -65,12 +71,10 @@ public class MediaGenerationBindingResolver {
         if (providerType == null) {
             throw invalid("媒体模型提供方类型不受支持: " + modelLabel(model));
         }
-        // 模型标记自定义 HTTP 工具时绕过官方 SDK 能力校验：任意提供方皆可，由自定义工具直连其 baseUrl。
-        if (!Boolean.TRUE.equals(model.getCustomMediaTool()) && !providerType.supportsRuntime(operation)) {
+        if (!MediaToolAdapterRegistry.supports(providerType, operation)) {
             throw invalid("AgentScope 官方工具暂不支持该模型与提供方组合: " + modelLabel(model));
         }
-        MediaGenerationCapability capability = MediaGenerationCapabilityFactory.create(model, providerType);
-        return new Binding(model, provider, providerType, capability);
+        return new Binding(model, provider, providerType);
     }
 
     private static String modelId(AppEntity app, ModelType type) {
@@ -91,9 +95,5 @@ public class MediaGenerationBindingResolver {
     }
 
     /** 已完成全部可用性校验的内部绑定。 */
-    public record Binding(
-            LlmModelEntity model,
-            LlmProviderEntity provider,
-            ProviderType providerType,
-            MediaGenerationCapability capability) {}
+    public record Binding(LlmModelEntity model, LlmProviderEntity provider, ProviderType providerType) {}
 }

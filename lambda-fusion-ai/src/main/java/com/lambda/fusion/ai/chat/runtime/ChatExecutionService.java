@@ -26,7 +26,6 @@ import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.ToolUseBlock;
 import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Optional;
@@ -96,15 +95,15 @@ public class ChatExecutionService {
         this.registry = new ChatExecutionInstanceRegistry(instanceFactory, properties);
     }
 
-    /** 启动本次请求刚创建的运行；显式媒体请求携带服务端构造的 AgentScope 工具调用。 */
-    public void start(ChatRunEntity run, ChatSessionEntity session, ToolUseBlock mediaToolCall) {
+    /** 启动本次请求刚创建的运行；agentPrompt 是写入 Agent 的用户提示，不改变数据库中的原始消息。 */
+    public void start(ChatRunEntity run, ChatSessionEntity session, String agentPrompt) {
         TenantUtils.withTenant(session.getTenantId(), () -> {
-            startInTenantContext(run, session, mediaToolCall);
+            startInTenantContext(run, session, agentPrompt);
             return null;
         });
     }
 
-    private void startInTenantContext(ChatRunEntity run, ChatSessionEntity session, ToolUseBlock mediaToolCall) {
+    private void startInTenantContext(ChatRunEntity run, ChatSessionEntity session, String agentPrompt) {
         if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())) {
             return;
         }
@@ -124,7 +123,7 @@ public class ChatExecutionService {
         // 只把实际订阅移出请求线程；不等待上一轮的记忆整理、Workspace 审计等后处理。
         ChatExecutionInstance execution = selected.get();
         try {
-            scheduler.execute(() -> execution.runInTenant(() -> startExecution(execution, mediaToolCall)));
+            scheduler.execute(() -> execution.runInTenant(() -> startExecution(execution, agentPrompt)));
         } catch (RuntimeException scheduleFailure) {
             execution.finalizeFailed(
                     ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(scheduleFailure));
@@ -315,7 +314,7 @@ public class ChatExecutionService {
      *
      * @param execution 已注册的执行实例
      */
-    private void startExecution(ChatExecutionInstance execution, ToolUseBlock mediaToolCall) {
+    private void startExecution(ChatExecutionInstance execution, String agentPrompt) {
         ChatRunEntity run = execution.run();
         try {
             ChatMessageEntity userMessage = messageService
@@ -324,8 +323,11 @@ public class ChatExecutionService {
             List<ChatAttachmentEntity> attachments = attachmentService.listByMessageIds(List.of(userMessage.getId()));
             AppEntity app = appService.loadById(execution.session().getAppId());
             Msg msg = attachmentMessageBuilder.buildUserMsg(
-                    execution.session(), app, userMessage.getContent(), attachments);
-            execution.startPhase(msg, mediaToolCall);
+                    execution.session(),
+                    app,
+                    agentPrompt == null ? userMessage.getContent() : agentPrompt,
+                    attachments);
+            execution.startPhase(msg);
         } catch (RuntimeException startFailure) {
             execution.finalizeFailed(
                     ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));

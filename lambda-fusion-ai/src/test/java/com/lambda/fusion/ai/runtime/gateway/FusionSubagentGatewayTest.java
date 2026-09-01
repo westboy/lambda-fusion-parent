@@ -71,7 +71,7 @@ class FusionSubagentGatewayTest {
         when(storage.distributedStore()).thenReturn(Optional.of(distributedStore));
         when(distributedStore.sandboxExecutionGuard()).thenReturn(executionGuard);
         when(executionGuard.tryEnter(any(SandboxIsolationKey.class))).thenReturn(lease);
-        when(factory.getOrBuild(APP_ID, TENANT_ID)).thenReturn(parent);
+        when(factory.getOrBuildForChatRun(APP_ID, TENANT_ID)).thenReturn(parent);
         when(parent.getAgentId()).thenReturn(OWNER_AGENT_ID);
         when(parent.getSubagentAgentManager()).thenReturn(manager);
         when(manager.createAgentIfPresent(eq("worker"), any(RuntimeContext.class)))

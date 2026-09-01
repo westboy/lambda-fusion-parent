@@ -65,7 +65,7 @@ class ChatRunCoordinatorConfirmTest {
         agent = mock(HarnessAgent.class);
         delegate = mock(ReActAgent.class);
         when(agent.getDelegate()).thenReturn(delegate);
-        when(agentFactory.getOrBuild(anyString(), anyString())).thenReturn(agent);
+        when(agentFactory.getOrBuildForChatRun(anyString(), anyString())).thenReturn(agent);
         AiProperties properties = new AiProperties();
         instanceFactory = new ChatExecutionInstanceFactory(
                 runService,

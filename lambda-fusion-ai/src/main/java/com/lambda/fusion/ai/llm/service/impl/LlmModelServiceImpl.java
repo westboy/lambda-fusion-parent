@@ -17,6 +17,7 @@ import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
+import com.lambda.fusion.ai.runtime.media.MediaToolAdapterRegistry;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +59,6 @@ public class LlmModelServiceImpl implements LlmModelService {
         entity.setModelType(dto.getModelType());
         entity.setEmbeddingDimensions(dto.getEmbeddingDimensions());
         entity.setMediaOperation(dto.getMediaOperation());
-        entity.setCustomMediaTool(isMedia(dto.getModelType()) && Boolean.TRUE.equals(dto.getCustomMediaTool()));
         entity.setDefaultTemperature(dto.getDefaultTemperature());
         entity.setDefaultMaxTokens(dto.getDefaultMaxTokens());
         entity.setContextWindowTokens(dto.getContextWindowTokens());
@@ -83,10 +83,6 @@ public class LlmModelServiceImpl implements LlmModelService {
         MediaGenerationOperation targetOperation = dto.getMediaOperation() != null
                 ? dto.getMediaOperation()
                 : isMedia(targetModelType) ? entity.getMediaOperation() : null;
-        boolean targetCustomMediaTool = isMedia(targetModelType)
-                && (dto.getCustomMediaTool() != null
-                        ? dto.getCustomMediaTool()
-                        : Boolean.TRUE.equals(entity.getCustomMediaTool()));
         validateConfiguration(targetProviderId, targetModelType, targetEmbeddingDimensions, targetOperation);
         if (!targetProviderId.equals(entity.getProviderId())) {
             entity.setProviderId(targetProviderId);
@@ -103,7 +99,6 @@ public class LlmModelServiceImpl implements LlmModelService {
         }
         entity.setEmbeddingDimensions(targetEmbeddingDimensions);
         entity.setMediaOperation(targetOperation);
-        entity.setCustomMediaTool(targetCustomMediaTool);
         if (dto.getDefaultTemperature() != null) {
             entity.setDefaultTemperature(dto.getDefaultTemperature());
         }
@@ -181,8 +176,8 @@ public class LlmModelServiceImpl implements LlmModelService {
         if (mediaOperation.getModelType() != modelType) {
             throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "创作操作与模型类型不匹配");
         }
-        if (!providerType.supports(mediaOperation)) {
-            throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "当前提供方不支持该创作操作");
+        if (!MediaToolAdapterRegistry.supports(providerType, mediaOperation)) {
+            throw new AiBusinessException(AiErrorCode.LLM_MEDIA_OPERATION_INVALID, "当前运行时未接通该提供方的创作操作");
         }
     }
 

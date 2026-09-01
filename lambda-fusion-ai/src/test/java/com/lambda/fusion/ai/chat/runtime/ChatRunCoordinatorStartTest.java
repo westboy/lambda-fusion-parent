@@ -98,7 +98,8 @@ class ChatRunCoordinatorStartTest {
         when(appService.loadById(session.getAppId())).thenReturn(new AppEntity());
         when(attachmentMessageBuilder.buildUserMsg(any(), any(), anyString(), anyList()))
                 .thenReturn(new UserMessage("日期"));
-        when(agentFactory.getOrBuild(session.getAppId(), session.getTenantId())).thenReturn(agent);
+        when(agentFactory.getOrBuildForChatRun(session.getAppId(), session.getTenantId()))
+                .thenReturn(agent);
         when(agent.getDelegate()).thenReturn(mock(ReActAgent.class));
 
         Sinks.Many<AgentEvent> firstSource = Sinks.many().unicast().onBackpressureBuffer();

@@ -64,6 +64,11 @@ public class AiProperties {
     @NestedConfigurationProperty
     private Skill skill = new Skill();
 
+    /** 独立 Agent 工具参数。 */
+    @Valid
+    @NestedConfigurationProperty
+    private Tools tools = new Tools();
+
     /** 知识库检索与向量存储参数。 */
     @Valid
     @NestedConfigurationProperty
@@ -501,6 +506,53 @@ public class AiProperties {
 
             /** 对象 key 前缀。 */
             private String keyPrefix = "agentscope/state/";
+        }
+    }
+
+    /** 与应用、技能和模型表无关的独立 Agent 工具。 */
+    @Data
+    public static class Tools {
+
+        @Valid
+        private QwenImage qwenImage = new QwenImage();
+
+        /** Qwen Image 普通工具配置。 */
+        @Data
+        public static class QwenImage {
+
+            /** 是否向对话 Agent 注册 qwen_text_to_image。 */
+            private boolean enabled = false;
+
+            /** DashScope API Key，推荐通过环境变量注入。 */
+            private String apiKey;
+
+            /** DashScope API 基础地址，也可直接填写完整的多模态生成地址。 */
+            private String baseUrl;
+
+            /** 该工具固定使用的 Qwen Image 提供方模型名。 */
+            private String modelName;
+
+            /** 建立 DashScope 连接的超时时间，单位秒。 */
+            @Min(1)
+            @Max(120)
+            private long connectTimeoutSeconds = 10;
+
+            /** 单次 DashScope 请求的总超时时间，单位秒。 */
+            @Min(1)
+            @Max(1800)
+            private long requestTimeoutSeconds = 120;
+
+            @AssertTrue(
+                    message = "启用 Qwen Image 工具时必须配置 lambda.fusion.ai.tools.qwen-image.api-key、base-url 和 model-name")
+            public boolean isConfigurationValid() {
+                return !enabled
+                        || (apiKey != null
+                                && !apiKey.isBlank()
+                                && baseUrl != null
+                                && !baseUrl.isBlank()
+                                && modelName != null
+                                && !modelName.isBlank());
+            }
         }
     }
 

@@ -14,11 +14,11 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
-import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationCommand;
 import com.lambda.fusion.ai.chat.model.ConfirmTransition;
+import com.lambda.fusion.ai.chat.model.MediaGenerationRequest;
 import com.lambda.fusion.ai.chat.model.RunContext;
 import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
@@ -28,7 +28,7 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
-import com.lambda.fusion.ai.chat.service.MediaGenerationRequestValidator;
+import com.lambda.fusion.ai.chat.service.MediaGenerationPromptBuilder;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import java.util.List;
@@ -58,17 +58,9 @@ class ChatRunServiceImplTest {
     private final ChatSessionService sessionService = mock(ChatSessionService.class);
     private final ChatMessageService messageService = mock(ChatMessageService.class);
     private final ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
-    private final AppService appService = mock(AppService.class);
-    private final MediaGenerationRequestValidator mediaGenerationRequestValidator =
-            mock(MediaGenerationRequestValidator.class);
+    private final MediaGenerationPromptBuilder mediaGenerationPromptBuilder = mock(MediaGenerationPromptBuilder.class);
     private final ChatRunServiceImpl service = new ChatRunServiceImpl(
-            runMapper,
-            sessionMapper,
-            sessionService,
-            messageService,
-            attachmentService,
-            appService,
-            mediaGenerationRequestValidator);
+            runMapper, sessionMapper, sessionService, messageService, attachmentService, mediaGenerationPromptBuilder);
 
     @Test
     void shouldCreateRunningRunOnceAndMarkIdempotentReplayAsLoaded() {
@@ -79,11 +71,15 @@ class ChatRunServiceImplTest {
         SendMessage message = new SendMessage();
         message.setClientRequestId("request-1");
         message.setContent("hello");
+        MediaGenerationRequest mediaGeneration = new MediaGenerationRequest();
+        mediaGeneration.setKind("image");
+        message.setMediaGeneration(mediaGeneration);
         ChatMessageEntity userMessage = new ChatMessageEntity();
         userMessage.setId(9L);
         AtomicReference<ChatRunEntity> inserted = new AtomicReference<>();
 
         when(sessionService.loadOwnedForUpdate("session-1")).thenReturn(session);
+        when(mediaGenerationPromptBuilder.build("hello", mediaGeneration)).thenReturn("agent prompt");
         when(runMapper.selectOne(any())).thenAnswer(ignored -> inserted.get());
         when(messageService.saveUserMessage(session, "hello")).thenReturn(userMessage);
         when(runMapper.insert(any(ChatRunEntity.class))).thenAnswer(invocation -> {
@@ -98,9 +94,11 @@ class ChatRunServiceImplTest {
         assertThat(created.created()).isTrue();
         assertThat(created.run().getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         assertThat(created.run().getStartedAt()).isNotNull();
+        assertThat(created.agentPrompt()).isEqualTo("agent prompt");
         assertThat(replay.created()).isFalse();
         assertThat(replay.run().getId()).isEqualTo(created.run().getId());
         verify(messageService, times(1)).saveUserMessage(session, "hello");
+        verify(mediaGenerationPromptBuilder, times(1)).build("hello", mediaGeneration);
     }
 
     @Test

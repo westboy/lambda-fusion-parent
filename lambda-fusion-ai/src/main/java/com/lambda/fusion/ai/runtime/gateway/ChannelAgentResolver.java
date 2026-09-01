@@ -11,8 +11,8 @@ import org.springframework.stereotype.Component;
 /**
  * 将平台可读的应用 Agent 引用适配为 AgentScope Gateway 使用的运行时 ID。
  *
- * <p>解析 {@code app:{appId}:t:{tenantId}} 时复用 {@link AgentFactory} 完成 Agent 的按需构建、缓存和
- * Gateway 注册，再返回同一工厂使用的稳定 ID。其他 ID 原样透传，兼容外部注册的 AgentScope Agent。
+ * <p>解析 {@code app:{appId}:t:{tenantId}} 时由 {@link AgentFactory} 构建不含 ChatRun 专属工具的
+ * Channel Agent，并返回该实例已经注册到 Gateway 的稳定 ID。其他 ID 原样透传。
  *
  * @author Jin
  */
@@ -58,7 +58,6 @@ public class ChannelAgentResolver {
         if (StringUtils.isAnyBlank(appId, tenantId)) {
             return configuredId;
         }
-        agentFactory.getOrBuild(appId, tenantId);
-        return agentFactory.buildStableAgentId(appId, tenantId);
+        return agentFactory.getOrBuildForChannel(appId, tenantId).getAgentId();
     }
 }

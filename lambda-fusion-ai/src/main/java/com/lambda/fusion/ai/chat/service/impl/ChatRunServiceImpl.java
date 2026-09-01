@@ -6,8 +6,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lambda.fusion.ai.AiConstants.ChatRunFailureCode;
 import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
-import com.lambda.fusion.ai.apps.model.entity.AppEntity;
-import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatRun;
@@ -27,12 +25,11 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
-import com.lambda.fusion.ai.chat.service.MediaGenerationRequestValidator;
+import com.lambda.fusion.ai.chat.service.MediaGenerationPromptBuilder;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.core.service.AbstractCrudService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import io.agentscope.core.message.ToolUseBlock;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -71,8 +68,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
     private final ChatSessionService sessionService;
     private final ChatMessageService messageService;
     private final ChatAttachmentService attachmentService;
-    private final AppService appService;
-    private final MediaGenerationRequestValidator mediaGenerationRequestValidator;
+    private final MediaGenerationPromptBuilder mediaGenerationPromptBuilder;
     /**
      * 幂等创建或加载运行：同一 {@code clientRequestId} 复用已有记录并校验 {@code requestHash} 一致，
      * 否则在会话无活动运行时创建新 Run、保存用户消息并绑定附件。
@@ -94,9 +90,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             requireSameRequest(existing, requestHash);
             return new RunContext(existing, session, false);
         }
-        AppEntity app = appService.loadAvailable(session.getAppId());
-        ToolUseBlock mediaToolCall =
-                mediaGenerationRequestValidator.validate(app, message.getContent(), message.getMediaGeneration());
+        String agentPrompt = mediaGenerationPromptBuilder.build(message.getContent(), message.getMediaGeneration());
         // 同一会话只允许一个活动运行，避免多个执行上下文竞争状态槽。
         ChatRunEntity active = findActive(sessionId);
         if (active != null) {
@@ -133,7 +127,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .eq(ChatSessionEntity::getId, sessionId)
                         .set(ChatSessionEntity::getLastMessageAt, now)
                         .set(ChatSessionEntity::getUpdatedAt, now));
-        return new RunContext(run, session, true, mediaToolCall);
+        return new RunContext(run, session, true, agentPrompt);
     }
 
     /** 查询当前用户拥有的会话下唯一活跃 Run。 */
@@ -426,33 +420,13 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         return sha256(canonical.toString());
     }
 
-    /** 将结构化媒体参数逐字段纳入幂等摘要，避免同请求 ID 被不同生成参数复用。 */
+    /** 将界面媒体意图纳入幂等摘要。具体生成参数已经包含在消息正文中。 */
     private static void appendMediaGenerationHash(StringBuilder target, MediaGenerationRequest media) {
         if (media == null) {
             appendHashPart(target, "media:none");
             return;
         }
         appendHashPart(target, "media:" + StringUtils.defaultString(media.getKind()));
-        appendHashPart(target, Objects.toString(media.getWidth(), ""));
-        appendHashPart(target, Objects.toString(media.getHeight(), ""));
-        appendHashPart(target, Objects.toString(media.getCount(), ""));
-        appendHashPart(target, Objects.toString(media.getDuration(), ""));
-        appendHashPart(target, StringUtils.defaultString(media.getQuality()));
-        appendHashPart(target, StringUtils.defaultString(media.getNegativePrompt()));
-        appendHashPart(target, StringUtils.defaultString(media.getSourceImageUrl()));
-        appendHashPart(target, StringUtils.defaultString(media.getFirstFrameUrl()));
-        appendHashPart(target, StringUtils.defaultString(media.getLastFrameUrl()));
-        appendHashPart(target, StringUtils.defaultString(media.getAudioUrl()));
-        appendHashPart(target, StringUtils.defaultString(media.getResolution()));
-        appendHashPart(target, StringUtils.defaultString(media.getTemplate()));
-        appendHashPart(target, StringUtils.defaultString(media.getShotType()));
-        appendHashPart(target, Objects.toString(media.getAudio(), ""));
-        appendHashPart(target, Objects.toString(media.getPromptExtend(), ""));
-        appendHashPart(target, Objects.toString(media.getWatermark(), ""));
-        appendHashPart(target, Objects.toString(media.getSeed(), ""));
-        appendHashPart(target, StringUtils.defaultString(media.getVoice()));
-        appendHashPart(target, StringUtils.defaultString(media.getLanguage()));
-        appendHashPart(target, Objects.toString(media.getSampleRate(), ""));
     }
 
     /** 以 {@code 长度:值} 形式追加一段，防止不同分段拼接出相同哈希。 */

@@ -52,8 +52,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 将 AgentScope 工具结果中的 URL/Base64 媒体复制到平台文件存储，并替换为官方 {@link DataBlock}。
- * 阻塞下载和存储在 bounded-elastic 线程执行；转换发生在 Toolkit 返回结果之前，因此事件流、
- * AgentState 与运行快照看到同一个平台附件引用。
+ * 阻塞下载和存储在 bounded-elastic 线程执行；转换结果由工具装饰器作为 AgentScope 原生媒体事件发出。
  *
  * @author Jin
  */

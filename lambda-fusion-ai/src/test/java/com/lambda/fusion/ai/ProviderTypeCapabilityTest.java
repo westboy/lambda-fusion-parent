@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.AiConstants.ProviderType;
+import com.lambda.fusion.ai.runtime.media.MediaToolAdapterRegistry;
 import org.junit.jupiter.api.Test;
 
 class ProviderTypeCapabilityTest {
@@ -28,8 +29,10 @@ class ProviderTypeCapabilityTest {
         assertThat(ProviderType.MINIMAX.getSupportedModelTypes())
                 .containsExactlyInAnyOrder(
                         ModelType.CHAT, ModelType.IMAGE_GEN, ModelType.VIDEO_GEN, ModelType.AUDIO_GEN);
-        assertThat(ProviderType.MINIMAX.getRuntimeModelTypes()).containsExactly(ModelType.CHAT);
+        assertThat(MediaToolAdapterRegistry.modelTypes(ProviderType.MINIMAX)).containsExactly(ModelType.CHAT);
         assertThat(ProviderType.MINIMAX.supports(ModelType.VIDEO_GEN)).isTrue();
-        assertThat(ProviderType.MINIMAX.supportsRuntime(ModelType.VIDEO_GEN)).isFalse();
+        assertThat(MediaToolAdapterRegistry.supports(
+                        ProviderType.MINIMAX, AiConstants.MediaGenerationOperation.TEXT_TO_VIDEO))
+                .isFalse();
     }
 }

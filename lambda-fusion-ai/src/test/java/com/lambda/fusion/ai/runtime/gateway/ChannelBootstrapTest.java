@@ -90,7 +90,8 @@ class ChannelBootstrapTest {
     @Test
     void bootstrapAllIsolatesAgentResolutionFailurePerChannel() {
         AgentFactory agentFactory = mock(AgentFactory.class);
-        when(agentFactory.getOrBuild("bad", "tenant")).thenThrow(new IllegalStateException("app unavailable"));
+        when(agentFactory.getOrBuildForChannel("bad", "tenant"))
+                .thenThrow(new IllegalStateException("app unavailable"));
         Map<String, ChannelDefinition> defs = new LinkedHashMap<>();
         defs.put(
                 "bad-channel",

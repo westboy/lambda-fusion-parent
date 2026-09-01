@@ -40,7 +40,7 @@ class MediaGenerationBindingResolverTest {
         var binding = resolver.requireExecutable("video-1", ModelType.VIDEO_GEN);
 
         assertThat(binding.providerType()).isEqualTo(ProviderType.DASHSCOPE);
-        assertThat(binding.capability().getKind()).isEqualTo("video");
+        assertThat(binding.model().getMediaOperation()).isEqualTo(MediaGenerationOperation.TEXT_TO_VIDEO);
     }
 
     @Test
@@ -57,27 +57,24 @@ class MediaGenerationBindingResolverTest {
 
     @Test
     void shouldResolveOpenAiImageModelViaNativeTool() {
-        // 原生 OpenAI 生图：非自定义标记的 openai 模型通过校验，走官方 SDK 薄适配器
+        // 原生 OpenAI 生图模型通过校验，运行时走官方 SDK 薄适配器。
         when(modelService.loadById("image-1"))
                 .thenReturn(model("image-1", ModelType.IMAGE_GEN, "dall-e-3", "provider-1"));
         when(providerService.loadById("provider-1")).thenReturn(provider("openai", true));
 
         var binding = resolver.requireExecutable("image-1", ModelType.IMAGE_GEN);
         assertThat(binding.providerType()).isEqualTo(ProviderType.OPENAI);
-        assertThat(binding.capability().getKind()).isEqualTo("image");
+        assertThat(binding.model().getMediaOperation()).isEqualTo(MediaGenerationOperation.TEXT_TO_IMAGE);
     }
 
     @Test
-    void shouldResolveCustomToolModelBypassingNativeRuntimeSupport() {
-        // minimax 目录声明文生图但官方 SDK 未接通；模型标记自定义 HTTP 工具后绕过原生运行时校验
-        LlmModelEntity custom = model("image-1", ModelType.IMAGE_GEN, "qwen-image-2.0", "provider-1");
-        custom.setCustomMediaTool(Boolean.TRUE);
-        when(modelService.loadById("image-1")).thenReturn(custom);
+    void shouldRejectMiniMaxAsAnAppBoundMediaModelWithoutAnOfficialRuntimeTool() {
+        LlmModelEntity model = model("image-1", ModelType.IMAGE_GEN, "image-01", "provider-1");
+        when(modelService.loadById("image-1")).thenReturn(model);
         when(providerService.loadById("provider-1")).thenReturn(provider("minimax", true));
 
-        var binding = resolver.requireExecutable("image-1", ModelType.IMAGE_GEN);
-        assertThat(binding.providerType()).isEqualTo(ProviderType.MINIMAX);
-        assertThat(binding.capability().getKind()).isEqualTo("image");
+        assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
+                .isInstanceOf(AiBusinessException.class);
     }
 
     @Test
@@ -85,6 +82,30 @@ class MediaGenerationBindingResolverTest {
         when(modelService.loadById("image-1"))
                 .thenReturn(model("image-1", ModelType.IMAGE_GEN, "wanx-v1", "provider-1"));
         when(providerService.loadById("provider-1")).thenReturn(provider("dashscope", false));
+
+        assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
+                .isInstanceOf(AiBusinessException.class);
+    }
+
+    @Test
+    void shouldRejectBindingsWhenTheProviderHasNoApiKey() {
+        when(modelService.loadById("image-1"))
+                .thenReturn(model("image-1", ModelType.IMAGE_GEN, "wanx-v1", "provider-1"));
+        LlmProviderEntity provider = provider("dashscope", true);
+        provider.setApiKeyEncrypted(" ");
+        when(providerService.loadById("provider-1")).thenReturn(provider);
+
+        assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
+                .isInstanceOf(AiBusinessException.class)
+                .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
+                        .isEqualTo(AiErrorCode.APP_MEDIA_BINDING_INVALID.getCode()));
+    }
+
+    @Test
+    void shouldRejectBindingWithoutProviderModelName() {
+        LlmModelEntity model = model("image-1", ModelType.IMAGE_GEN, "wanx-v1", "provider-1");
+        model.setModelName(" ");
+        when(modelService.loadById("image-1")).thenReturn(model);
 
         assertThatThrownBy(() -> resolver.requireExecutable("image-1", ModelType.IMAGE_GEN))
                 .isInstanceOf(AiBusinessException.class);
@@ -112,6 +133,7 @@ class MediaGenerationBindingResolverTest {
         LlmProviderEntity provider = new LlmProviderEntity();
         provider.setProviderType(type);
         provider.setEnabled(enabled);
+        provider.setApiKeyEncrypted("encrypted-api-key");
         return provider;
     }
 }

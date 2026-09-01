@@ -1022,4 +1022,20 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-ai-2026090100010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_llm_model"/>
+                <columnExists tableName="ai_llm_model" columnName="custom_media_tool"/>
+            </and>
+        </preConditions>
+        <dropColumn tableName="ai_llm_model" columnName="custom_media_tool"/>
+        <rollback>
+            <addColumn tableName="ai_llm_model">
+                <column name="custom_media_tool" type="boolean" defaultValueBoolean="false"
+                        remarks="媒体模型是否走自定义HTTP工具(true=自定义,false=官方SDK);仅媒体模型使用"/>
+            </addColumn>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

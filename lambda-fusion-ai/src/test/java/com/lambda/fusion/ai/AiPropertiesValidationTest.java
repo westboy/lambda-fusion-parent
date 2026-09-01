@@ -43,4 +43,57 @@ class AiPropertiesValidationTest {
                     .contains("rag.defaultRetrievalModeValid");
         }
     }
+
+    @Test
+    void shouldRequireCredentialsWhenQwenImageToolIsEnabled() {
+        AiProperties properties = new AiProperties();
+        properties.getTools().getQwenImage().setEnabled(true);
+        properties.getTools().getQwenImage().setModelName("qwen-image-plus");
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("tools.qwenImage.configurationValid");
+        }
+    }
+
+    @Test
+    void shouldRequireModelNameWhenQwenImageToolIsEnabled() {
+        AiProperties properties = new AiProperties();
+        properties.getTools().getQwenImage().setEnabled(true);
+        properties.getTools().getQwenImage().setApiKey("test-key");
+        properties.getTools().getQwenImage().setBaseUrl("https://dashscope.test/api/v1");
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("tools.qwenImage.configurationValid");
+        }
+    }
+
+    @Test
+    void shouldAcceptIndependentQwenImageToolConfiguration() {
+        AiProperties properties = new AiProperties();
+        properties.getTools().getQwenImage().setEnabled(true);
+        properties.getTools().getQwenImage().setApiKey("test-key");
+        properties.getTools().getQwenImage().setBaseUrl("https://dashscope.test/api/v1");
+        properties.getTools().getQwenImage().setModelName("qwen-image-plus");
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties)).isEmpty();
+        }
+    }
+
+    @Test
+    void shouldValidateQwenImageHttpTimeouts() {
+        AiProperties properties = new AiProperties();
+        properties.getTools().getQwenImage().setConnectTimeoutSeconds(0);
+        properties.getTools().getQwenImage().setRequestTimeoutSeconds(1801);
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("tools.qwenImage.connectTimeoutSeconds", "tools.qwenImage.requestTimeoutSeconds");
+        }
+    }
 }

@@ -12,13 +12,13 @@ import static org.mockito.Mockito.when;
 import com.lambda.fusion.ai.AiConstants.MediaGenerationOperation;
 import com.lambda.fusion.ai.AiConstants.ModelType;
 import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.llm.mapper.LlmModelMapper;
 import com.lambda.fusion.ai.llm.model.CreateLlmModel;
 import com.lambda.fusion.ai.llm.model.UpdateLlmModel;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
-import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -71,7 +71,7 @@ class LlmModelServiceImplProviderCapabilityTest {
     }
 
     @Test
-    void acceptsMiniMaxMediaModelsInTheVendorCatalog() {
+    void rejectsMiniMaxMediaModelsUntilTheRuntimeToolIsImplemented() {
         when(llmProviderService.loadById("minimax-provider")).thenReturn(provider("minimax-provider", "minimax"));
         CreateLlmModel dto = new CreateLlmModel();
         dto.setProviderId("minimax-provider");
@@ -80,10 +80,12 @@ class LlmModelServiceImplProviderCapabilityTest {
         dto.setModelType(ModelType.VIDEO_GEN);
         dto.setMediaOperation(MediaGenerationOperation.TEXT_TO_VIDEO);
 
-        service.create(dto);
+        assertThatThrownBy(() -> service.create(dto))
+                .isInstanceOf(AiBusinessException.class)
+                .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
+                        .isEqualTo(AiErrorCode.LLM_MEDIA_OPERATION_INVALID.getCode()));
 
-        verify(llmModelMapper).insert(any(LlmModelEntity.class));
-        verify(eventPublisher).publishEvent(any(ConfigChangedEvent.class));
+        verifyNoInteractions(llmModelMapper, eventPublisher);
     }
 
     @Test

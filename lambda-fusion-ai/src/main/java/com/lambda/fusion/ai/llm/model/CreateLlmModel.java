@@ -36,9 +36,6 @@ public class CreateLlmModel {
     @Schema(description = "媒体创作操作；媒体模型必填，非媒体模型不填")
     private MediaGenerationOperation mediaOperation;
 
-    @Schema(description = "媒体模型是否走自定义HTTP工具(true=自定义HTTP,false=官方SDK)；仅媒体模型使用")
-    private Boolean customMediaTool = Boolean.FALSE;
-
     @Schema(description = "默认温度")
     private BigDecimal defaultTemperature;
 

@@ -111,7 +111,8 @@ public final class FusionSubagentGateway implements SubagentMaterializer {
         }
         SubagentIdentity target = identity.get();
         return TenantUtils.withTenant(target.tenantId(), () -> {
-            HarnessAgent parent = agentFactoryProvider.getObject().getOrBuild(target.appId(), target.tenantId());
+            HarnessAgent parent =
+                    agentFactoryProvider.getObject().getOrBuildForChatRun(target.appId(), target.tenantId());
             String expectedOwner = workspaceStorage.stableAgentId(target.appId(), target.tenantId());
             if (!Objects.equals(expectedOwner, parent.getAgentId())) {
                 log.warn("拒绝从错误的父 Agent 恢复子 Agent: app={}, tenant={}", target.appId(), target.tenantId());

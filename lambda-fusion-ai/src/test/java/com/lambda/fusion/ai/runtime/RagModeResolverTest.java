@@ -4,11 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.lambda.fusion.ai.AiConstants.RagMode;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.rag.runtime.RagModeResolver;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证 {@link AgentFactory#resolveRagMode}：kbIds 为空不启用任何模式；ragMode 空按
+ * 验证 {@link RagModeResolver#resolve}：kbIds 为空不启用任何模式；ragMode 空按
  * GENERIC（向后兼容）；AGENTIC/BOTH 原样解析；非法值兜底 GENERIC。
  *
  * @author Jin
@@ -20,10 +21,10 @@ class RagModeResolverTest {
         AppEntity app = new AppEntity();
         app.setRagMode("AGENTIC");
 
-        assertThat(AgentFactory.resolveRagMode(app)).isNull();
+        assertThat(RagModeResolver.resolve(app)).isNull();
 
         app.setKnowledgeBaseIds(List.of());
-        assertThat(AgentFactory.resolveRagMode(app)).isNull();
+        assertThat(RagModeResolver.resolve(app)).isNull();
     }
 
     @Test
@@ -31,7 +32,7 @@ class RagModeResolverTest {
         AppEntity app = new AppEntity();
         app.setKnowledgeBaseIds(List.of("kb1"));
 
-        assertThat(AgentFactory.resolveRagMode(app)).isEqualTo(RagMode.GENERIC);
+        assertThat(RagModeResolver.resolve(app)).isEqualTo(RagMode.GENERIC);
     }
 
     @Test
@@ -40,10 +41,10 @@ class RagModeResolverTest {
         app.setKnowledgeBaseIds(List.of("kb1"));
 
         app.setRagMode("AGENTIC");
-        assertThat(AgentFactory.resolveRagMode(app)).isEqualTo(RagMode.AGENTIC);
+        assertThat(RagModeResolver.resolve(app)).isEqualTo(RagMode.AGENTIC);
 
         app.setRagMode("both");
-        assertThat(AgentFactory.resolveRagMode(app)).isEqualTo(RagMode.BOTH);
+        assertThat(RagModeResolver.resolve(app)).isEqualTo(RagMode.BOTH);
     }
 
     @Test
@@ -52,6 +53,6 @@ class RagModeResolverTest {
         app.setKnowledgeBaseIds(List.of("kb1"));
         app.setRagMode("UNKNOWN");
 
-        assertThat(AgentFactory.resolveRagMode(app)).isEqualTo(RagMode.GENERIC);
+        assertThat(RagModeResolver.resolve(app)).isEqualTo(RagMode.GENERIC);
     }
 }

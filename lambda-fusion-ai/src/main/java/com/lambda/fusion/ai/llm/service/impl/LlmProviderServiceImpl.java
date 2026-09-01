@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.llm.model.UpdateLlmProvider;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmProviderService;
 import com.lambda.fusion.ai.runtime.event.ConfigChangedEvent;
+import com.lambda.fusion.ai.runtime.media.MediaToolAdapterRegistry;
 import com.lambda.fusion.ai.security.KeyEncryptionService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDateTime;
@@ -33,12 +34,14 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
     @Override
     public Page<LlmProviderEntity> page(LlmProviderPageQuery query) {
-        return llmProviderMapper.selectPage(query.getPage(), query.getLambdaQueryWrapper());
+        Page<LlmProviderEntity> page = llmProviderMapper.selectPage(query.getPage(), query.getLambdaQueryWrapper());
+        page.getRecords().forEach(LlmProviderServiceImpl::populateCapabilities);
+        return page;
     }
 
     @Override
     public LlmProviderEntity get(String id) {
-        return requireExists(id);
+        return populateCapabilities(requireExists(id));
     }
 
     @Override
@@ -58,7 +61,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         entity.setUpdatedAt(LocalDateTime.now());
         llmProviderMapper.insert(entity);
         eventPublisher.publishEvent(ConfigChangedEvent.all());
-        return entity;
+        return populateCapabilities(entity);
     }
 
     @Override
@@ -125,5 +128,18 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         if (ProviderType.of(providerType) == null) {
             throw new AiBusinessException(AiErrorCode.LLM_PROVIDER_TYPE_NOT_SUPPORTED, providerType);
         }
+    }
+
+    /** 管理接口返回时装配声明能力与实际运行能力；持久化实体本身只承载数据。 */
+    private static LlmProviderEntity populateCapabilities(LlmProviderEntity entity) {
+        ProviderType providerType = ProviderType.of(entity.getProviderType());
+        if (providerType == null) {
+            return entity;
+        }
+        entity.setSupportedModelTypes(providerType.getSupportedModelTypes());
+        entity.setRuntimeModelTypes(MediaToolAdapterRegistry.modelTypes(providerType));
+        entity.setSupportedMediaOperations(providerType.getSupportedMediaOperations());
+        entity.setRuntimeMediaOperations(MediaToolAdapterRegistry.operations(providerType));
+        return entity;
     }
 }

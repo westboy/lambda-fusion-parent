@@ -20,37 +20,22 @@ import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.JsonFileAgentStateStore;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 /**
  * Agent 执行适配器测试。
@@ -58,9 +43,6 @@ import reactor.core.publisher.Mono;
  * @author Jin
  */
 class AgentExecutionAdapterTest {
-
-    @TempDir
-    Path workspace;
 
     @Test
     void shouldUseConversationSessionInDirectMode() {
@@ -72,8 +54,8 @@ class AgentExecutionAdapterTest {
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
         Msg message = userMessage();
 
-        adapter.stream(message, null).blockLast();
-        adapter.stream(message, null).blockLast();
+        adapter.stream(message).blockLast();
+        adapter.stream(message).blockLast();
 
         ArgumentCaptor<RuntimeContext> contextCaptor = ArgumentCaptor.forClass(RuntimeContext.class);
         verify(agent, times(2)).streamEvents(any(Msg.class), contextCaptor.capture());
@@ -104,7 +86,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.<AgentEvent>just(event));
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", subagentGateway);
 
-        adapter.stream(userMessage(), null).blockLast();
+        adapter.stream(userMessage()).blockLast();
 
         // 父会话归属使用业务 ChatSession.id，而非 Gateway 派生的 gw-* 状态槽。
         verify(subagentGateway).recordExposure(event, "app-1", "tenant-1", "user-1", "session-1");
@@ -118,72 +100,9 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(Flux.empty());
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        adapter.stream(userMessage(), null).blockLast();
+        adapter.stream(userMessage()).blockLast();
 
         verify(distributedStore, never()).sandboxExecutionGuard();
-    }
-
-    @Test
-    void shouldExecuteExplicitMediaRequestThroughAgentScopeToolkitWithoutCallingChatModel() {
-        NeverCalledModel model = new NeverCalledModel();
-        JsonFileAgentStateStore stateStore = new JsonFileAgentStateStore(workspace.resolve("state"));
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new ExplicitMediaTool());
-        ToolUseBlock toolCall = ToolUseBlock.builder()
-                .id("media-call-1")
-                .name("test_text_to_image")
-                .input(java.util.Map.of("prompt", "一只猫"))
-                .content("{\"prompt\":\"一只猫\"}")
-                .build();
-
-        try (HarnessAgent agent = buildExplicitMediaAgent(model, toolkit, stateStore)) {
-            AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
-
-            List<AgentEvent> events =
-                    adapter.stream(userMessage(), toolCall).collectList().block();
-
-            // 直调路径手动合成官方事件序列：无模型调用、无 AGENT_RESULT，TOOL_CALL_DELTA 携带原始参数。
-            assertThat(events)
-                    .extracting(AgentEvent::getType)
-                    .containsExactly(
-                            AgentEventType.AGENT_START,
-                            AgentEventType.TOOL_CALL_START,
-                            AgentEventType.TOOL_CALL_DELTA,
-                            AgentEventType.TOOL_RESULT_START,
-                            AgentEventType.TOOL_RESULT_TEXT_DELTA,
-                            AgentEventType.TOOL_RESULT_END,
-                            AgentEventType.AGENT_END);
-            assertThat(model.invocations()).isZero();
-            ToolResultEndEvent resultEnd = events.stream()
-                    .filter(ToolResultEndEvent.class::isInstance)
-                    .map(ToolResultEndEvent.class::cast)
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(resultEnd.getToolCallId()).isEqualTo("media-call-1");
-            assertThat(resultEnd.getState()).isEqualTo(ToolResultState.SUCCESS);
-            AgentState state = stateStore
-                    .get("user-1", "session-1", "agent_state", AgentState.class)
-                    .orElseThrow();
-            // 直调绕过 ReAct，适配器手动把用户输入、工具调用与物化结果按 ReAct 顺序写回记忆，闭合挂起判定。
-            assertThat(state.getContext())
-                    .extracting(Msg::getRole)
-                    .containsExactly(MsgRole.USER, MsgRole.ASSISTANT, MsgRole.TOOL);
-            assertThat(state.getContext().get(0).getTextContent()).isEqualTo("hello");
-            ToolUseBlock savedCall = state.getContext()
-                    .get(1)
-                    .getContentBlocks(ToolUseBlock.class)
-                    .getFirst();
-            assertThat(savedCall.getId()).isEqualTo("media-call-1");
-            ToolResultBlock savedResult = state.getContext()
-                    .get(2)
-                    .getContentBlocks(ToolResultBlock.class)
-                    .getFirst();
-            assertThat(savedResult.getId()).isEqualTo("media-call-1");
-            assertThat(savedResult.getOutput())
-                    .singleElement()
-                    .isInstanceOfSatisfying(
-                            TextBlock.class, text -> assertThat(text.getText()).isEqualTo("generated:一只猫"));
-        }
     }
 
     @Test
@@ -199,8 +118,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        List<AgentEvent> events =
-                adapter.stream(userMessage(), null).collectList().block();
+        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -219,8 +137,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        List<AgentEvent> events =
-                adapter.stream(userMessage(), null).collectList().block();
+        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
 
         assertThat(events).extracting(AgentEvent::getType).containsExactly(AgentEventType.AGENT_END);
         assertThat(memoryTailSubscribed).isTrue();
@@ -249,8 +166,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        List<AgentEvent> events =
-                adapter.stream(userMessage(), null).collectList().block();
+        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -274,8 +190,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        List<AgentEvent> events =
-                adapter.stream(userMessage(), null).collectList().block();
+        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
 
         assertThat(events)
                 .extracting(AgentEvent::getType)
@@ -298,8 +213,7 @@ class AgentExecutionAdapterTest {
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class))).thenReturn(source);
         AgentExecutionAdapter adapter = new AgentExecutionAdapter(agent, run(), session(), "tenant-1", null);
 
-        List<AgentEvent> events =
-                adapter.stream(userMessage(), null).collectList().block();
+        List<AgentEvent> events = adapter.stream(userMessage()).collectList().block();
 
         assertThat(events).hasSize(3);
         assertThat(tailSubscribed).isTrue();
@@ -390,58 +304,5 @@ class AgentExecutionAdapterTest {
                 .name("demo_tool")
                 .state(ToolCallState.ASKING)
                 .build();
-    }
-
-    private HarnessAgent buildExplicitMediaAgent(Model model, Toolkit toolkit, AgentStateStore stateStore) {
-        return HarnessAgent.builder()
-                .agentId("explicit-media-agent")
-                .name("demo-agent")
-                .sysPrompt("You are a test assistant.")
-                .model(model)
-                .toolkit(toolkit)
-                .workspace(workspace)
-                .stateStore(stateStore)
-                .disableFilesystemTools()
-                .disableShellTool()
-                .disableWorkspaceContext()
-                .disableAtPathExpansion()
-                .disableCompaction()
-                .disableToolResultEviction()
-                .disableDynamicSkills()
-                .disableDefaultWorkspaceSkills()
-                .disableSubagents()
-                .disableDynamicSubagents()
-                .disableToolsConfig()
-                .disableMemoryTools()
-                .disableMemoryHooks()
-                .build();
-    }
-
-    static final class ExplicitMediaTool {
-
-        @Tool(name = "test_text_to_image", description = "test")
-        public Mono<ToolResultBlock> generate(@ToolParam(name = "prompt", description = "prompt") String prompt) {
-            return Mono.just(ToolResultBlock.text("generated:" + prompt));
-        }
-    }
-
-    static final class NeverCalledModel implements Model {
-
-        private final AtomicInteger invocations = new AtomicInteger();
-
-        int invocations() {
-            return invocations.get();
-        }
-
-        @Override
-        public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-            invocations.incrementAndGet();
-            return Flux.error(new AssertionError("Explicit media execution must not invoke the chat model"));
-        }
-
-        @Override
-        public String getModelName() {
-            return "never-called-model";
-        }
     }
 }

@@ -14,7 +14,6 @@ import com.lambda.fusion.ai.apps.mapper.AppMapper;
 import com.lambda.fusion.ai.apps.model.AppPageQuery;
 import com.lambda.fusion.ai.apps.model.AvailableApp;
 import com.lambda.fusion.ai.apps.model.CreateApp;
-import com.lambda.fusion.ai.apps.model.MediaGenerationCapability;
 import com.lambda.fusion.ai.apps.model.UpdateApp;
 import com.lambda.fusion.ai.apps.model.entity.AppConfigAuditEntity;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -30,7 +29,6 @@ import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.util.JsonUtils;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -233,7 +231,7 @@ public class AppServiceImpl implements AppService {
 
     @Override
     public List<AvailableApp> listAvailableView() {
-        return listAvailable().stream().map(this::toAvailableView).toList();
+        return listAvailable().stream().map(AppService::toAvailableView).toList();
     }
 
     // 回填绑定模型的视觉能力，供前端控制图片附件入口；模型被删等异常置 null，不阻断列表
@@ -263,33 +261,7 @@ public class AppServiceImpl implements AppService {
 
     @Override
     public AvailableApp loadAvailableView(String appId) {
-        return toAvailableView(fillSupportsVision(loadAvailable(appId)));
-    }
-
-    /**
-     * 构建聊天端安全视图并按当前模型/provider 状态解析真实可挂载的媒体能力。模型、provider
-     * 后续被禁用或类型被修改时不再向前端宣称可用，与 ToolkitAssembler 的降级策略保持一致。
-     */
-    private AvailableApp toAvailableView(AppEntity app) {
-        AvailableApp view = AppService.toAvailableView(app);
-        List<MediaGenerationCapability> capabilities = new ArrayList<>(3);
-        addMediaCapability(capabilities, app, ModelType.IMAGE_GEN);
-        addMediaCapability(capabilities, app, ModelType.VIDEO_GEN);
-        addMediaCapability(capabilities, app, ModelType.AUDIO_GEN);
-        view.setMediaGenerationCapabilities(List.copyOf(capabilities));
-        return view;
-    }
-
-    private void addMediaCapability(
-            List<MediaGenerationCapability> capabilities, AppEntity app, ModelType expectedType) {
-        try {
-            mediaBindingResolver
-                    .resolve(app, expectedType)
-                    .map(MediaGenerationBindingResolver.Binding::capability)
-                    .ifPresent(capabilities::add);
-        } catch (RuntimeException e) {
-            log.warn("回填应用媒体生成能力失败: appId={}, expectedType={}", app.getId(), expectedType, e);
-        }
+        return AppService.toAvailableView(fillSupportsVision(loadAvailable(appId)));
     }
 
     /**

@@ -43,10 +43,6 @@ public class LlmModelEntity {
     @Schema(description = "媒体创作操作；非媒体模型为空")
     private MediaGenerationOperation mediaOperation;
 
-    @TableField("custom_media_tool")
-    @Schema(description = "媒体模型是否走自定义HTTP工具(true=自定义,false=官方SDK)；仅媒体模型使用")
-    private Boolean customMediaTool;
-
     @TableField("default_temperature")
     @Schema(description = "默认温度")
     private BigDecimal defaultTemperature;
