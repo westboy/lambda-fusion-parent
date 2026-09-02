@@ -2,7 +2,7 @@ package com.lambda.fusion.ai.chat.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
-import com.lambda.fusion.ai.chat.model.ChatMessageView;
+import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatRun;
 import com.lambda.fusion.ai.chat.model.ChatSessionPage;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
@@ -18,7 +18,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -28,6 +27,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -67,10 +67,15 @@ public class ChatController {
         chatSessionService.delete(id);
     }
 
-    @Operation(summary = "查询会话消息历史")
+    @Operation(summary = "游标分页查询会话消息历史")
     @GetMapping("/{id}/messages")
-    public List<ChatMessageView> messages(@Parameter(description = "会话ID", required = true) @PathVariable String id) {
-        return chatMessageService.listBySession(id);
+    public ChatMessagePage messages(
+            @Parameter(description = "会话ID", required = true) @PathVariable String id,
+            @Parameter(description = "翻页游标：返回早于该消息 ID 的记录；不传则返回最新一页") @RequestParam(name = "before", required = false)
+                    Long before,
+            @Parameter(description = "页大小，默认 50，最大 200") @RequestParam(name = "limit", required = false)
+                    Integer limit) {
+        return chatMessageService.listBySession(id, before, limit);
     }
 
     @Operation(summary = "流式对话（SSE）")

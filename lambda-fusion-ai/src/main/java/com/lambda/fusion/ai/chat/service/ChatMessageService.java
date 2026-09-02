@@ -1,9 +1,8 @@
 package com.lambda.fusion.ai.chat.service;
 
-import com.lambda.fusion.ai.chat.model.ChatMessageView;
+import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
-import java.util.List;
 import java.util.Optional;
 
 public interface ChatMessageService {
@@ -21,8 +20,16 @@ public interface ChatMessageService {
      */
     ChatMessageEntity saveAssistantMessage(ChatSessionEntity session, String content, String toolCall);
 
-    /** 查询会话历史消息（含各消息附件），按 id 升序。 */
-    List<ChatMessageView> listBySession(String sessionId);
+    /**
+     * 游标分页查询会话消息历史（含当前页各消息附件）。{@code beforeId} 为空时返回最新一页；
+     * 消息按 ID 升序返回，{@code hasMore} 为 true 时以 {@code nextCursor}（当前页最早消息 ID）
+     * 作为 {@code beforeId} 继续向前翻页。
+     *
+     * @param sessionId 会话标识
+     * @param beforeId 翻页游标；null 表示从最新消息开始
+     * @param limit 页大小；null 或越界时收敛到默认值与上限之间
+     */
+    ChatMessagePage listBySession(String sessionId, Long beforeId, Integer limit);
 
     Optional<ChatMessageEntity> findByIdAndSession(Long messageId, String sessionId);
 
