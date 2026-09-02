@@ -17,8 +17,13 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventSubscription;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatService;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +39,12 @@ public class ChatServiceImpl implements ChatService {
     private final ChatExecutionService chatExecutionService;
     private final ChatRunEventStore eventStore;
     private final AiProperties properties;
+    /** SSE 心跳发送器：单线程守护池，仅写注释行，阻塞或失败由 detach 机制摘除任务。 */
+    private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "chat-sse-heartbeat");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     @Override
     public SseEmitter streamChat(String sessionId, SendMessage message) {
@@ -86,10 +97,12 @@ public class ChatServiceImpl implements ChatService {
         SseEmitter emitter = new SseEmitter(timeout);
         AtomicBoolean detached = new AtomicBoolean();
         AtomicReference<ChatRunEventSubscription> subscription = new AtomicReference<>();
+        AtomicReference<ScheduledFuture<?>> heartbeat = new AtomicReference<>();
         Runnable runnable = () -> {
             if (!detached.compareAndSet(false, true)) {
                 return;
             }
+            cancelHeartbeat(heartbeat);
             ChatRunEventSubscription current = subscription.getAndSet(null);
             if (current != null) {
                 current.close();
@@ -98,6 +111,7 @@ public class ChatServiceImpl implements ChatService {
         emitter.onCompletion(runnable);
         emitter.onTimeout(runnable);
         emitter.onError(error -> runnable.run());
+        scheduleHeartbeat(emitter, runnable, heartbeat);
 
         try {
             AguiBootstrapModel aguiBootstrapModel = chatExecutionService.bootstrap(chatRunEntity, chatSessionEntity);
@@ -122,6 +136,40 @@ public class ChatServiceImpl implements ChatService {
             emitter.completeWithError(error);
         }
         return emitter;
+    }
+
+    /** 按配置间隔向订阅连接发送 SSE 注释心跳；发送失败仅解除订阅并取消后续心跳，不影响 Run 执行。 */
+    private void scheduleHeartbeat(SseEmitter emitter, Runnable detach, AtomicReference<ScheduledFuture<?>> heartbeat) {
+        long intervalSeconds = properties.getChat().getRun().getHeartbeatIntervalSeconds();
+        if (intervalSeconds <= 0) {
+            return;
+        }
+        ScheduledFuture<?> task = heartbeatExecutor.scheduleWithFixedDelay(
+                () -> {
+                    try {
+                        emitter.send(SseEmitter.event().comment("ping"));
+                    } catch (IOException | IllegalStateException disconnected) {
+                        detach.run();
+                    }
+                },
+                intervalSeconds,
+                intervalSeconds,
+                TimeUnit.SECONDS);
+        heartbeat.set(task);
+    }
+
+    /** 取消未执行的心跳任务并清空引用；允许重复调用。 */
+    private static void cancelHeartbeat(AtomicReference<ScheduledFuture<?>> heartbeat) {
+        ScheduledFuture<?> task = heartbeat.getAndSet(null);
+        if (task != null) {
+            task.cancel(false);
+        }
+    }
+
+    /** 停机时中断心跳调度线程池；连接断开与终态不再需要心跳。 */
+    @PreDestroy
+    public void shutdown() {
+        heartbeatExecutor.shutdownNow();
     }
 
     private static void send(SseEmitter emitter, ChatRunEvent event) {

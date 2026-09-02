@@ -126,6 +126,13 @@ public class AiProperties {
             @Min(1)
             private long connectionTimeoutSeconds = 300;
 
+            /**
+             * SSE 心跳间隔，单位秒；每个订阅连接周期性发送 SSE 注释行，防止代理/负载均衡
+             * 因连接空闲误断。设为 0 关闭心跳。
+             */
+            @Min(0)
+            private long heartbeatIntervalSeconds = 15;
+
             /** 单次 Agent 执行的最长时间，单位秒。 */
             @Min(1)
             private long maxRunDurationSeconds = 1800;
