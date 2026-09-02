@@ -7,11 +7,13 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.lambda.fusion.ai.AiConstants.ChatRunFailureCode;
 import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
@@ -148,6 +150,34 @@ class ChatRunServiceImplTest {
         verify(runMapper).update(isNull(), updateCaptor.capture());
         assertThat(updateCaptor.getValue().getSqlSet()).contains("snapshot_json");
         assertThat(updateCaptor.getValue().getParamNameValuePairs()).containsValue(null);
+    }
+
+    @Test
+    void shouldFinalizeEmptyFailureWithoutProjectingMessageOrAttachments() {
+        ChatRunEntity identity = run(ChatRunStatus.RUNNING);
+        ChatRunEntity persisted = run(ChatRunStatus.RUNNING);
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId("session-1");
+        session.setUserId("user-1");
+
+        when(sessionMapper.selectForUpdate("session-1")).thenReturn(session);
+        when(runMapper.selectOne(any())).thenReturn(persisted);
+        when(runMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        var result = service.finalizeExecution(
+                identity,
+                new ChatRunFinalizationCommand(
+                        ChatRunStatus.FAILED,
+                        ChatRunFinishReason.ERROR,
+                        ChatRunSnapshot.empty("run-1", "phase-1", 1),
+                        null,
+                        ChatRunFailureCode.ERROR,
+                        "attachment projection failed"));
+
+        assertThat(result.committed()).isTrue();
+        assertThat(result.status()).isEqualTo(ChatRunStatus.FAILED.name());
+        assertThat(result.errorCode()).isEqualTo(ChatRunFailureCode.ERROR.name());
+        verifyNoInteractions(messageService, attachmentService);
     }
 
     @Test

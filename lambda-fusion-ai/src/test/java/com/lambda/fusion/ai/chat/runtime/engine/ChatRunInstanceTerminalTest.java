@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,6 +23,8 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEndEvent;
@@ -155,6 +158,56 @@ class ChatRunInstanceTerminalTest {
         verify(runService, times(2)).finalizeExecution(eq(run), any(ChatRunFinalizationCommand.class));
         verify(eventStore, times(2))
                 .appendTerminalIfAbsent(anyString(), anyString(), any(AguiEvent.class), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFallbackImmediatelyWhenAttachmentProjectionCannotRecover() {
+        ChatRunEntity run = run(ChatRunStatus.RUNNING, snapshot("partial", false, false));
+        instance = newInstance(run);
+        when(runService.finalizeExecution(
+                        eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.COMPLETED)))
+                .thenThrow(new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, "attachment-1"));
+        when(runService.finalizeExecution(eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.FAILED)))
+                .thenReturn(new ChatRunFinalizationResult(
+                        true, ChatRunStatus.FAILED.name(), ChatRunFinishReason.ERROR.name(), "ERROR", "fallback"));
+        when(eventStore.appendTerminalIfAbsent(
+                        anyString(), anyString(), any(AguiEvent.class), anyString(), anyString()))
+                .thenReturn(new ChatRunEvent(8L, "RUN_ERROR", "{}"));
+
+        instance.finalizeCompleted();
+
+        assertThat(instance.drainedSignal().toCompletableFuture()).succeedsWithin(Duration.ofSeconds(1));
+        assertThat(run.getStatus()).isEqualTo(ChatRunStatus.FAILED.name());
+        verify(runService, times(1))
+                .finalizeExecution(eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.COMPLETED));
+        verify(runService, times(1))
+                .finalizeExecution(
+                        eq(run),
+                        argThat(command -> command.targetStatus() == ChatRunStatus.FAILED
+                                && command.snapshot().text().isEmpty()
+                                && command.snapshot().generatedAttachmentIds().isEmpty()));
+    }
+
+    @Test
+    void shouldRetryMinimalFailureFinalizationAfterTransientDatabaseFailure() {
+        ChatRunEntity run = run(ChatRunStatus.RUNNING, snapshot("partial", false, false));
+        instance = newInstance(run);
+        when(runService.finalizeExecution(
+                        eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.COMPLETED)))
+                .thenThrow(new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, "attachment-1"));
+        when(runService.finalizeExecution(eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.FAILED)))
+                .thenThrow(new RuntimeException("database unavailable"))
+                .thenReturn(new ChatRunFinalizationResult(
+                        true, ChatRunStatus.FAILED.name(), ChatRunFinishReason.ERROR.name(), "ERROR", "fallback"));
+        when(eventStore.appendTerminalIfAbsent(
+                        anyString(), anyString(), any(AguiEvent.class), anyString(), anyString()))
+                .thenReturn(new ChatRunEvent(8L, "RUN_ERROR", "{}"));
+
+        instance.finalizeCompleted();
+
+        assertThat(instance.drainedSignal().toCompletableFuture()).succeedsWithin(Duration.ofSeconds(3));
+        verify(runService, times(2))
+                .finalizeExecution(eq(run), argThat(command -> command.targetStatus() == ChatRunStatus.FAILED));
     }
 
     private void stubTerminalCommit() {

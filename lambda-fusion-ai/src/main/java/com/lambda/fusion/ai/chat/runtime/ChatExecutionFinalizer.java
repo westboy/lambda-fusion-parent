@@ -70,6 +70,20 @@ public final class ChatExecutionFinalizer {
                                 .toList());
         ChatRunFinalizationResult result = runService.finalizeExecution(
                 run, new ChatRunFinalizationCommand(status, reason, snapshot, toolJson, errorCode, errorMessage));
+        applyResultAndPublish(run, result);
+    }
+
+    /** 完整消息/附件投影失败后，仅提交 FAILED 终态并发布对应终态事件。 */
+    public void commitFailureWithoutProjection(ChatRunEntity run, ChatRunFailureCode errorCode, String errorMessage) {
+        ChatRunSnapshot emptySnapshot = ChatRunSnapshot.empty(run.getId(), run.getAguiRunId(), run.getPhaseNo());
+        ChatRunFinalizationResult result = runService.finalizeExecution(
+                run,
+                new ChatRunFinalizationCommand(
+                        ChatRunStatus.FAILED, ChatRunFinishReason.ERROR, emptySnapshot, null, errorCode, errorMessage));
+        applyResultAndPublish(run, result);
+    }
+
+    private void applyResultAndPublish(ChatRunEntity run, ChatRunFinalizationResult result) {
         run.setStatus(result.status());
         run.setFinishReason(result.finishReason());
         run.setErrorCode(result.errorCode());

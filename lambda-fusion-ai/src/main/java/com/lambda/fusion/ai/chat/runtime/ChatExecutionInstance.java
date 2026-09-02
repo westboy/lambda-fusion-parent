@@ -50,8 +50,8 @@ import reactor.core.Disposable;
 @Slf4j
 public final class ChatExecutionInstance {
 
-    /** 终态提交的最大重试次数；达到上限后释放实例，避免局部故障永久占用运行容量。 */
-    private static final int MAX_FINALIZE_ATTEMPTS = 100;
+    /** 完整消息/附件投影的最大尝试次数；耗尽后切换到不含投影的最小失败终结。 */
+    private static final int MAX_PROJECTION_FINALIZE_ATTEMPTS = 3;
 
     private final ChatRunStateService runService;
     private final ChatRunEventStore eventStore;
@@ -71,6 +71,7 @@ public final class ChatExecutionInstance {
     private boolean terminal;
     private boolean sourceActive;
     private int finalizeAttempts;
+    private int fallbackFinalizeAttempts;
     private volatile long phaseStartedAtMillis = System.currentTimeMillis();
     private boolean checkpointDirty;
     private ScheduledFuture<?> checkpointTask;
@@ -582,8 +583,8 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 终态提交失败后的重试决策：永久性失败或达到上限时放弃并释放实例，否则按退避调度重试。
-     * 由 {@link #finalizeTerminal} 在实例锁内调用。
+     * 完整终态提交失败后的重试决策：确定性的投影错误直接走最小失败终结；瞬时错误只有限重试，
+     * 耗尽后同样降级，避免附件冲突等错误反复占用调度线程并让数据库长期停留在 RUNNING。
      */
     private void handleFinalizeFailure(
             ChatRunStatus status,
@@ -594,36 +595,89 @@ public final class ChatExecutionInstance {
         terminal = false;
         int attempt = ++finalizeAttempts;
         boolean permanent = isPermanentFinalizeFailure(finalizeFailure);
-        // 数据行已删除等永久性失败或重试达到上限时停止提交，但仍释放实例，
-        // 避免单个实例的终结故障永久占用内存运行容量。
-        if (permanent || attempt >= MAX_FINALIZE_ATTEMPTS || scheduler.isShutdown()) {
+        if (permanent || attempt >= MAX_PROJECTION_FINALIZE_ATTEMPTS) {
             log.error(
-                    "对话Run终结放弃数据库提交，释放实例: runId={}, attempt={}, permanent={}",
+                    "对话Run完整终结失败，切换最小失败终结: runId={}, attempt={}, permanent={}",
                     run.getId(),
                     attempt,
                     permanent,
                     finalizeFailure);
-            terminal = true;
+            finalizeFailureWithoutProjection(finalizeFailure);
+            return;
+        }
+        if (scheduler.isShutdown()) {
+            finalizeFailureWithoutProjection(finalizeFailure);
+            return;
+        }
+        log.warn("对话Run完整终结失败，将有限重试: runId={}, attempt={}", run.getId(), attempt, finalizeFailure);
+        scheduler.schedule(
+                () -> runInTenant(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
+                attempt,
+                TimeUnit.SECONDS);
+    }
+
+    /**
+     * 不再执行助手消息和附件投影，仅把仍处于活动态的 Run 提交为 FAILED。最小终结若遇数据库瞬时故障，
+     * 会以最多 30 秒的退避持续重试，由当前执行实例在数据库恢复后收敛。
+     */
+    private synchronized void finalizeFailureWithoutProjection(RuntimeException projectionFailure) {
+        if (terminal) {
+            return;
+        }
+        terminal = true;
+        cancelCheckpointTask();
+        awaitingInteraction = false;
+        pendingInteractionEvents = null;
+        closePendingToolCalls();
+        String fallbackMessage = "对话结果终结失败: " + ChatRunSnapshotSanitizer.safeMessage(projectionFailure);
+        try {
+            chatExecutionFinalizer.commitFailureWithoutProjection(run, ChatRunFailureCode.ERROR, fallbackMessage);
             if (isSourceTerminated()) {
                 drainedSignal.complete(null);
                 localPhaseDrainedSignal.complete(null);
             }
-            return;
+        } catch (RuntimeException fallbackFailure) {
+            terminal = false;
+            int attempt = ++fallbackFinalizeAttempts;
+            boolean persistedTerminal = ChatRunStatus.isTerminal(run.getStatus());
+            boolean permanent = !persistedTerminal && isPermanentFinalizeFailure(fallbackFailure);
+            if (permanent || scheduler.isShutdown()) {
+                log.error(
+                        "对话Run最小失败终结无法继续: runId={}, attempt={}, persistedTerminal={}, permanent={}",
+                        run.getId(),
+                        attempt,
+                        persistedTerminal,
+                        permanent,
+                        fallbackFailure);
+                terminal = true;
+                if (isSourceTerminated()) {
+                    drainedSignal.complete(null);
+                    localPhaseDrainedSignal.complete(null);
+                }
+                return;
+            }
+            if (attempt == 1 || attempt == 5 || attempt % 10 == 0) {
+                log.error("对话Run最小失败终结失败，将继续重试: runId={}, attempt={}", run.getId(), attempt, fallbackFailure);
+            } else {
+                log.warn("对话Run最小失败终结失败，将重试: runId={}, attempt={}", run.getId(), attempt, fallbackFailure);
+            }
+            scheduler.schedule(
+                    () -> runInTenant(() -> finalizeFailureWithoutProjection(projectionFailure)),
+                    Math.min(attempt, 30),
+                    TimeUnit.SECONDS);
         }
-        if (attempt == 5 || attempt % 10 == 0) {
-            log.error("对话Run终结持续失败，将继续重试: runId={}, attempt={}", run.getId(), attempt, finalizeFailure);
-        } else {
-            log.warn("对话Run终结失败，将重试: runId={}, attempt={}", run.getId(), attempt, finalizeFailure);
-        }
-        scheduler.schedule(
-                () -> runInTenant(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
-                Math.min(attempt, 30),
-                TimeUnit.SECONDS);
     }
 
-    /** 判断终结失败是否为永久性（重试无意义）：底层数据行已不存在等。 */
+    /** 判断完整终结失败是否为确定性错误；此类错误继续执行同一投影没有意义。 */
     private static boolean isPermanentFinalizeFailure(RuntimeException failure) {
-        return failure instanceof IllegalStateException;
+        Throwable cause = failure;
+        while (cause != null) {
+            if (cause instanceof IllegalStateException || cause instanceof AiBusinessException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     /** 排空信号：最终业务阶段的源流与后处理全部结束时完成。 */
