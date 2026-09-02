@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
+import com.lambda.fusion.ai.chat.runtime.ChatExecutionCapacityLimiter.Permit;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapEncoder;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapModel;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
@@ -28,19 +29,24 @@ import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.message.Msg;
 import jakarta.annotation.PreDestroy;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 对话运行协调门面：负责业务 Run 的启动、确认与停止编排。活动实例注册表与容量约束由
- * {@link ChatExecutionInstanceRegistry} 承载；
- * Agent 事件流由执行实例持有，不依赖 SSE 连接生命周期。新运行注册后立即异步订阅 {@code streamEvents}；
- * 同一 {@code (userId, sessionId)} 的核心状态调用由 AgentScope 自身串行保护，上一轮记忆整理等后处理
- * 不阻塞下一轮交互。
+ * 对话运行协调门面：数据库 Run 是业务状态与并发裁决的唯一来源；当前 JVM 只保留正在执行阶段的
+ * 可丢弃句柄，用于本地停止、精确引导和资源释放。句柄不存在不表示 Run 已失效，也不会触发业务状态迁移。
+ * Agent 构造与首阶段订阅由独立执行器承载，定时调度器只负责超时、检查点和停止宽限任务。
  *
  * @author Jin
  */
@@ -56,7 +62,9 @@ public class ChatExecutionService {
     private final AppService appService;
     private final ChatExecutionInstanceFactory instanceFactory;
     private final AiProperties properties;
-    private final ChatExecutionInstanceRegistry registry;
+    private final ChatExecutionCapacityLimiter capacityLimiter;
+    private final ConcurrentMap<String, LocalPhaseHandle> activeLocalPhases = new ConcurrentHashMap<>();
+    private final ExecutorService executionExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "chat-run-scheduler");
         thread.setDaemon(true);
@@ -92,47 +100,69 @@ public class ChatExecutionService {
         this.appService = appService;
         this.instanceFactory = instanceFactory;
         this.properties = properties;
-        this.registry = new ChatExecutionInstanceRegistry(instanceFactory, properties);
+        this.capacityLimiter = new ChatExecutionCapacityLimiter(properties);
     }
 
-    /** 启动本次请求刚创建的运行；agentPrompt 是写入 Agent 的用户提示，不改变数据库中的原始消息。 */
-    public void start(ChatRunEntity run, ChatSessionEntity session, String agentPrompt) {
+    /** 启动本次请求刚创建的运行；方法只预占容量并安排后台构造，不在 HTTP 线程创建 Agent。 */
+    public void start(ChatRunEntity run, ChatSessionEntity session) {
         TenantUtils.withTenant(session.getTenantId(), () -> {
-            startInTenantContext(run, session, agentPrompt);
+            startInTenantContext(run, session);
             return null;
         });
     }
 
-    private void startInTenantContext(ChatRunEntity run, ChatSessionEntity session, String agentPrompt) {
+    private void startInTenantContext(ChatRunEntity run, ChatSessionEntity session) {
         if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())) {
             return;
         }
-        Optional<ChatExecutionInstance> selected;
-        try {
-            selected = registry.registerForStartIfCapacity(run, session, scheduler);
-        } catch (RuntimeException createFailure) {
-            failStart(run, session, createFailure);
-            return;
-        }
-        // 不做跨节点排队或后台扫描；无法在当前请求节点启动时立即给出可重试的失败结果。
-        if (selected.isEmpty()) {
+        eventStore.registerLocalRun(run.getId());
+        Optional<Permit> acquired = capacityLimiter.tryAcquire(session);
+        if (acquired.isEmpty()) {
             failStart(run, session, new IllegalStateException("当前节点对话运行容量已满"));
             return;
         }
-        // 注册成功后排空信号由注册表监听，最终源流结束时按实例身份安全摘除。
-        // 只把实际订阅移出请求线程；不等待上一轮的记忆整理、Workspace 审计等后处理。
-        ChatExecutionInstance execution = selected.get();
+        Permit permit = acquired.get();
         try {
-            scheduler.execute(() -> execution.runInTenant(() -> startExecution(execution, agentPrompt)));
+            executionExecutor.execute(
+                    () -> TenantUtils.withTenant(session.getTenantId(), () -> buildAndStart(run, session, permit)));
         } catch (RuntimeException scheduleFailure) {
+            permit.close();
+            failStart(run, session, scheduleFailure);
+        }
+    }
+
+    /** 在后台执行器中构造 Agent、跟踪本地阶段句柄并订阅首阶段事件流。 */
+    private void buildAndStart(ChatRunEntity run, ChatSessionEntity session, Permit permit) {
+        ChatExecutionInstance execution;
+        try {
+            execution = instanceFactory.createAgentBacked(run, session, scheduler);
+        } catch (RuntimeException createFailure) {
+            permit.close();
+            failStart(run, session, createFailure);
+            return;
+        }
+
+        LocalPhaseSelection localPhase = trackLocalPhase(execution, permit, run.getPhaseNo(), false);
+        if (!localPhase.created()) {
+            return;
+        }
+        try {
+            ChatRunEntity current = runService.loadCurrentOrIdentity(run);
+            if (ChatRunStatus.isTerminal(current.getStatus())
+                    || !Objects.equals(current.getPhaseNo(), localPhase.handle().activePhaseNo())) {
+                releaseLocalPhase(localPhase.handle());
+                return;
+            }
+            startExecution(execution);
+        } catch (RuntimeException startFailure) {
             execution.finalizeFailed(
-                    ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(scheduleFailure));
+                    ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
     }
 
     /**
-     * 在规范实例锁内原子地确认并推进到下一阶段。只有上一阶段完整排空并进入待确认态后才允许确认；
-     * 锁顺序始终为实例 monitor，再进入 {@code REQUIRES_NEW} 数据库事务。
+     * 确认持久化的 HITL 工具调用并推进下一阶段。Run 快照和数据库阶段号先行校验，执行实例只承载
+     * 本次恢复阶段；上一阶段的本地对象不是确认事实来源。
      *
      * @param run 运行实体
      * @param session 会话实体
@@ -141,32 +171,23 @@ public class ChatExecutionService {
      */
     public ConfirmTransition confirm(ChatRunEntity run, ChatSessionEntity session, ConfirmToolCall command) {
         return TenantUtils.withTenant(session.getTenantId(), () -> {
-            ChatExecutionInstance execution = registry.get(run.getId());
-            if (execution == null) {
-                Integer sourcePhaseNo = command == null ? null : command.getPhaseNo();
-                if (sourcePhaseNo == null) {
-                    throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
-                }
-                if (run.getPhaseNo() > sourcePhaseNo) {
-                    return new ConfirmTransition(run, session, false);
-                }
-                var snapshot = ChatRunSnapshotCodec.decode(run.getSnapshotJson());
-                if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())
-                        || run.getPhaseNo() < sourcePhaseNo
-                        || snapshot.pendingTools().isEmpty()) {
-                    throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
-                }
-                // 进程重启会丢失本地注册表，但 AgentScope ASKING 状态和 Run 快照均已持久化。
-                // 用户显式确认时只重建暂停上下文，不恢复旧阶段，也不接管正在执行的工具。
-                execution = registry.registerPausedConfirmation(run, session, scheduler);
+            int sourcePhaseNo = requireSourcePhase(command == null ? null : command.getPhaseNo());
+            if (run.getPhaseNo() > sourcePhaseNo) {
+                return new ConfirmTransition(run, session, false);
             }
-            return execution.confirm(command);
+            ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(run.getSnapshotJson());
+            if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())
+                    || run.getPhaseNo() < sourcePhaseNo
+                    || snapshot.pendingTools().isEmpty()) {
+                throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
+            }
+            return resumePhase(run, session, sourcePhaseNo, execution -> execution.confirm(command));
         });
     }
 
     /**
-     * 在规范实例锁内原子地提交用户输入并推进到下一阶段。只有上一阶段完整排空并进入待输入态后才允许提交；
-     * 锁顺序始终为实例 monitor，再进入 {@code REQUIRES_NEW} 数据库事务。
+     * 提交持久化的 HITL 用户输入并推进下一阶段。Run 快照和数据库阶段号先行校验，执行实例只承载
+     * 本次恢复阶段。
      *
      * @param run 运行实体
      * @param session 会话实体
@@ -175,49 +196,105 @@ public class ChatExecutionService {
      */
     public ConfirmTransition submitInput(ChatRunEntity run, ChatSessionEntity session, SubmitToolInput command) {
         return TenantUtils.withTenant(session.getTenantId(), () -> {
-            ChatExecutionInstance execution = registry.get(run.getId());
-            if (execution == null) {
-                Integer sourcePhaseNo = command == null ? null : command.getPhaseNo();
-                if (sourcePhaseNo == null) {
-                    throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
-                }
-                if (run.getPhaseNo() > sourcePhaseNo) {
-                    return new ConfirmTransition(run, session, false);
-                }
-                var snapshot = ChatRunSnapshotCodec.decode(run.getSnapshotJson());
-                if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())
-                        || run.getPhaseNo() < sourcePhaseNo
-                        || snapshot.pendingInputs().isEmpty()) {
-                    throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
-                }
-                // 进程重启会丢失本地注册表，但 AgentScope 挂起状态和 Run 快照均已持久化。
-                // 用户显式提交时只重建暂停上下文，不恢复旧阶段，也不接管正在执行的工具。
-                execution = registry.registerPausedConfirmation(run, session, scheduler);
+            int sourcePhaseNo = requireSourcePhase(command == null ? null : command.getPhaseNo());
+            if (run.getPhaseNo() > sourcePhaseNo) {
+                return new ConfirmTransition(run, session, false);
             }
-            return execution.submitInput(command);
+            ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(run.getSnapshotJson());
+            if (!ChatRunStatus.RUNNING.name().equals(run.getStatus())
+                    || run.getPhaseNo() < sourcePhaseNo
+                    || snapshot.pendingInputs().isEmpty()) {
+                throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
+            }
+            return resumePhase(run, session, sourcePhaseNo, execution -> execution.submitInput(command));
         });
     }
 
+    /** 校验交互命令携带的来源阶段号。 */
+    private static int requireSourcePhase(Integer sourcePhaseNo) {
+        if (sourcePhaseNo == null) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
+        }
+        return sourcePhaseNo;
+    }
+
+    /** 构造并协调一个 HITL 恢复阶段；数据库 CAS 仍是跨节点唯一赢家判定。 */
+    private ConfirmTransition resumePhase(
+            ChatRunEntity run,
+            ChatSessionEntity session,
+            int sourcePhaseNo,
+            Function<ChatExecutionInstance, ConfirmTransition> operation) {
+        Permit permit =
+                capacityLimiter.tryAcquire(session).orElseThrow(() -> new IllegalStateException("当前节点对话运行容量已满"));
+        ChatExecutionInstance candidate;
+        try {
+            candidate = instanceFactory.createAgentBacked(run, session, scheduler);
+        } catch (RuntimeException createFailure) {
+            permit.close();
+            throw createFailure;
+        }
+
+        LocalPhaseSelection localPhase;
+        try {
+            localPhase = trackLocalPhase(candidate, permit, sourcePhaseNo + 1, true);
+        } catch (RuntimeException trackingFailure) {
+            permit.close();
+            throw trackingFailure;
+        }
+        LocalPhaseHandle handle = localPhase.handle();
+        if (!localPhase.created()) {
+            return replayAfterLocalResume(handle, run);
+        }
+
+        try {
+            ConfirmTransition transition = operation.apply(handle.execution());
+            if (transition.resumed()) {
+                eventStore.registerLocalRun(run.getId());
+            }
+            handle.completeResume(transition);
+            if (!transition.resumed()) {
+                releaseLocalPhase(handle);
+            }
+            return transition;
+        } catch (RuntimeException resumeFailure) {
+            handle.failResume(resumeFailure);
+            releaseLocalPhase(handle);
+            throw resumeFailure;
+        }
+    }
+
+    /** 等待同节点已经登记的同一目标阶段完成数据库迁移，并把当前请求按幂等重放返回。 */
+    private static ConfirmTransition replayAfterLocalResume(LocalPhaseHandle handle, ChatRunEntity fallbackRun) {
+        CompletableFuture<ConfirmTransition> transition = handle.resumeTransition();
+        if (transition == null) {
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, fallbackRun.getStatus());
+        }
+        try {
+            ConfirmTransition completed = transition.join();
+            return new ConfirmTransition(completed.run(), completed.session(), false);
+        } catch (CompletionException failure) {
+            if (failure.getCause() instanceof RuntimeException runtimeFailure) {
+                throw runtimeFailure;
+            }
+            throw failure;
+        }
+    }
+
     /**
-     * 生成运行的 AG-UI 引导事件。本节点无实例的 RUNNING 运行已无实时流可续接：存在待交互投影的
-     * HITL 挂起仍可由用户显式确认或输入恢复；其余视为进程重启遗留的孤儿运行，收敛为失败终态，
-     * 使重连方获得明确终局并解除会话的活动运行锁。
+     * 生成运行的 AG-UI 引导事件。本地句柄存在时使用内存快照，否则只读数据库快照和本地事件缓冲。
+     * 本地句柄或事件缓冲缺失只表示请求没有落到执行节点，绝不据此终结 Run。
      *
      * @param run 运行实体
-     * @param session 会话实体
+     * @param session 会话实体；归属已由调用方校验
      * @return 引导事件批次
      */
     public AguiBootstrapModel bootstrap(ChatRunEntity run, ChatSessionEntity session) {
-        ChatExecutionInstance execution = registry.get(run.getId());
-        if (execution != null) {
-            return execution.bootstrap();
+        LocalPhaseHandle handle = activeLocalPhases.get(run.getId());
+        if (handle != null) {
+            return handle.execution().bootstrap();
         }
         ChatRunEntity current = runService.loadCurrentOrIdentity(run);
         ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(current.getSnapshotJson());
-        if (isOrphanedRun(current, snapshot)) {
-            current = finalizeOrphaned(current, session);
-            snapshot = ChatRunSnapshotCodec.decode(current.getSnapshotJson());
-        }
         long cursor = eventStore.latestCursor(current.getId());
         return new AguiBootstrapModel(
                 cursor,
@@ -227,40 +304,9 @@ public class ChatExecutionService {
                         || !eventStore.contains(current.getId()));
     }
 
-    /** 判定无本地实例的运行是否为孤儿：仍处 RUNNING 且无待交互投影（HITL 挂起由确认/输入路径恢复）。 */
-    private static boolean isOrphanedRun(ChatRunEntity run, ChatRunSnapshot snapshot) {
-        return ChatRunStatus.RUNNING.name().equals(run.getStatus()) && !snapshot.hasPendingInteraction();
-    }
-
     /**
-     * 收敛孤儿运行为失败终态：优先用带 Agent 的实例补写未决工具调用（中断多发生在工具执行中，
-     * 遗留未决调用会阻塞该状态会话的后续请求），Agent 状态不可用时降级为纯终结实例。
-     * 落终态后回读数据库权威状态，使引导事件按终态编码。
-     *
-     * @param run 运行实体
-     * @param session 会话实体
-     * @return 终态后的运行实体
-     */
-    private ChatRunEntity finalizeOrphaned(ChatRunEntity run, ChatSessionEntity session) {
-        log.warn("Run无本地实例且无待交互投影，按服务重启中断收敛: runId={}", run.getId());
-        return TenantUtils.withTenant(session.getTenantId(), () -> {
-            createOrphanExecution(run, session).finalizeFailed(ChatRunFailureCode.INTERRUPTED, "服务重启导致对话运行中断，请重新发送消息");
-            return runService.loadCurrentOrIdentity(run);
-        });
-    }
-
-    /** 为孤儿运行构造终结实例：优先带 Agent 以补写拒绝结果清理 AgentScope 未决工具调用，失败时降级为纯终结。 */
-    private ChatExecutionInstance createOrphanExecution(ChatRunEntity run, ChatSessionEntity session) {
-        try {
-            return instanceFactory.createAgentBacked(run, session, scheduler);
-        } catch (RuntimeException stateUnavailable) {
-            log.warn("收敛孤儿Run时无法清理AgentScope未决工具调用，仅提交业务终态: runId={}", run.getId(), stateUnavailable);
-            return instanceFactory.createTerminalOnly(run, session, scheduler);
-        }
-    }
-
-    /**
-     * 请求停止运行。
+     * 请求停止运行。本节点存在阶段句柄时先提交终态再中断 Agent；不存在时只按数据库权威状态终结，
+     * 不尝试推断或远程控制其他节点。
      *
      * @param run 运行实体
      * @param session 会话实体
@@ -274,20 +320,19 @@ public class ChatExecutionService {
         if (ChatRunStatus.isTerminal(current.getStatus())) {
             return;
         }
-        ChatExecutionInstance execution = registry.get(current.getId());
-        if (execution == null) {
-            var snapshot = ChatRunSnapshotCodec.decode(current.getSnapshotJson());
-            ChatExecutionInstance terminalOnly = createStoppedExecution(
-                    current, session, snapshot.pendingTools().isEmpty());
+        LocalPhaseHandle handle = activeLocalPhases.get(current.getId());
+        if (handle == null) {
+            ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(current.getSnapshotJson());
+            boolean noPendingInteraction = snapshot.pendingTools().isEmpty()
+                    && snapshot.pendingInputs().isEmpty();
+            ChatExecutionInstance terminalOnly = createStoppedExecution(current, session, noPendingInteraction);
             terminalOnly.requestStop();
             return;
         }
-        // 本地活动实例仍按实例 monitor -> 独立数据库事务的顺序协作式停止。
-        // 实例锁内先提交 STOPPED，迟到的 Agent 完成结果会被数据库终态拒绝。
+        ChatExecutionInstance execution = handle.execution();
         if (!execution.requestStop()) {
             return;
         }
-        // 先在锁外发起协作式中断，再以宽限期后的强制停止作为兜底，避免取消回调造成锁重入。
         try {
             execution.interruptAgent();
         } catch (RuntimeException interruptFailure) {
@@ -300,21 +345,18 @@ public class ChatExecutionService {
         }
     }
 
-    /** 中断本节点活动运行并关闭本地调度线程池。 */
+    /** 中断本节点活动阶段并关闭后台执行器与纯定时调度器。 */
     @PreDestroy
     public void shutdown() {
-        registry.forEachActive(execution -> execution.runInTenant(execution::interruptForShutdown));
+        List<LocalPhaseHandle> active = List.copyOf(activeLocalPhases.values());
+        active.forEach(handle -> handle.execution().runInTenant(handle.execution()::interruptForShutdown));
+        active.forEach(this::releaseLocalPhase);
+        executionExecutor.shutdownNow();
         scheduler.shutdown();
     }
 
-    /**
-     * 在调度线程上执行注册实例的首个阶段：装配用户消息（含附件与应用上下文）后交给实例启动。
-     *
-     * <p>用户消息或应用缺失视为启动失败，统一落 {@code START_FAILED} 终态并释放实例。
-     *
-     * @param execution 已注册的执行实例
-     */
-    private void startExecution(ChatExecutionInstance execution, String agentPrompt) {
+    /** 在后台执行器上装配用户消息（含附件与应用上下文）后订阅 Agent 首阶段。 */
+    private void startExecution(ChatExecutionInstance execution) {
         ChatRunEntity run = execution.run();
         try {
             ChatMessageEntity userMessage = messageService
@@ -323,10 +365,7 @@ public class ChatExecutionService {
             List<ChatAttachmentEntity> attachments = attachmentService.listByMessageIds(List.of(userMessage.getId()));
             AppEntity app = appService.loadById(execution.session().getAppId());
             Msg msg = attachmentMessageBuilder.buildUserMsg(
-                    execution.session(),
-                    app,
-                    agentPrompt == null ? userMessage.getContent() : agentPrompt,
-                    attachments);
+                    execution.session(), app, userMessage.getContent(), attachments);
             execution.startPhase(msg);
         } catch (RuntimeException startFailure) {
             execution.finalizeFailed(
@@ -334,41 +373,106 @@ public class ChatExecutionService {
         }
     }
 
-    /**
-     * 启动被拒或构造失败时的兜底路径：用无 Agent 的纯终结实例提交 {@code START_FAILED} 终态，
-     * 保证 Run 不会停留在 RUNNING 状态。
-     *
-     * @param run 运行实体
-     * @param session 会话实体
-     * @param failure 启动失败原因
-     */
+    /** 启动被拒或构造失败时，用无 Agent 实例提交 {@code START_FAILED}，避免 Run 悬挂在 RUNNING。 */
     private void failStart(ChatRunEntity run, ChatSessionEntity session, RuntimeException failure) {
         ChatExecutionInstance rejected = instanceFactory.createTerminalOnly(run, session, scheduler);
         rejected.finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(failure));
     }
 
     /**
-     * 为本地无活动实例的停止请求构造替代执行实例。
-     *
-     * <p>无待确认工具时用纯终结实例直接落 STOPPED；HITL 暂停中则优先用带 Agent 的实例补写
-     * 拒绝结果、清理 AgentScope ASKING 状态，Agent 状态不可用时降级为纯终结实例。
-     *
-     * @param run 运行实体（已加载当前状态）
-     * @param session 会话实体
-     * @param noPendingConfirmation 快照中是否存在待确认工具（无则允许纯终结）
-     * @return 承接停止请求的执行实例
+     * 为本地无活动阶段的停止请求构造替代实例。无待交互投影时直接落 STOPPED；HITL 暂停中优先加载
+     * AgentScope 状态补写拒绝结果，状态不可用时降级为纯业务终结。
      */
     private ChatExecutionInstance createStoppedExecution(
-            ChatRunEntity run, ChatSessionEntity session, boolean noPendingConfirmation) {
-        if (noPendingConfirmation) {
+            ChatRunEntity run, ChatSessionEntity session, boolean noPendingInteraction) {
+        if (noPendingInteraction) {
             return instanceFactory.createTerminalOnly(run, session, scheduler);
         }
         try {
-            // HITL 已暂停且没有活动工具；加载 AgentScope 状态只为补写拒绝结果，避免 ASKING 污染后续对话。
             return instanceFactory.createAgentBacked(run, session, scheduler);
         } catch (RuntimeException stateUnavailable) {
-            log.warn("停止Run时无法清理AgentScope待确认状态，仅提交业务终态: runId={}", run.getId(), stateUnavailable);
+            log.warn("停止Run时无法清理AgentScope待交互状态，仅提交业务终态: runId={}", run.getId(), stateUnavailable);
             return instanceFactory.createTerminalOnly(run, session, scheduler);
+        }
+    }
+
+    /**
+     * 跟踪当前 JVM 的阶段句柄。较旧阶段必须先排空；同一或更新阶段已存在时复用其协调结果。
+     * 这里只协调本地资源，不判断 Run 是否有效，也不参与跨节点赢家裁决。
+     */
+    private LocalPhaseSelection trackLocalPhase(
+            ChatExecutionInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
+        LocalPhaseHandle candidate = new LocalPhaseHandle(execution, permit, activePhaseNo, resumePhase);
+        while (true) {
+            LocalPhaseHandle existing =
+                    activeLocalPhases.putIfAbsent(execution.run().getId(), candidate);
+            if (existing == null) {
+                execution.localPhaseDrainedSignal().whenComplete((ignored, failure) -> releaseLocalPhase(candidate));
+                return new LocalPhaseSelection(candidate, true);
+            }
+            if (existing.activePhaseNo() < activePhaseNo) {
+                existing.execution()
+                        .localPhaseDrainedSignal()
+                        .toCompletableFuture()
+                        .join();
+                releaseLocalPhase(existing);
+                continue;
+            }
+            permit.close();
+            return new LocalPhaseSelection(existing, false);
+        }
+    }
+
+    /** 按句柄身份摘除本地阶段并幂等释放容量许可。 */
+    private void releaseLocalPhase(LocalPhaseHandle handle) {
+        activeLocalPhases.remove(handle.execution().run().getId(), handle);
+        handle.permit().close();
+    }
+
+    private record LocalPhaseSelection(LocalPhaseHandle handle, boolean created) {}
+
+    /** 当前 JVM 单个执行阶段的资源句柄；不持久化，也不表达 Run 所有权。 */
+    private static final class LocalPhaseHandle {
+
+        private final ChatExecutionInstance execution;
+        private final Permit permit;
+        private final int activePhaseNo;
+        private final CompletableFuture<ConfirmTransition> resumeTransition;
+
+        private LocalPhaseHandle(
+                ChatExecutionInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
+            this.execution = execution;
+            this.permit = permit;
+            this.activePhaseNo = activePhaseNo;
+            this.resumeTransition = resumePhase ? new CompletableFuture<>() : null;
+        }
+
+        private ChatExecutionInstance execution() {
+            return execution;
+        }
+
+        private Permit permit() {
+            return permit;
+        }
+
+        private int activePhaseNo() {
+            return activePhaseNo;
+        }
+
+        private CompletableFuture<ConfirmTransition> resumeTransition() {
+            return resumeTransition;
+        }
+
+        private void completeResume(ConfirmTransition transition) {
+            if (resumeTransition != null) {
+                resumeTransition.complete(transition);
+            }
+        }
+
+        private void failResume(RuntimeException failure) {
+            if (resumeTransition != null) {
+                resumeTransition.completeExceptionally(failure);
+            }
         }
     }
 }

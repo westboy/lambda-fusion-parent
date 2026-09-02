@@ -59,6 +59,7 @@ public final class ChatExecutionInstance {
     private final ScheduledExecutorService scheduler;
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
     private final CompletableFuture<Void> drainedSignal = new CompletableFuture<>();
+    private final CompletableFuture<Void> localPhaseDrainedSignal = new CompletableFuture<>();
     private final ChatExecutionFinalizer chatExecutionFinalizer;
     private final AgentStreamLifecycle agentStreamLifecycle;
 
@@ -307,7 +308,9 @@ public final class ChatExecutionInstance {
             agentStreamLifecycle.cancelInteractionTimeout();
             throw subscribeFailure;
         }
-        if (terminal) {
+        if (terminal && !rootAgentEnded) {
+            // 停止、超时或同步失败发生在回答边界前时不保留源流；若根 AGENT_END 在 subscribe
+            // 返回前同步到达，仍须接管订阅，让随后记忆/维护尾部自然排空。
             next.dispose();
         } else {
             agentStreamLifecycle.adopt(next);
@@ -394,8 +397,9 @@ public final class ChatExecutionInstance {
 
     /**
      * AgentScope 源流完成、失败或取消后的统一收尾。此时沙箱已释放，方法先执行当前阶段的工作区审计，
-     * 再把正常完成的 HITL 阶段提交为待交互（确认/输入）。只有最终业务终态才完成实例 {@code drainedSignal}；
-     * 待交互阶段保留实例，交互请求随后可立即启动下一阶段。
+     * 再把正常完成的 HITL 阶段提交为待交互（确认/输入）。当前执行阶段收尾后完成
+     * {@code localPhaseDrainedSignal}，供协调器释放本节点句柄与容量；只有最终业务终态才完成实例
+     * {@code drainedSignal}。后续 HITL 请求从持久化状态构造新的阶段实例。
      */
     private synchronized void onSourceTerminated() {
         sourceActive = false;
@@ -416,6 +420,7 @@ public final class ChatExecutionInstance {
             // 最终阶段已提交业务终态，源流排空后即可完成实例级排空信号。
             drainedSignal.complete(null);
         }
+        localPhaseDrainedSignal.complete(null);
     }
 
     /** 源流排空后审计当前阶段的工作区变更；审计失败不回滚业务终态。 */
@@ -569,6 +574,7 @@ public final class ChatExecutionInstance {
             // 否则等待 onSourceTerminated 在源流排空后完成它。
             if (isSourceTerminated()) {
                 drainedSignal.complete(null);
+                localPhaseDrainedSignal.complete(null);
             }
         } catch (RuntimeException finalizeFailure) {
             handleFinalizeFailure(status, reason, errorCode, errorMessage, finalizeFailure);
@@ -600,6 +606,7 @@ public final class ChatExecutionInstance {
             terminal = true;
             if (isSourceTerminated()) {
                 drainedSignal.complete(null);
+                localPhaseDrainedSignal.complete(null);
             }
             return;
         }
@@ -619,11 +626,17 @@ public final class ChatExecutionInstance {
         return failure instanceof IllegalStateException;
     }
 
-    /**
-     * 排空信号：最终阶段源流与后处理全部结束时完成，协调器订阅以摘除注册表项；未注册实例无人订阅。
-     */
+    /** 排空信号：最终业务阶段的源流与后处理全部结束时完成。 */
     public CompletionStage<Void> drainedSignal() {
         return drainedSignal;
+    }
+
+    /**
+     * 本地阶段排空信号：本实例承载的源流及其后处理结束时完成；无源流的终结实例在终态提交后完成。
+     * 该信号只用于释放当前 JVM 的执行句柄和容量，不表达业务 Run 终态。
+     */
+    CompletionStage<Void> localPhaseDrainedSignal() {
+        return localPhaseDrainedSignal;
     }
 
     /** 生成当前运行的 AG-UI 引导事件。 */
@@ -661,6 +674,7 @@ public final class ChatExecutionInstance {
         checkpointDirty = false;
         if (isSourceTerminated()) {
             drainedSignal.complete(null);
+            localPhaseDrainedSignal.complete(null);
         }
     }
 

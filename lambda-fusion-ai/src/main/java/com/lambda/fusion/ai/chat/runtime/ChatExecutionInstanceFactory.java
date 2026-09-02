@@ -18,8 +18,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 执行实例工厂：统一构造 {@link ChatExecutionInstance}。带 Agent 的实例只用于新 Run 或持久化 HITL 的显式继续，
- * 无 Agent 的纯落库实例仅用于终结；构造依赖集中在工厂，调度器由协调器按次传入，
- * 活动实例注册表由协调器的注册表组件独占，工厂不持有、查询或修改。
+ * 无 Agent 的纯落库实例仅用于终结。工厂只组装对象，不登记本地执行状态或事件缓冲；本地阶段句柄与
+ * 容量生命周期由协调器管理。
  *
  * @author Jin
  */
@@ -35,7 +35,7 @@ public class ChatExecutionInstanceFactory {
     private final AiProperties properties;
 
     /**
-     * 构造带 Agent 的完整执行实例，并把该 Run 注册为本地活跃运行。
+     * 构造带 Agent 的完整执行实例。
      *
      * <p>适用场景：新 Run 启动，或为已持久化在 HITL 边界的 Run 重建本地确认上下文
      * （仅在用户显式确认或停止时调用）。构造时获取或构建 Agent，并完成子智能体网关装配；
@@ -48,7 +48,6 @@ public class ChatExecutionInstanceFactory {
      */
     public ChatExecutionInstance createAgentBacked(
             ChatRunEntity run, ChatSessionEntity session, ScheduledExecutorService scheduler) {
-        eventStore.registerLocalRun(run.getId());
         return newInstance(run, session, scheduler, createAgentExecution(run, session));
     }
 

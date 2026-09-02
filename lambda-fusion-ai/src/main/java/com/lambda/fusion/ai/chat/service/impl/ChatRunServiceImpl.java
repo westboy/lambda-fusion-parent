@@ -12,7 +12,6 @@ import com.lambda.fusion.ai.chat.model.ChatRun;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationCommand;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
 import com.lambda.fusion.ai.chat.model.ConfirmTransition;
-import com.lambda.fusion.ai.chat.model.MediaGenerationRequest;
 import com.lambda.fusion.ai.chat.model.RunContext;
 import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
@@ -25,7 +24,6 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
-import com.lambda.fusion.ai.chat.service.MediaGenerationPromptBuilder;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.core.service.AbstractCrudService;
@@ -68,7 +66,6 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
     private final ChatSessionService sessionService;
     private final ChatMessageService messageService;
     private final ChatAttachmentService attachmentService;
-    private final MediaGenerationPromptBuilder mediaGenerationPromptBuilder;
     /**
      * 幂等创建或加载运行：同一 {@code clientRequestId} 复用已有记录并校验 {@code requestHash} 一致，
      * 否则在会话无活动运行时创建新 Run、保存用户消息并绑定附件。
@@ -90,7 +87,6 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             requireSameRequest(existing, requestHash);
             return new RunContext(existing, session, false);
         }
-        String agentPrompt = mediaGenerationPromptBuilder.build(message.getContent(), message.getMediaGeneration());
         // 同一会话只允许一个活动运行，避免多个执行上下文竞争状态槽。
         ChatRunEntity active = findActive(sessionId);
         if (active != null) {
@@ -127,7 +123,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .eq(ChatSessionEntity::getId, sessionId)
                         .set(ChatSessionEntity::getLastMessageAt, now)
                         .set(ChatSessionEntity::getUpdatedAt, now));
-        return new RunContext(run, session, true, agentPrompt);
+        return new RunContext(run, session, true);
     }
 
     /** 查询当前用户拥有的会话下唯一活跃 Run。 */
@@ -416,17 +412,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         StringBuilder canonical = new StringBuilder();
         appendHashPart(canonical, StringUtils.defaultString(message.getContent()));
         attachments.forEach(attachment -> appendHashPart(canonical, attachment));
-        appendMediaGenerationHash(canonical, message.getMediaGeneration());
         return sha256(canonical.toString());
-    }
-
-    /** 将界面媒体意图纳入幂等摘要。具体生成参数已经包含在消息正文中。 */
-    private static void appendMediaGenerationHash(StringBuilder target, MediaGenerationRequest media) {
-        if (media == null) {
-            appendHashPart(target, "media:none");
-            return;
-        }
-        appendHashPart(target, "media:" + StringUtils.defaultString(media.getKind()));
     }
 
     /** 以 {@code 长度:值} 形式追加一段，防止不同分段拼接出相同哈希。 */

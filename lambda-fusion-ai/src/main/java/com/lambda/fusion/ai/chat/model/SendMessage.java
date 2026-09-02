@@ -1,7 +1,6 @@
 package com.lambda.fusion.ai.chat.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -25,19 +24,9 @@ public class SendMessage {
     @Size(max = 10, message = "附件数量超限")
     private List<@NotBlank(message = "附件ID不能为空") String> attachmentIds;
 
-    @Valid
-    @Schema(description = "用户显式发起的媒体生成请求；为空时按普通对话处理")
-    private MediaGenerationRequest mediaGeneration;
-
     @AssertTrue(message = "消息内容与附件不能同时为空")
     @Schema(hidden = true)
     public boolean isContentOrAttachmentPresent() {
         return StringUtils.isNotBlank(content) || (attachmentIds != null && !attachmentIds.isEmpty());
-    }
-
-    @AssertTrue(message = "媒体生成请求必须提供文本内容")
-    @Schema(hidden = true)
-    public boolean isMediaGenerationPromptPresent() {
-        return mediaGeneration == null || StringUtils.isNotBlank(content);
     }
 }

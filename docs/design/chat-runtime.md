@@ -26,6 +26,7 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 | `ai_chat_message` | 用户可见的产品对话历史、附件关联、权限查询和审计 | 长期保存 |
 | `ai_chat_run` | 一次请求的业务身份、幂等键、四态终态和运行中 UI 投影 | Run 记录长期保存；快照仅 RUNNING |
 | 当前 JVM 事件缓冲 | 把实时 AG-UI 事件送给当前订阅者，并消除“快照后、订阅前”的极短竞态 | 仅进程内；终态后短期释放 |
+| 当前 JVM 阶段句柄 | 本地 stop、内存引导与容量释放；不是 Run 注册表或所有权记录 | 单个 Agent 源流及尾处理结束即释放 |
 
 `ai_chat_message` 不是 AgentScope memory 的副本。前者服务产品历史、附件、租户权限、分页和审计；
 后者服务模型执行，允许被裁剪、摘要或采用不同存储结构。两者不能互相替代。
@@ -54,8 +55,8 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 ### 4.1 创建与执行
 
 1. `POST /v1/ai/sessions/{sessionId}/chat` 以 `clientRequestId` 幂等创建 Run 和用户消息。
-2. 当前应用节点注册一个本地 `ChatExecutionInstance`，通过 Harness `streamEvents()` 订阅细粒度
-   `AgentEvent`。
+2. 当前应用节点预占一个本地容量许可，并在后台执行器构造本阶段 `ChatExecutionInstance`；句柄只服务
+   本阶段的本地控制，通过 Harness `streamEvents()` 订阅细粒度 `AgentEvent`。
 3. 薄适配器把 `AgentEvent` 映射成 AgentScope 官方 `AguiEvent`。
 4. 同一批 `AguiEvent` 同时送往前端和运行中快照投影器；禁止再维护一套独立的
    `AgentEvent -> SnapshotDelta` 解释逻辑。
@@ -92,7 +93,8 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源：
 1. 映射器输出标准 `RUN_FINISHED` interrupt；
 2. 快照投影器从同一事件生成 `pendingTools`；
 3. 数据库快照提交成功后才向订阅者发布 interrupt；
-4. `/confirm` 若发现本地实例因进程重启丢失，只在持久化快照确有 `pendingTools` 时重建确认实例；
+4. 每个 HITL 阶段源流排空后释放本地阶段句柄；`/confirm` 只在持久化快照确有 `pendingTools` 时，
+   从 Run 快照与 AgentState 构造下一阶段实例；
 5. 根据 `phaseNo`、快照工具 ID 与 AgentScope 当前 ASKING 工具三方校验；
 6. 校验成功后进入下一 phase，ChatRun 持久化状态仍为 `RUNNING`。
 
@@ -132,6 +134,9 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源：
 - 数据库保证业务幂等、终态 CAS 和浏览器可见的最近快照；
 - AgentScope 负责底层 Agent 状态、memory、工具确认与其自身支持的分布式组件；
 - Lambda Fusion 不实现 owner、epoch、lease、heartbeat、fencing、节点发现、远程停止或故障接管。
+
+本地阶段句柄和容量许可不是节点所有权协议。请求节点没有句柄时只能读取数据库快照，禁止据此把
+`RUNNING` 判定为孤儿或改写为失败；是否进入终态只由显式停止、执行结果及数据库 CAS 决定。
 
 显式 HITL 确认不属于故障接管：只有持久化快照存在待确认工具、AgentScope 状态仍为 `ASKING` 且用户主动
 提交决策时，才允许在请求节点开始下一阶段。没有后台扫描器，也不会自动执行或重放工具。

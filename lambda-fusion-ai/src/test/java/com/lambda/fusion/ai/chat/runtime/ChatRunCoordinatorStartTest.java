@@ -38,8 +38,12 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -101,6 +105,8 @@ class ChatRunCoordinatorStartTest {
         when(agentFactory.getOrBuildForChatRun(session.getAppId(), session.getTenantId()))
                 .thenReturn(agent);
         when(agent.getDelegate()).thenReturn(mock(ReActAgent.class));
+        when(runService.loadCurrentOrIdentity(any(ChatRunEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         Sinks.Many<AgentEvent> firstSource = Sinks.many().unicast().onBackpressureBuffer();
         Sinks.Many<AgentEvent> secondSource = Sinks.many().unicast().onBackpressureBuffer();
@@ -120,7 +126,7 @@ class ChatRunCoordinatorStartTest {
                         anyString(), anyString(), any(AguiEvent.class), anyString(), anyString()))
                 .thenReturn(new ChatRunEvent(1L, "RUN_FINISHED", "{}"));
 
-        coordinator.start(first, session, null);
+        coordinator.start(first, session);
         verify(agent, timeout(1000)).streamEvents(any(Msg.class), any(RuntimeContext.class));
 
         assertThat(firstSource.tryEmitNext(new AgentEndEvent("reply-1")).isSuccess())
@@ -129,16 +135,57 @@ class ChatRunCoordinatorStartTest {
         assertThat(first.getStatus()).isEqualTo(ChatRunStatus.COMPLETED.name());
 
         // firstSource 未 complete，模拟 MemoryFlush / MemoryMaintenance 仍在运行。
-        coordinator.start(second, session, null);
+        coordinator.start(second, session);
 
         verify(agent, timeout(1000).times(2)).streamEvents(any(Msg.class), any(RuntimeContext.class));
         assertThat(second.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
 
         assertThat(secondSource.tryEmitNext(new AgentEndEvent("reply-2")).isSuccess())
                 .isTrue();
-        assertThat(firstSource.tryEmitComplete().isSuccess()).isTrue();
-        assertThat(secondSource.tryEmitComplete().isSuccess()).isTrue();
+        assertThat(firstSource.tryEmitComplete()).isEqualTo(Sinks.EmitResult.OK);
+        assertThat(secondSource.tryEmitComplete()).isEqualTo(Sinks.EmitResult.OK);
         verify(runService, timeout(1000)).finalizeExecution(eq(second), any(ChatRunFinalizationCommand.class));
+    }
+
+    @Test
+    void shouldConstructAgentOutsideCallingThread() throws Exception {
+        ChatRunStateService runService = mock(ChatRunStateService.class);
+        ChatRunEventStore eventStore = mock(ChatRunEventStore.class);
+        ChatMessageService messageService = mock(ChatMessageService.class);
+        ChatExecutionInstanceFactory instanceFactory = mock(ChatExecutionInstanceFactory.class);
+        ChatExecutionInstance execution = mock(ChatExecutionInstance.class);
+        ChatRunEntity run = run("run-1", 1L);
+        ChatSessionEntity session = session();
+        CountDownLatch constructionStarted = new CountDownLatch(1);
+        CountDownLatch releaseConstruction = new CountDownLatch(1);
+        when(execution.run()).thenReturn(run);
+        when(execution.localPhaseDrainedSignal()).thenReturn(new CompletableFuture<>());
+        when(runService.loadCurrentOrIdentity(run)).thenReturn(run);
+        when(messageService.findByIdAndSession(run.getUserMessageId(), run.getSessionId()))
+                .thenReturn(Optional.empty());
+        when(instanceFactory.createAgentBacked(eq(run), eq(session), any())).thenAnswer(invocation -> {
+            constructionStarted.countDown();
+            releaseConstruction.await();
+            return execution;
+        });
+        coordinator = new ChatExecutionService(
+                runService,
+                eventStore,
+                messageService,
+                mock(ChatAttachmentService.class),
+                mock(ChatAttachmentMessageBuilder.class),
+                mock(AppService.class),
+                instanceFactory,
+                new AiProperties());
+
+        CompletableFuture<Void> caller = CompletableFuture.runAsync(() -> coordinator.start(run, session));
+        try {
+            assertThat(constructionStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(caller).succeedsWithin(Duration.ofSeconds(1));
+        } finally {
+            releaseConstruction.countDown();
+        }
+        verify(execution, timeout(3000)).finalizeFailed(any(), anyString());
     }
 
     private static ChatRunEntity run(String id, long userMessageId) {

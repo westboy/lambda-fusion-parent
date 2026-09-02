@@ -100,7 +100,7 @@
 应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enabled`。CRUD 端点 `/v1/ai/apps`（ROLE_DEV，平台 ISV 管理全局能力）；用户可用应用 `GET /v1/ai/apps/available`（登录，按 audience+角色/owner 过滤）。`appType` 创建后不可变；其余字段可调。
 
 ### 媒体生成
-- 前端 `mediaGeneration` 只提交 `image` / `video` / `audio` 类型，具体要求保留在原始消息正文中；模型在统一 ReAct 链路里依据真实 ToolSchema 自主选工具和参数，不按应用绑定强制路由。
+- 对话接口没有媒体专用请求字段或前端创作控件；图片、视频、语音请求均作为普通用户消息进入统一 ReAct 链路，模型依据真实 ToolSchema 自主选择工具和填写参数。
 - `ToolkitAssembler` 为 Web Chat 和 Channel 构建不同工具集：Web Chat 可挂载应用绑定的 AgentScope 官方媒体工具和配置独立、默认关闭的 `qwen_text_to_image`；Channel 不暴露依赖 ChatRun/附件物化的工具。知识库、本地、媒体和 MCP 等全部已注册来源最后统一受应用 `toolsAllow` / `toolsDeny` 控制。
 - 官方 `ImageBlock` / `VideoBlock` / `AudioBlock` 结果由统一媒体物化链路写入 AI 文件存储（LOCAL / OSS）。客户端接收平台附件 `DataBlock` 和签名预览地址；模型侧结果由平台重新构造，只包含稳定 attachmentId，不透传供应商文本、metadata、临时 URL 或平台签名 URL。
 

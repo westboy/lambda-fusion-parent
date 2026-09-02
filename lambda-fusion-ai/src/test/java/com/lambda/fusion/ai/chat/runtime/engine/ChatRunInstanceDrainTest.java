@@ -149,6 +149,7 @@ class ChatRunInstanceDrainTest {
         assertThat(instance.run().getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         assertThat(instance.bootstrap().phaseClosed()).isTrue();
         assertThat(instance.drainedSignal().toCompletableFuture()).isNotDone();
+        assertThat(instance.localPhaseDrainedSignal().toCompletableFuture()).isDone();
         verify(runService).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class));
         verify(workspaceAuditRecorder).recordChanges(eq(instance.session()), anyLong());
     }
@@ -172,6 +173,7 @@ class ChatRunInstanceDrainTest {
         assertThat(instance.run().getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         assertThat(instance.bootstrap().phaseClosed()).isTrue();
         assertThat(instance.drainedSignal().toCompletableFuture()).isNotDone();
+        assertThat(instance.localPhaseDrainedSignal().toCompletableFuture()).isDone();
         verify(runService, never()).finalizeExecution(any(), any());
     }
 
