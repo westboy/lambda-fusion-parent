@@ -69,6 +69,9 @@ public final class ChatExecutionInstance {
     private final ChatExecutionSnapshotBuilder accumulator;
     private boolean rootAgentEnded;
     private boolean terminal;
+    /** 终态 DB 提交进行中：提交已移出实例锁，此标志在锁内封住 confirm/submitInput 的推进窗口。 */
+    private boolean finalizeCommitInProgress;
+
     private boolean sourceActive;
     private int finalizeAttempts;
     private int fallbackFinalizeAttempts;
@@ -154,6 +157,8 @@ public final class ChatExecutionInstance {
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
         if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
                 || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
+                || awaitingInteraction
+                || finalizeCommitInProgress
                 || snapshot.pendingTools().isEmpty()
                 || sourceActive) {
             throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
@@ -197,6 +202,8 @@ public final class ChatExecutionInstance {
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
         if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
                 || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
+                || awaitingInteraction
+                || finalizeCommitInProgress
                 || snapshot.pendingInputs().isEmpty()
                 || sourceActive) {
             throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
@@ -320,11 +327,16 @@ public final class ChatExecutionInstance {
 
     /** 仅在根 {@code AGENT_END} 尚未到达时处理中断，避免误伤后续记忆尾部。 */
     private void onInteractionTimeout() {
+        boolean finalizeNow = false;
         synchronized (this) {
             if (terminal || rootAgentEnded) {
                 return;
             }
             log.warn("Run交互超时，中断当前phase: runId={}", run.getId());
+            finalizeNow = true;
+        }
+        if (finalizeNow) {
+            // 终态 DB 提交在实例锁外执行。
             finalizeFailed(
                     ChatRunFailureCode.ERROR,
                     "对话运行超过最大时长 " + properties.getChat().getRun().getMaxRunDurationSeconds() + " 秒");
@@ -339,24 +351,36 @@ public final class ChatExecutionInstance {
         agentStreamLifecycle.scheduleForceDispose(() -> runInTenant(agentStreamLifecycle::forceDispose));
     }
 
-    private synchronized void onEvent(AgentEvent event) {
-        if (terminal) {
-            return;
+    private void onEvent(AgentEvent event) {
+        boolean finalizeNow = false;
+        synchronized (this) {
+            if (terminal) {
+                return;
+            }
+            if (event.getType() == AgentEventType.AGENT_END) {
+                if (event.getSource() != null) {
+                    // 子 Agent 结束不代表整个对话运行结束。
+                    return;
+                }
+                // 根 AGENT_END 是业务回答边界；普通阶段允许记忆尾部继续，HITL 阶段由适配器在此结束源流。
+                rootAgentEnded = true;
+                agentStreamLifecycle.cancelInteractionTimeout();
+                if (awaitingInteraction || accumulator.hasPendingInteraction()) {
+                    return;
+                }
+                finalizeNow = true;
+            } else {
+                applyAndAppend(event);
+            }
         }
-        if (event.getType() == AgentEventType.AGENT_END) {
-            if (event.getSource() != null) {
-                // 子 Agent 结束不代表整个对话运行结束。
-                return;
-            }
-            // 根 AGENT_END 是业务回答边界；普通阶段允许记忆尾部继续，HITL 阶段由适配器在此结束源流。
-            rootAgentEnded = true;
-            agentStreamLifecycle.cancelInteractionTimeout();
-            if (awaitingInteraction || accumulator.hasPendingInteraction()) {
-                return;
-            }
+        if (finalizeNow) {
+            // 终态 DB 提交在实例锁外执行。
             finalizeCompleted();
-            return;
         }
+    }
+
+    /** 锁内的事件处理体（非 AGENT_END 分支）：映射、应用快照、广播并按需安排检查点。 */
+    private void applyAndAppend(AgentEvent event) {
         ToolResultMediaReference.attachmentId(event).ifPresent(accumulator::addGeneratedAttachmentId);
         List<AguiEvent> events = eventMapper.map(event);
         if (AgentEventMapper.isInteractionBoundary(event)) {
@@ -375,38 +399,59 @@ public final class ChatExecutionInstance {
         maybeCheckpoint();
     }
 
-    private synchronized void onError(Throwable error) {
-        if (terminal) {
-            // 业务终态后的记忆或维护任务失败不再改变运行结果，仅记录后处理错误。
-            log.warn("Run业务终态后，记忆/维护尾部失败: runId={}", run.getId(), error);
-            return;
+    private void onError(Throwable error) {
+        boolean finalizeNow = false;
+        synchronized (this) {
+            if (terminal) {
+                // 业务终态后的记忆或维护任务失败不再改变运行结果，仅记录后处理错误。
+                log.warn("Run业务终态后，记忆/维护尾部失败: runId={}", run.getId(), error);
+                return;
+            }
+            finalizeNow = true;
         }
-        finalizeFailed(ChatRunFailureCode.ERROR, ChatRunSnapshotSanitizer.safeMessage(error));
+        if (finalizeNow) {
+            // 终态 DB 提交在实例锁外执行。
+            finalizeFailed(ChatRunFailureCode.ERROR, ChatRunSnapshotSanitizer.safeMessage(error));
+        }
     }
 
-    private synchronized void onComplete() {
-        agentStreamLifecycle.clear();
-        if (terminal) {
-            return;
+    private void onComplete() {
+        boolean finalizeNow = false;
+        synchronized (this) {
+            agentStreamLifecycle.clear();
+            if (terminal) {
+                return;
+            }
+            if (awaitingInteraction) {
+                // 待交互状态必须等 doFinally 确认适配后的当前阶段源流已经结束后再提交。
+                return;
+            }
+            finalizeNow = true;
         }
-        if (awaitingInteraction) {
-            // 待交互状态必须等 doFinally 确认适配后的当前阶段源流已经结束后再提交。
-            return;
+        if (finalizeNow) {
+            // 终态 DB 提交在实例锁外执行。
+            finalizeCompleted();
         }
-        finalizeCompleted();
     }
 
     /**
-     * AgentScope 源流完成、失败或取消后的统一收尾。此时沙箱已释放，方法先执行当前阶段的工作区审计，
-     * 再把正常完成的 HITL 阶段提交为待交互（确认/输入）。当前执行阶段收尾后完成
-     * {@code localPhaseDrainedSignal}，供协调器释放本节点句柄与容量；只有最终业务终态才完成实例
-     * {@code drainedSignal}。后续 HITL 请求从持久化状态构造新的阶段实例。
+     * AgentScope 源流完成、失败或取消后的统一收尾。此时沙箱已释放，方法先把正常完成的 HITL 阶段提交为
+     * 待交互（确认/输入），随后在实例锁外执行当前阶段的工作区审计（含应用查询与文件扫描复制 I/O）。
+     * 当前执行阶段收尾后完成 {@code localPhaseDrainedSignal}，供协调器释放本节点句柄与容量；
+     * 只有最终业务终态才完成实例 {@code drainedSignal}。后续 HITL 请求从持久化状态构造新的阶段实例。
      */
-    private synchronized void onSourceTerminated() {
-        sourceActive = false;
-        agentStreamLifecycle.cancelInteractionTimeout();
-        runWorkspaceAudit();
-        if (!terminal && awaitingInteraction) {
+    private void onSourceTerminated() {
+        boolean commitAwait = false;
+        synchronized (this) {
+            sourceActive = false;
+            agentStreamLifecycle.cancelInteractionTimeout();
+            if (!terminal && awaitingInteraction) {
+                commitAwait = true;
+            }
+        }
+        if (commitAwait) {
+            // 待交互提交必须先于用户 confirm 可见（confirm 以 awaitingInteraction 为冲突守卫），
+            // 因此提交仍占用实例锁；HITL 边界每阶段仅一次，锁内短事务可接受。
             try {
                 completeAwaitInteraction();
             } catch (RuntimeException awaitInteractionFailure) {
@@ -417,6 +462,7 @@ public final class ChatExecutionInstance {
                         ChatRunSnapshotSanitizer.safeMessage(awaitInteractionFailure));
             }
         }
+        runWorkspaceAudit();
         if (terminal) {
             // 最终阶段已提交业务终态，源流排空后即可完成实例级排空信号。
             drainedSignal.complete(null);
@@ -438,7 +484,7 @@ public final class ChatExecutionInstance {
         return !sourceActive;
     }
 
-    private void completeAwaitInteraction() {
+    private synchronized void completeAwaitInteraction() {
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
         // 先提交待交互快照，再向本地订阅者发布 interrupt，保证事实先于信号。
         List<AguiEvent> events = pendingInteractionEvents;
@@ -502,63 +548,73 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 延迟检查点到期后的写入回调（实例锁内）：仍无增量、已终态或待交互时放弃，
-     * 写入失败时重新调度，依赖实例自驱重试而非全局扫描。
+     * 延迟检查点到期后的写入回调：仍无增量、已终态或待交互时放弃；快照 CAS 写入在实例锁外执行，
+     * 失败时重新调度，依赖实例自驱重试而非全局扫描。
      */
-    private synchronized void checkpointIfDirty() {
-        checkpointTask = null;
-        if (!checkpointDirty || terminal || accumulator.hasPendingInteraction()) {
-            return;
+    private void checkpointIfDirty() {
+        synchronized (this) {
+            checkpointTask = null;
+            if (!checkpointDirty || terminal || accumulator.hasPendingInteraction()) {
+                return;
+            }
         }
         try {
             checkpointNow();
         } catch (RuntimeException checkpointFailure) {
             log.warn("Run延迟检查点写入失败，将由实例重试: runId={}", run.getId(), checkpointFailure);
-            scheduleCheckpoint();
+            synchronized (this) {
+                scheduleCheckpoint();
+            }
         }
     }
 
     /** 将运行终结为完成状态。 */
-    synchronized void finalizeCompleted() {
+    void finalizeCompleted() {
         finalizeTerminal(ChatRunStatus.COMPLETED, ChatRunFinishReason.SUCCESS, null, null);
     }
 
     /** 将运行终结为停止状态。 */
-    synchronized void finalizeStopped() {
+    void finalizeStopped() {
         finalizeTerminal(ChatRunStatus.STOPPED, ChatRunFinishReason.USER_STOP, null, null);
     }
 
     /** 将运行终结为失败状态。 */
-    public synchronized void finalizeFailed(ChatRunFailureCode errorCode, String errorMessage) {
+    public void finalizeFailed(ChatRunFailureCode errorCode, String errorMessage) {
         finalizeTerminal(ChatRunStatus.FAILED, ChatRunFinishReason.ERROR, errorCode, errorMessage);
     }
 
     /**
-     * 终态提交的唯一入口：置终态标志、取消检查点任务并清理待确认中间态，
-     * 依次关闭打开的消息流、写入关闭事件，最后提交业务终态与最终快照。
+     * 终态提交的唯一入口：实例锁内完成状态翻转、检查点取消与快照闭合，随后把数据库终态提交
+     * （含消息/附件投影与会话行锁等待）移到实例锁外执行，提交结束后回锁同步排空信号。
      *
-     * <p>非 COMPLETED 终态会通过适配器拒绝未决的工具调用（denyPendingToolCalls）。数据库提交失败交给
-     * {@code handleFinalizeFailure} 退避重试；成功且无活动源流时立即完成排空信号，
-     * 否则由 {@code onSourceTerminated} 在源流排空后完成。
+     * <p>锁外提交窗口内，{@code confirm}/{@code submitInput} 由 {@code finalizeCommitInProgress}
+     * 拦截为状态冲突；数据库行锁保证终态与并发状态迁移的最终串行。非 COMPLETED 终态会通过适配器
+     * 拒绝未决的工具调用（denyPendingToolCalls）。数据库提交失败交给 {@code handleFinalizeFailure}
+     * 退避重试；成功且无活动源流时立即完成排空信号，否则由 {@code onSourceTerminated} 在源流排空后完成。
+     *
+     * <p>注意：从持有实例锁的调用方（如 confirm 的 startPhase 失败路径）进入时，monitor 可重入导致
+     * 提交实际仍在锁内执行——该路径低频（仅启动失败），可接受。
      *
      * @param status 终态状态
      * @param reason 结束原因
      * @param errorCode 失败码；非 FAILED 终态为 {@code null}
      * @param errorMessage 失败消息；非 FAILED 终态为 {@code null}
      */
-    private synchronized void finalizeTerminal(
+    private void finalizeTerminal(
             ChatRunStatus status, ChatRunFinishReason reason, ChatRunFailureCode errorCode, String errorMessage) {
-        if (terminal) {
-            return;
-        }
-        terminal = true;
-        cancelCheckpointTask();
-        awaitingInteraction = false;
-        pendingInteractionEvents = null;
-        if (status != ChatRunStatus.COMPLETED) {
-            closePendingToolCalls();
-        }
-        try {
+        ChatRunSnapshot snapshot;
+        synchronized (this) {
+            if (terminal || finalizeCommitInProgress) {
+                return;
+            }
+            terminal = true;
+            finalizeCommitInProgress = true;
+            cancelCheckpointTask();
+            awaitingInteraction = false;
+            pendingInteractionEvents = null;
+            if (status != ChatRunStatus.COMPLETED) {
+                closePendingToolCalls();
+            }
             List<AguiEvent> closeEvents = eventMapper.closeOpenMessages();
             // 先应用快照增量、后写关闭事件：appendAll 可能触发 checkpointNow，
             // 必须保证检查点读到的是已关闭快照，而非「事件已关闭、快照仍打开」。
@@ -569,22 +625,32 @@ public final class ChatExecutionInstance {
             } catch (RuntimeException closeEventFailure) {
                 log.warn("Run终结前内容关闭事件写入失败，仍继续提交业务终态: runId={}", run.getId(), closeEventFailure);
             }
-            chatExecutionFinalizer.commitTerminal(
-                    run, accumulator.buildSnapshot(), status, reason, errorCode, errorMessage);
-            // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
-            // 否则等待 onSourceTerminated 在源流排空后完成它。
-            if (isSourceTerminated()) {
-                drainedSignal.complete(null);
-                localPhaseDrainedSignal.complete(null);
-            }
+            snapshot = accumulator.buildSnapshot();
+        }
+        try {
+            chatExecutionFinalizer.commitTerminal(run, snapshot, status, reason, errorCode, errorMessage);
         } catch (RuntimeException finalizeFailure) {
             handleFinalizeFailure(status, reason, errorCode, errorMessage, finalizeFailure);
+            return;
+        }
+        completeTerminalAfterCommit();
+    }
+
+    /** 终态 DB 提交成功后的回锁收尾：清提交标志，并在无活动源流时完成排空信号。 */
+    private synchronized void completeTerminalAfterCommit() {
+        finalizeCommitInProgress = false;
+        // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
+        // 否则等待 onSourceTerminated 在源流排空后完成它。
+        if (isSourceTerminated()) {
+            drainedSignal.complete(null);
+            localPhaseDrainedSignal.complete(null);
         }
     }
 
     /**
      * 完整终态提交失败后的重试决策：确定性的投影错误直接走最小失败终结；瞬时错误只有限重试，
      * 耗尽后同样降级，避免附件冲突等错误反复占用调度线程并让数据库长期停留在 RUNNING。
+     * 在实例锁外调用（DB 提交已移出锁），仅在重置终态标志与调度重试时短暂回锁。
      */
     private void handleFinalizeFailure(
             ChatRunStatus status,
@@ -592,9 +658,14 @@ public final class ChatExecutionInstance {
             ChatRunFailureCode errorCode,
             String errorMessage,
             RuntimeException finalizeFailure) {
-        terminal = false;
-        int attempt = ++finalizeAttempts;
-        boolean permanent = isPermanentFinalizeFailure(finalizeFailure);
+        int attempt;
+        boolean permanent;
+        synchronized (this) {
+            terminal = false;
+            finalizeCommitInProgress = false;
+            attempt = ++finalizeAttempts;
+            permanent = isPermanentFinalizeFailure(finalizeFailure);
+        }
         if (permanent || attempt >= MAX_PROJECTION_FINALIZE_ATTEMPTS) {
             log.error(
                     "对话Run完整终结失败，切换最小失败终结: runId={}, attempt={}, permanent={}",
@@ -617,27 +688,38 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 不再执行助手消息和附件投影，仅把仍处于活动态的 Run 提交为 FAILED。最小终结若遇数据库瞬时故障，
-     * 会以最多 30 秒的退避持续重试，由当前执行实例在数据库恢复后收敛。
+     * 不再执行助手消息和附件投影，仅把仍处于活动态的 Run 提交为 FAILED。锁内完成状态准备后，
+     * 最小失败的 DB 提交在实例锁外执行；提交遇数据库瞬时故障时以最多 30 秒的退避持续重试，
+     * 由当前执行实例在数据库恢复后收敛。
      */
-    private synchronized void finalizeFailureWithoutProjection(RuntimeException projectionFailure) {
-        if (terminal) {
-            return;
+    private void finalizeFailureWithoutProjection(RuntimeException projectionFailure) {
+        String fallbackMessage;
+        synchronized (this) {
+            if (terminal) {
+                return;
+            }
+            terminal = true;
+            finalizeCommitInProgress = true;
+            cancelCheckpointTask();
+            awaitingInteraction = false;
+            pendingInteractionEvents = null;
+            closePendingToolCalls();
+            fallbackMessage = "对话结果终结失败: " + ChatRunSnapshotSanitizer.safeMessage(projectionFailure);
         }
-        terminal = true;
-        cancelCheckpointTask();
-        awaitingInteraction = false;
-        pendingInteractionEvents = null;
-        closePendingToolCalls();
-        String fallbackMessage = "对话结果终结失败: " + ChatRunSnapshotSanitizer.safeMessage(projectionFailure);
         try {
             chatExecutionFinalizer.commitFailureWithoutProjection(run, ChatRunFailureCode.ERROR, fallbackMessage);
-            if (isSourceTerminated()) {
-                drainedSignal.complete(null);
-                localPhaseDrainedSignal.complete(null);
-            }
         } catch (RuntimeException fallbackFailure) {
+            handleFallbackCommitFailure(projectionFailure, fallbackFailure);
+            return;
+        }
+        completeTerminalAfterCommit();
+    }
+
+    /** 最小失败终结的 DB 提交失败后的重试决策：在实例锁外调用，仅在标志重置与调度重试时短暂回锁。 */
+    private void handleFallbackCommitFailure(RuntimeException projectionFailure, RuntimeException fallbackFailure) {
+        synchronized (this) {
             terminal = false;
+            finalizeCommitInProgress = false;
             int attempt = ++fallbackFinalizeAttempts;
             boolean persistedTerminal = ChatRunStatus.isTerminal(run.getStatus());
             boolean permanent = !persistedTerminal && isPermanentFinalizeFailure(fallbackFailure);
@@ -702,14 +784,25 @@ public final class ChatExecutionInstance {
                 ChatRunStatus.isTerminal(run.getStatus()) || accumulator.hasPendingInteraction());
     }
 
-    /** 立即写入执行检查点并收缩事件缓冲区。抛 {@link IllegalStateException} 表示非终态运行的检查点失败。 */
-    synchronized void checkpointNow() {
-        cancelCheckpointTask();
-        if (runService.checkpoint(run, accumulator.buildSnapshot())) {
-            checkpointDirty = false;
+    /**
+     * 立即写入执行检查点并收缩事件缓冲区。抛 {@link IllegalStateException} 表示非终态运行的检查点失败。
+     * 实例锁内仅构建快照，快照 CAS 写入在实例锁外执行（写库期间新到事件会再次置脏并安排后续检查点）。
+     */
+    void checkpointNow() {
+        ChatRunSnapshot snapshot;
+        synchronized (this) {
+            cancelCheckpointTask();
+            snapshot = accumulator.buildSnapshot();
+        }
+        if (runService.checkpoint(run, snapshot)) {
+            synchronized (this) {
+                checkpointDirty = false;
+            }
             return;
         }
-        adoptExternalTerminalIfRejected("Run快照检查点未写入: ");
+        synchronized (this) {
+            adoptExternalTerminalIfRejected("Run快照检查点未写入: ");
+        }
     }
 
     /**
@@ -752,28 +845,38 @@ public final class ChatExecutionInstance {
         }
     }
 
-    /** 取消活动事件流并终结运行。dispose 出锁以避免取消回调回流死锁，DB 终态迁移在锁内完成。 */
+    /**
+     * 取消活动事件流并终结运行。dispose 出锁以避免取消回调回流死锁，DB 终态迁移在锁外完成。
+     */
     public void forceStopIfRunning() {
         agentStreamLifecycle.forceDispose();
         finalizeStopped();
     }
 
     /**
-     * 在实例锁内直接提交 STOPPED；数据库终态阻止迟到完成结果覆盖。若本地源流仍活动，返回 true 供协调器
-     * 在锁外做协作式中断。
+     * 提交 STOPPED 终态；数据库终态阻止迟到完成结果覆盖。若本地源流仍活动，返回 true 供协调器
+     * 在锁外做协作式中断。停止前快照与终态的 DB 写入均在实例锁外执行。
      *
      * @return 是否需要协调器在锁外中断活动源流
      */
-    public synchronized boolean requestStop() {
-        if (terminal) {
-            return false;
+    public boolean requestStop() {
+        boolean interruptRequired;
+        synchronized (this) {
+            if (terminal || finalizeCommitInProgress) {
+                return false;
+            }
+            interruptRequired = isRunning();
         }
-        boolean interruptRequired = isRunning();
         if (interruptRequired) {
             try {
                 checkpointNow();
             } catch (RuntimeException checkpointFailure) {
                 log.warn("停止Run前快照写入失败，仍提交停止终态: runId={}", run.getId(), checkpointFailure);
+            }
+        }
+        synchronized (this) {
+            if (terminal) {
+                return false;
             }
         }
         finalizeStopped();
