@@ -57,6 +57,7 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 1. `POST /v1/ai/sessions/{sessionId}/chat` 以 `clientRequestId` 幂等创建 Run 和用户消息。
 2. 当前应用节点预占一个本地容量许可，并在后台执行器构造本阶段 `ChatExecutionInstance`；句柄只服务
    本阶段的本地控制，通过 Harness `streamEvents()` 订阅细粒度 `AgentEvent`。
+3. 上一 Run 业务终态后，其记忆尾部不阻塞下一 Run 启动（安全性依据见 workspace 存储设计第 4 节）。
 3. 薄适配器把 `AgentEvent` 映射成 AgentScope 官方 `AguiEvent`。
 4. 同一批 `AguiEvent` 同时送往前端和运行中快照投影器；禁止再维护一套独立的
    `AgentEvent -> SnapshotDelta` 解释逻辑。
@@ -126,6 +127,18 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源：
 外部工具副作用无法由 ChatRun 撤销。因此节点不可用时系统不得自动接管或自动重放；用户点击
 “放弃并重试”是一次明确选择，副作用敏感工具仍应自行使用业务幂等键。
 
+### 5.1 终结兜底与最小化终态
+
+执行节点终结提交（助手消息、附件投影与终态 CAS）失败时按有限次数退避重试；重试耗尽或遇确定性
+投影错误后，切换到最小化终态提交——不再执行消息与附件投影，仅把仍处非终态的 Run 提交为 `FAILED`
+（错误信息携带终结失败原因），随后以更长退避持续重试直至数据库恢复收敛。任何路径都不得把 Run
+永久留在 `RUNNING` 阻塞会话；投影缺失由产品侧以"失败 Run"呈现，助手消息与附件后续不做部分补齐。
+
+最小化终态是数据行上的一次数据库 CAS，不表达节点所有权：没有心跳、租约、fencing 或节点发现，
+兜底提交不推断"原节点已死"，只表达"该 Run 的业务终结已无法完整完成"。因此本机制不违反第 6 节的
+多节点边界；截断瞬间的外部工具副作用仍由用户显式放弃并重试来收敛。绝对截止时间（`deadline_at`）
+列暂不引入；若未来需要更早的会话解锁，可作为数据属性扩展，同样不属所有权协议。
+
 ## 6. 多节点部署边界
 
 本设计允许部署多个 Lambda Fusion 节点，但每个 Run 仍是单节点执行：
@@ -133,7 +146,8 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源：
 - 负载均衡负责把首次请求分配到一个节点，并尽量对后续 Run 请求保持亲和；
 - 数据库保证业务幂等、终态 CAS 和浏览器可见的最近快照；
 - AgentScope 负责底层 Agent 状态、memory、工具确认与其自身支持的分布式组件；
-- Lambda Fusion 不实现 owner、epoch、lease、heartbeat、fencing、节点发现、远程停止或故障接管。
+- Lambda Fusion 不实现 owner、epoch、lease、heartbeat、fencing、节点发现、远程停止或故障接管；
+  5.1 节的绝对截止时间兜底是数据属性加 CAS，不属上述任何一项。
 
 本地阶段句柄和容量许可不是节点所有权协议。请求节点没有句柄时只能读取数据库快照，禁止据此把
 `RUNNING` 判定为孤儿或改写为失败；是否进入终态只由显式停止、执行结果及数据库 CAS 决定。

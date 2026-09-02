@@ -92,9 +92,12 @@ HOST 模式下，以下 AgentScope 管理内容进入分布式 BaseStore：
   已提交的 ChatRun 业务终态。
 
 同一应用的不同用户允许并发调用模型。Agent 会话状态由 AgentScope 按 `(userId, sessionId)` 保护，Workspace
-共享文件的冲突则由具体文件系统能力或实际写工具的窄临界区处理，不能用应用级全流程串行掩盖。ChatRun 仅按
-同一 Session 的实例级 `drainedSignal` 顺序启动相邻 Run，保证前一 Run 的最终记忆尾部和审计结束后再启动下一条；
-HITL 新 phase 由同一实例在旧 phase 已排空后启动。该非阻塞尾链不是 Workspace 锁，也不会影响同一应用的其他用户。
+共享文件的冲突则由具体文件系统能力或实际写工具的窄临界区处理，不能用应用级全流程串行掩盖。相邻 Run
+立即启动：同一 Session 上一 Run 业务终态后，即使其记忆尾部（记忆冲刷、整理、工作区审计）尚未排空，
+下一 Run 也立即订阅 AgentScope，不等待尾部。该顺序安全的原因是记忆尾部只读取 `AgentState.getContext()`
+的防御性拷贝并写 Workspace 文件，不持有 AgentState 活引用；尾部与下一轮之间不存在共享可变状态，尾部
+失败由 AgentScope 中间件自行降级，不影响业务终态，也不成为下一轮启动的前置条件。HITL 新 phase 由同一
+实例在旧 phase 已排空后启动。该非阻塞关系不是 Workspace 锁，也不会影响同一应用的其他用户。
 
 ## 5. 切换与运维约束
 
