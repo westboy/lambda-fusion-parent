@@ -11,6 +11,8 @@ import com.lambda.cloud.oss.manager.OssClientManager;
 import com.lambda.fusion.ai.AiConstants.WorkspaceStorageType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.channel.service.ChannelConfigService;
+import com.lambda.fusion.ai.chat.attachment.ChatAttachmentOrphanCleaner;
+import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
@@ -131,6 +133,24 @@ public class AiConfigure {
                     config.getModelName(),
                     Duration.ofSeconds(config.getConnectTimeoutSeconds()),
                     Duration.ofSeconds(config.getRequestTimeoutSeconds()));
+        }
+    }
+
+    /** 孤儿对话附件定时回收；默认开启，可用 {@code orphan-cleanup.enabled} 关闭。 */
+    @Configuration
+    @ConditionalOnProperty(
+            prefix = "lambda.fusion.ai.chat.attachment.orphan-cleanup",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    public static class AttachmentOrphanCleanupConfiguration {
+
+        @Bean
+        public ChatAttachmentOrphanCleaner chatAttachmentOrphanCleaner(
+                ChatAttachmentService attachmentService, AiProperties properties) {
+            ChatAttachmentOrphanCleaner cleaner = new ChatAttachmentOrphanCleaner(attachmentService, properties);
+            cleaner.start();
+            return cleaner;
         }
     }
 

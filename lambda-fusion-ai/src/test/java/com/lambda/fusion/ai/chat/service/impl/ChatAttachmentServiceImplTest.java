@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -35,18 +36,26 @@ class ChatAttachmentServiceImplTest {
 
     private ChatAttachmentMapper attachmentMapper;
     private ChatSessionMapper sessionMapper;
+    private AiFileStorageResolver storageResolver;
+    private AiFileStorage storage;
     private ChatAttachmentServiceImpl service;
 
     @BeforeEach
     void setUp() {
         attachmentMapper = mock(ChatAttachmentMapper.class);
         sessionMapper = mock(ChatSessionMapper.class);
+        storage = mock(AiFileStorage.class);
+        storageResolver = mock(AiFileStorageResolver.class);
+        when(storageResolver.resolve("LOCAL")).thenReturn(storage);
+        when(storageResolver.resolve((String) null)).thenReturn(storage);
+        when(storage.type()).thenReturn("LOCAL");
         service = new ChatAttachmentServiceImpl(
                 attachmentMapper,
                 sessionMapper,
-                mock(AiFileStorageResolver.class),
+                storageResolver,
                 new AiProperties(),
-                mock(ChatAttachmentPreviewTokenService.class));
+                mock(ChatAttachmentPreviewTokenService.class),
+                mock(PlatformTransactionManager.class));
     }
 
     @Test
@@ -71,19 +80,8 @@ class ChatAttachmentServiceImplTest {
 
     @Test
     void shouldStoreAndDeleteOfficePreviewWithOriginalAttachment() throws Exception {
-        AiFileStorage storage = mock(AiFileStorage.class);
-        AiFileStorageResolver storageResolver = mock(AiFileStorageResolver.class);
-        when(storageResolver.resolve("LOCAL")).thenReturn(storage);
-        when(storageResolver.resolve((String) null)).thenReturn(storage);
-        when(storage.type()).thenReturn("LOCAL");
         when(storage.store(any(Path.class), anyString(), anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
-        service = new ChatAttachmentServiceImpl(
-                attachmentMapper,
-                sessionMapper,
-                storageResolver,
-                new AiProperties(),
-                mock(ChatAttachmentPreviewTokenService.class));
         Path original = Files.createTempFile("generated-document-", ".docx");
         Path preview = Files.createTempFile("generated-preview-", ".pdf");
         Files.writeString(original, "office");
@@ -121,18 +119,8 @@ class ChatAttachmentServiceImplTest {
         "htm,text/html"
     })
     void shouldClassifyGeneratedUtf8TextAsReadableDocument(String extension, String mimeType) throws Exception {
-        AiFileStorage storage = mock(AiFileStorage.class);
-        AiFileStorageResolver storageResolver = mock(AiFileStorageResolver.class);
-        when(storageResolver.resolve("LOCAL")).thenReturn(storage);
-        when(storage.type()).thenReturn("LOCAL");
         when(storage.store(any(Path.class), anyString(), anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(1));
-        service = new ChatAttachmentServiceImpl(
-                attachmentMapper,
-                sessionMapper,
-                storageResolver,
-                new AiProperties(),
-                mock(ChatAttachmentPreviewTokenService.class));
         Path source = tempDir.resolve("artifact." + extension);
         Files.writeString(source, "UTF-8 文本 " + extension);
 
@@ -144,15 +132,6 @@ class ChatAttachmentServiceImplTest {
 
     @Test
     void shouldDeleteStoredFilesOnlyAfterSessionTransactionCommits() {
-        AiFileStorage storage = mock(AiFileStorage.class);
-        AiFileStorageResolver storageResolver = mock(AiFileStorageResolver.class);
-        when(storageResolver.resolve("LOCAL")).thenReturn(storage);
-        service = new ChatAttachmentServiceImpl(
-                attachmentMapper,
-                sessionMapper,
-                storageResolver,
-                new AiProperties(),
-                mock(ChatAttachmentPreviewTokenService.class));
         ChatAttachmentEntity stored = attachment("session-1", 10L);
         stored.setStorageType("LOCAL");
         stored.setStoragePath("chat/session-1/original.txt");
@@ -177,15 +156,6 @@ class ChatAttachmentServiceImplTest {
 
     @Test
     void shouldKeepStoredFilesWhenSessionTransactionRollsBack() {
-        AiFileStorage storage = mock(AiFileStorage.class);
-        AiFileStorageResolver storageResolver = mock(AiFileStorageResolver.class);
-        when(storageResolver.resolve("LOCAL")).thenReturn(storage);
-        service = new ChatAttachmentServiceImpl(
-                attachmentMapper,
-                sessionMapper,
-                storageResolver,
-                new AiProperties(),
-                mock(ChatAttachmentPreviewTokenService.class));
         ChatAttachmentEntity stored = attachment("session-1", 10L);
         stored.setStorageType("LOCAL");
         stored.setStoragePath("chat/session-1/original.txt");
@@ -204,6 +174,47 @@ class ChatAttachmentServiceImplTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void shouldCompensateRowAndStoredFileWhenGeneratedStoreFails() throws Exception {
+        when(storage.store(any(Path.class), anyString(), anyString())).thenThrow(new IllegalStateException("oss down"));
+        Path source = tempDir.resolve("generated.png");
+        Files.writeString(source, "png");
+
+        assertThatThrownBy(() -> service.storeGenerated("session-1", source, "pic.png", "image/png"))
+                .isInstanceOf(AiBusinessException.class);
+
+        // 存储路径已预置（以附件 ID 命名），补偿删除能定位失败前写入的半成品对象；数据库记录同步删除
+        verify(storage).delete(org.mockito.ArgumentMatchers.endsWith(".png"));
+        verify(attachmentMapper).deleteById(anyString());
+    }
+
+    @Test
+    void shouldPurgeOrphanAttachmentsFilesBeforeRows() {
+        ChatAttachmentEntity orphan = attachment("session-1", null);
+        orphan.setStorageType("LOCAL");
+        orphan.setStoragePath("chat/session-1/orphan.txt");
+        when(attachmentMapper.selectList(any())).thenReturn(List.of(orphan));
+        when(attachmentMapper.deleteById("att-1")).thenReturn(1);
+
+        int purged = service.purgeOrphans(java.time.LocalDateTime.now().minusHours(1), 100);
+
+        assertThat(purged).isEqualTo(1);
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(storage, attachmentMapper);
+        inOrder.verify(storage).delete("chat/session-1/orphan.txt");
+        inOrder.verify(attachmentMapper).deleteById("att-1");
+    }
+
+    @Test
+    void shouldPurgeNothingWhenNoOrphanAttachments() {
+        when(attachmentMapper.selectList(any())).thenReturn(List.of());
+
+        int purged = service.purgeOrphans(java.time.LocalDateTime.now().minusHours(1), 100);
+
+        assertThat(purged).isZero();
+        verifyNoInteractions(storage);
+        verify(attachmentMapper, org.mockito.Mockito.never()).deleteById(anyString());
     }
 
     private static ChatAttachmentEntity attachment(String sessionId, Long messageId) {

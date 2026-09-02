@@ -225,6 +225,34 @@ public class AiProperties {
                 private int maxRedirects = 3;
             }
 
+            /** 孤儿附件定时回收参数。 */
+            @Valid
+            private OrphanCleanup orphanCleanup = new OrphanCleanup();
+
+            /**
+             * 孤儿附件回收参数。孤儿指 {@code message_id IS NULL} 的附件：用户上传后未发送、
+             * 工具生成后未绑定消息或落库与绑定之间发生失败的记录。回收按创建时间判定，先删
+             * 存储文件后删数据库记录，失败留待下一轮重试。
+             */
+            @Data
+            public static class OrphanCleanup {
+
+                /** 是否启用定时回收。 */
+                private boolean enabled = true;
+
+                /** 未绑定附件保留时长，单位小时；超期后由定时任务回收。默认 7 天。 */
+                @Min(1)
+                private int retentionHours = 168;
+
+                /** 单轮回收的最大附件数，防止单轮占用过长。 */
+                @Min(1)
+                private int batchSize = 200;
+
+                /** 相邻两轮回收的间隔，单位分钟。 */
+                @Min(5)
+                private int intervalMinutes = 60;
+            }
+
             /**
              * 图片预览链接参数。预览签名绑定附件 ID，并在到期后失效。
              */

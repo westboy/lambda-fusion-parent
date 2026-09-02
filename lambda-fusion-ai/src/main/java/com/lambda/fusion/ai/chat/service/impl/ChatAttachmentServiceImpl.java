@@ -29,13 +29,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -45,15 +47,20 @@ import org.springframework.web.multipart.MultipartFile;
  * （复用 {@code rag.document-storage} 配置）；相对路径使用独立前缀
  * {@code chat/{sessionId}/{attachmentId}.{ext}}，与知识库文件相互隔离。
  *
+ * <p>写入顺序：上传与生成采用"先落库、后存储、再回填路径"三段流程，两个数据库步骤各以独立短事务
+ * （{@code REQUIRES_NEW}）提交，存储写入不处于任何数据库事务内；既避免存储耗时长期占用数据库连接，
+ * 也消除"事务提交阶段失败"留下的存储孤儿。任一步骤失败即补偿删除已写文件与记录；回填前先预置
+ * 存储路径，保证写入中断时半成品对象仍可按路径删除。调用方事务回滚不影响已提交的附件记录，
+ * 记录以孤儿形态留存并交由回收任务处理。
+ *
  * <p>生命周期：未绑定消息的附件（{@code message_id IS NULL}）为孤儿附件，只能由 {@link #delete} 主动
- * 撤销或随 {@link #deleteBySession} 会话级联清理；已发送附件不单独删除，避免历史消息出现空洞引用。
- * 未引入定时清理任务。
+ * 撤销、随 {@link #deleteBySession} 会话级联清理，或由定时任务 {@link ChatAttachmentOrphanCleaner}
+ * 按创建时间回收；已发送附件不单独删除，避免历史消息出现空洞引用。
  *
  * @author Jin
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
@@ -107,9 +114,27 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
     private final ChatAttachmentPreviewTokenService previewTokenService;
+    /** 存储写入前后的落库短事务；独立于调用方事务，保证附件记录不随外层回滚丢失。 */
+    private final TransactionTemplate requiresNewTx;
+
+    public ChatAttachmentServiceImpl(
+            ChatAttachmentMapper chatAttachmentMapper,
+            ChatSessionMapper chatSessionMapper,
+            AiFileStorageResolver storageResolver,
+            AiProperties aiProperties,
+            ChatAttachmentPreviewTokenService previewTokenService,
+            PlatformTransactionManager transactionManager) {
+        this.chatAttachmentMapper = chatAttachmentMapper;
+        this.chatSessionMapper = chatSessionMapper;
+        this.storageResolver = storageResolver;
+        this.aiProperties = aiProperties;
+        this.previewTokenService = previewTokenService;
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.requiresNewTx = template;
+    }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ChatAttachmentEntity upload(String sessionId, MultipartFile file) {
         ChatSessionEntity session =
                 chatSessionMapper.selectOwned(sessionId, AuthUtils.getUser().getUsername());
@@ -129,42 +154,41 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         entity.setSizeBytes(file.getSize());
         entity.setCategory(resolveCategory(extension, cfg));
         entity.setCreatedAt(LocalDateTime.now());
-        chatAttachmentMapper.insert(entity);
 
         // MultipartFile 内容在请求结束后即被清理，先落临时文件再持久化；finally 立即删除
         Path tempFile = null;
         try {
             tempFile = Files.createTempFile("chat-att-", "." + extension);
             file.transferTo(tempFile);
+            inNewTransaction(() -> chatAttachmentMapper.insert(entity));
             AiFileStorage storage = storageResolver.resolve(
                     aiProperties.getRag().getDocumentStorage().getType());
             String relativeName = "chat/" + session.getId() + "/" + entity.getId() + "." + extension;
+            // 先预置存储路径再写入，保证存储中断时补偿删除仍能定位半成品对象
             entity.setStorageType(storage.type());
+            entity.setStoragePath(relativeName);
             entity.setStoragePath(storage.store(tempFile, relativeName, entity.getMimeType()));
-            chatAttachmentMapper.updateById(entity);
+            inNewTransaction(() -> chatAttachmentMapper.updateById(entity));
+            return entity;
         } catch (IOException e) {
-            chatAttachmentMapper.deleteById(entity.getId());
+            compensateFailedStore(entity);
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
         } catch (RuntimeException e) {
-            deleteStoredFile(entity);
-            chatAttachmentMapper.deleteById(entity.getId());
+            compensateFailedStore(entity);
             throw e instanceof AiBusinessException aiBusinessException
                     ? aiBusinessException
                     : new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
         } finally {
             deleteQuietly(tempFile);
         }
-        return entity;
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ChatAttachmentEntity storeGenerated(String sessionId, Path source, String fileName, String mimeType) {
         return storeGenerated(sessionId, source, fileName, mimeType, null);
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ChatAttachmentEntity storeGenerated(
             String sessionId, Path source, String fileName, String mimeType, Path pdfPreviewSource) {
         long size = fileSize(source);
@@ -189,28 +213,46 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         entity.setSizeBytes(size);
         entity.setCategory(resolveGeneratedCategory(normalizedMimeType));
         entity.setCreatedAt(LocalDateTime.now());
-        chatAttachmentMapper.insert(entity);
 
         try {
+            inNewTransaction(() -> chatAttachmentMapper.insert(entity));
             AiFileStorage storage = storageResolver.resolve(
                     aiProperties.getRag().getDocumentStorage().getType());
-            String relativeName = "chat/" + sessionId + "/" + entity.getId() + "." + extension;
             entity.setStorageType(storage.type());
-            entity.setStoragePath(storage.store(source, relativeName, normalizedMimeType));
+            entity.setStoragePath("chat/" + sessionId + "/" + entity.getId() + "." + extension);
+            entity.setStoragePath(storage.store(source, entity.getStoragePath(), normalizedMimeType));
             if (pdfPreviewSource != null) {
-                String previewRelativeName = "chat/" + sessionId + "/" + entity.getId() + ".preview.pdf";
+                entity.setPreviewStoragePath("chat/" + sessionId + "/" + entity.getId() + ".preview.pdf");
                 entity.setPreviewStoragePath(storage.store(
-                        pdfPreviewSource, previewRelativeName, ChatAttachmentPreviewPolicy.PDF_MIME_TYPE));
+                        pdfPreviewSource, entity.getPreviewStoragePath(), ChatAttachmentPreviewPolicy.PDF_MIME_TYPE));
             }
-            chatAttachmentMapper.updateById(entity);
+            inNewTransaction(() -> chatAttachmentMapper.updateById(entity));
             return entity;
         } catch (RuntimeException e) {
-            deleteStoredFile(entity);
-            chatAttachmentMapper.deleteById(entity.getId());
+            compensateFailedStore(entity);
             throw e instanceof AiBusinessException aiBusinessException
                     ? aiBusinessException
                     : new AiBusinessException(AiErrorCode.ATTACHMENT_STORAGE_ERROR, e);
         }
+    }
+
+    /** 存储写入失败后的补偿：删除已写文件（含半成品路径）与已落库记录，两者都允许不存在的幂等。 */
+    private void compensateFailedStore(ChatAttachmentEntity entity) {
+        try {
+            deleteStoredFile(entity);
+        } catch (RuntimeException deleteFailure) {
+            log.warn(
+                    "补偿删除附件存储文件失败(att={}, path={}): {}",
+                    entity.getId(),
+                    entity.getStoragePath(),
+                    deleteFailure.getMessage());
+        }
+        chatAttachmentMapper.deleteById(entity.getId());
+    }
+
+    /** 在独立短事务中执行落库动作；失败向上抛出，由调用方统一补偿。 */
+    private void inNewTransaction(Runnable action) {
+        requiresNewTx.executeWithoutResult(status -> action.run());
     }
 
     @Override
@@ -370,6 +412,26 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
                                     .toList()));
             deleteStoredFilesAfterCommit(attachments);
         }
+    }
+
+    @Override
+    public int purgeOrphans(LocalDateTime cutoff, int limit) {
+        List<ChatAttachmentEntity> orphans =
+                chatAttachmentMapper.selectList(new LambdaQueryWrapper<ChatAttachmentEntity>()
+                        .isNull(ChatAttachmentEntity::getMessageId)
+                        .lt(ChatAttachmentEntity::getCreatedAt, cutoff)
+                        .last("LIMIT " + Math.max(1, limit)));
+        int purged = 0;
+        for (ChatAttachmentEntity orphan : orphans) {
+            // 先删文件后删记录：记录先删而文件删除失败会留下无法再次定位的存储对象；
+            // 顺序反过来时最坏只是下一轮对已删对象重试一次删除。
+            deleteStoredFile(orphan);
+            purged += chatAttachmentMapper.deleteById(orphan.getId());
+        }
+        if (purged > 0) {
+            log.info("已回收孤儿对话附件: count={}, cutoff={}", purged, cutoff);
+        }
+        return purged;
     }
 
     /** 数据库记录提交成功后再删除实体文件，避免外层事务回滚时留下指向已删除文件的附件记录。 */

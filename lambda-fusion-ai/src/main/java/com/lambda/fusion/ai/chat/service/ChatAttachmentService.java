@@ -89,4 +89,11 @@ public interface ChatAttachmentService {
 
     /** 清理由当前运行创建但未绑定消息的生成附件。 */
     void discardGenerated(String sessionId, Collection<String> attachmentIds);
+
+    /**
+     * 回收孤儿附件：删除创建时间早于 {@code cutoff} 且未绑定消息的附件，最多 {@code limit} 条。
+     * 先删存储文件后删数据库记录，单个文件失败仅告警并继续；返回本轮实际删除的记录数。
+     * 供定时任务周期调用，删除逐条独立提交，部分成功可由下一轮继续。
+     */
+    int purgeOrphans(java.time.LocalDateTime cutoff, int limit);
 }
