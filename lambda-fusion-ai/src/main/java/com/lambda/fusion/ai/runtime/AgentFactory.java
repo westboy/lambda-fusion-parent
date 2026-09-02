@@ -44,15 +44,20 @@ import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
+import jakarta.annotation.PreDestroy;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -90,6 +95,19 @@ public class AgentFactory {
     private final SubAgentService subAgentService;
 
     private final Map<String, HarnessAgent> cache = new ConcurrentHashMap<>();
+
+    /** 关闭被淘汰 Agent 前的额外缓冲，单位秒；覆盖 Run 终态后的收尾长尾。 */
+    private static final long AGENT_CLOSE_MARGIN_SECONDS = 30;
+
+    /**
+     * 延迟关闭执行器：被淘汰 Agent 在最坏 Run 时长过后才关闭。单线程守护池，停机时直接中断，
+     * 未执行的延迟关闭随进程退出一并放弃。
+     */
+    private final ScheduledExecutorService closerExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "agent-cache-closer");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     /**
      * 状态存储缓存：同 {@code (appId, tenantId)} 共享同一实例。Agent 因配置变更重建后仍复用原存储，
@@ -170,7 +188,16 @@ public class AgentFactory {
 
     public void invalidateApp(String appId) {
         String prefix = appId + "|";
-        cache.keySet().removeIf(key -> key.startsWith(prefix));
+        List<HarnessAgent> removed = new ArrayList<>();
+        Iterator<Map.Entry<String, HarnessAgent>> iterator = cache.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, HarnessAgent> entry = iterator.next();
+            if (entry.getKey().startsWith(prefix)) {
+                removed.add(entry.getValue());
+                iterator.remove();
+            }
+        }
+        scheduleClose(removed, "app=" + appId);
     }
 
     /**
@@ -196,7 +223,42 @@ public class AgentFactory {
     }
 
     public void invalidateAll() {
+        List<HarnessAgent> removed = List.copyOf(cache.values());
         cache.clear();
+        scheduleClose(removed, "all");
+    }
+
+    /**
+     * 延迟关闭被淘汰的 Agent 缓存实例。新请求在失效后立即构建新 Agent，仍在使用旧实例的只有失效前
+     * 创建的执行中 Run；延迟取 {@code max-run-duration + stop-grace + 缓冲}，保证这些 Run 已终态后再关闭，
+     * 避免关闭传输层打断在途调用。业务终态后的记忆尾部若仍未排空，关闭至多让一次记忆冲刷失败并被
+     * AgentScope 中间件吞掉，不影响已提交的业务结果。close 释放任务仓库、工作区索引与模型/工具传输，
+     * 防止反复配置变更造成的资源泄漏。
+     */
+    private void scheduleClose(List<HarnessAgent> agents, String scope) {
+        if (agents.isEmpty()) {
+            return;
+        }
+        long delaySeconds = aiProperties.getChat().getRun().getMaxRunDurationSeconds()
+                + aiProperties.getChat().getRun().getStopGraceSeconds()
+                + AGENT_CLOSE_MARGIN_SECONDS;
+        closerExecutor.schedule(
+                () -> agents.forEach(agent -> closeQuietly(agent, scope)), delaySeconds, TimeUnit.SECONDS);
+    }
+
+    private void closeQuietly(HarnessAgent agent, String scope) {
+        try {
+            agent.close();
+            log.info("已关闭淘汰的 Agent 缓存实例: {}", scope);
+        } catch (RuntimeException e) {
+            log.warn("关闭淘汰 Agent 失败: {}, reason={}", scope, e.getMessage(), e);
+        }
+    }
+
+    /** 停机时中断延迟关闭任务；不主动 close 缓存 Agent，进程退出统一回收底层资源。 */
+    @PreDestroy
+    public void shutdown() {
+        closerExecutor.shutdownNow();
     }
 
     @EventListener
