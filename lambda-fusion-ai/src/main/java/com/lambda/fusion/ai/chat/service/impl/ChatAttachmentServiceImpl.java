@@ -11,6 +11,7 @@ import com.lambda.fusion.ai.chat.model.ChatAttachmentView;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.chat.support.ChatFileSupport;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.storage.AiFileResource;
@@ -200,7 +201,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         if (pdfPreviewSource != null && fileSize(pdfPreviewSource) > maxBytes) {
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, fileName + " 预览");
         }
-        String normalizedMimeType = normalizeMimeType(mimeType);
+        String normalizedMimeType = ChatFileSupport.normalizeMimeType(mimeType);
         String normalizedFileName = normalizeFileName(fileName);
         String extension = resolveGeneratedExtension(normalizedFileName, normalizedMimeType);
 
@@ -503,17 +504,8 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         }
     }
 
-    private static String normalizeMimeType(String mimeType) {
-        String value = StringUtils.substringBefore(StringUtils.defaultString(mimeType), ";")
-                .trim()
-                .toLowerCase(Locale.ROOT);
-        return StringUtils.defaultIfBlank(value, "application/octet-stream");
-    }
-
     private static String normalizeFileName(String fileName) {
-        String value = StringUtils.defaultString(fileName).replace('\\', '/');
-        value = StringUtils.substringAfterLast("/" + value, "/").replaceAll("[\\p{Cntrl}]", "");
-        return StringUtils.left(value, 255);
+        return StringUtils.left(ChatFileSupport.cleanFileName(fileName), 255);
     }
 
     private static String resolveGeneratedExtension(String fileName, String mimeType) {
@@ -541,13 +533,6 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     }
 
     private static void deleteQuietly(Path tempFile) {
-        if (tempFile == null) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(tempFile);
-        } catch (IOException e) {
-            log.warn("删除对话附件上传临时文件失败: {}, {}", tempFile, e.getMessage());
-        }
+        ChatFileSupport.deleteQuietly(tempFile, "对话附件上传临时文件");
     }
 }

@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.attachment;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.chat.support.ChatFileSupport;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.agent.RuntimeContext;
@@ -323,9 +324,8 @@ public class WorkspaceArtifactPublishTool {
     }
 
     private static String normalizeFileName(String fileName) {
-        String normalized = StringUtils.defaultString(fileName).replace('\\', '/');
-        normalized = StringUtils.substringAfterLast("/" + normalized, "/").replaceAll("[\\p{Cntrl}]", "");
-        normalized = StringUtils.left(normalized.trim(), 255);
+        String normalized =
+                StringUtils.left(ChatFileSupport.cleanFileName(fileName).trim(), 255);
         if (StringUtils.isBlank(normalized)) {
             throw new IllegalArgumentException("display_name 不能为空。");
         }
@@ -348,14 +348,7 @@ public class WorkspaceArtifactPublishTool {
     }
 
     private static void deleteQuietly(Path path) {
-        if (path == null) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("删除工作区产物临时文件失败: {}, {}", path, e.getMessage());
-        }
+        ChatFileSupport.deleteQuietly(path, "工作区产物临时文件");
     }
 
     private record ResolvedArtifact(String path, String fileName, String extension) {}

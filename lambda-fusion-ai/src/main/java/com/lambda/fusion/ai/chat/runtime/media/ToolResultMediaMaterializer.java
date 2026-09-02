@@ -4,6 +4,7 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentBlockFactory;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.chat.support.ChatFileSupport;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.core.utils.TenantUtils;
@@ -348,19 +349,11 @@ public class ToolResultMediaMaterializer {
     }
 
     private static String normalizeMimeType(String preferred, String fallback) {
-        String value = StringUtils.defaultIfBlank(preferred, fallback);
-        value = StringUtils.substringBefore(StringUtils.defaultString(value), ";")
-                .trim()
-                .toLowerCase(Locale.ROOT);
-        return StringUtils.defaultIfBlank(value, "application/octet-stream");
+        return ChatFileSupport.normalizeMimeType(StringUtils.defaultIfBlank(preferred, fallback));
     }
 
     private static void deleteQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("删除工具结果媒体临时文件失败: {}, {}", path, e.getMessage());
-        }
+        ChatFileSupport.deleteQuietly(path, "工具结果媒体临时文件");
     }
 
     /** 单次运行的媒体物化上下文。 */

@@ -142,27 +142,12 @@ public final class ChatExecutionInstance {
      * @throws AiBusinessException 状态/阶段冲突、确认上下文不可用、决策非法或三方工具调用不一致
      */
     public synchronized ConfirmTransition confirm(ConfirmToolCall command) {
-        Integer sourcePhaseNo = command == null ? null : command.getPhaseNo();
+        Integer sourcePhaseNo = interactionSourcePhase(command == null ? null : command.getPhaseNo(), "确认");
         if (sourcePhaseNo == null) {
-            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
-        }
-        if (run.getPhaseNo() > sourcePhaseNo) {
-            log.info(
-                    "Run确认幂等重放，来源阶段已处理: runId={}, sourcePhaseNo={}, currentPhaseNo={}",
-                    run.getId(),
-                    sourcePhaseNo,
-                    run.getPhaseNo());
             return new ConfirmTransition(run, session, false);
         }
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
-        if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
-                || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
-                || awaitingInteraction
-                || finalizeCommitInProgress
-                || snapshot.pendingTools().isEmpty()
-                || sourceActive) {
-            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
-        }
+        requireInteractionWindow(sourcePhaseNo, snapshot.pendingTools().isEmpty());
 
         Msg confirmMessage = validateAndBuildMessage(command, snapshot.pendingTools());
         ConfirmTransition transition = runService.advanceConfirmation(run, session, sourcePhaseNo, snapshot);
@@ -187,27 +172,12 @@ public final class ChatExecutionInstance {
      * @throws AiBusinessException 状态/阶段冲突、挂起上下文不可用、输入非法或三方工具调用不一致
      */
     public synchronized ConfirmTransition submitInput(SubmitToolInput command) {
-        Integer sourcePhaseNo = command == null ? null : command.getPhaseNo();
+        Integer sourcePhaseNo = interactionSourcePhase(command == null ? null : command.getPhaseNo(), "输入");
         if (sourcePhaseNo == null) {
-            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
-        }
-        if (run.getPhaseNo() > sourcePhaseNo) {
-            log.info(
-                    "Run输入幂等重放，来源阶段已处理: runId={}, sourcePhaseNo={}, currentPhaseNo={}",
-                    run.getId(),
-                    sourcePhaseNo,
-                    run.getPhaseNo());
             return new ConfirmTransition(run, session, false);
         }
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
-        if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
-                || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
-                || awaitingInteraction
-                || finalizeCommitInProgress
-                || snapshot.pendingInputs().isEmpty()
-                || sourceActive) {
-            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
-        }
+        requireInteractionWindow(sourcePhaseNo, snapshot.pendingInputs().isEmpty());
 
         Msg inputMessage = validateAndBuildInputMessage(command, snapshot.pendingInputs());
         ConfirmTransition transition = runService.advanceConfirmation(run, session, sourcePhaseNo, snapshot);
@@ -222,6 +192,41 @@ public final class ChatExecutionInstance {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
         }
         return transition;
+    }
+
+    /**
+     * 校验交互命令的来源阶段：阶段号缺失直接拒绝；来源阶段已被处理时记录幂等重放并返回 {@code null}。
+     */
+    private Integer interactionSourcePhase(Integer sourcePhaseNo, String action) {
+        if (sourcePhaseNo == null) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
+        }
+        if (run.getPhaseNo() > sourcePhaseNo) {
+            log.info(
+                    "Run{}幂等重放，来源阶段已处理: runId={}, sourcePhaseNo={}, currentPhaseNo={}",
+                    action,
+                    run.getId(),
+                    sourcePhaseNo,
+                    run.getPhaseNo());
+            return null;
+        }
+        return sourcePhaseNo;
+    }
+
+    /**
+     * 校验当前允许进入交互推进：阶段一致、运行中、不在挂起交互或终结提交窗口，快照存在待处理项且
+     * 旧阶段源流已完整排空。confirm 与 submitInput 共用同一守护，必须在实例锁内调用以保证与事件回调
+     * 的状态判定同帧。
+     */
+    private void requireInteractionWindow(int sourcePhaseNo, boolean pendingInteractionEmpty) {
+        if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
+                || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
+                || awaitingInteraction
+                || finalizeCommitInProgress
+                || pendingInteractionEmpty
+                || sourceActive) {
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getStatus());
+        }
     }
 
     /**
