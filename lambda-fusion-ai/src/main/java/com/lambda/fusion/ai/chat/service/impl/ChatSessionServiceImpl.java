@@ -85,8 +85,12 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         chatAttachmentService.deleteBySession(id);
         chatMessageService.deleteBySession(id);
         chatSessionMapper.deleteById(id);
-        runAfterCommit(() -> agentFactory.clearChatSessionWorkspace(
-                session.getAppId(), session.getTenantId(), session.getUserId(), session.getId()));
+        runAfterCommit(() -> {
+            agentFactory.clearChatSessionWorkspace(
+                    session.getAppId(), session.getTenantId(), session.getUserId(), session.getId());
+            agentFactory.clearChatSessionState(
+                    session.getAppId(), session.getTenantId(), session.getUserId(), session.getId());
+        });
     }
 
     /** 会话数据库删除提交后再清理外部工作区；无事务上下文时保持服务方法可独立调用。 */

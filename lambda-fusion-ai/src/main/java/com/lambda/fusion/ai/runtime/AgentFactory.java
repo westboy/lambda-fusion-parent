@@ -173,6 +173,28 @@ public class AgentFactory {
         cache.keySet().removeIf(key -> key.startsWith(prefix));
     }
 
+    /**
+     * 删除会话的 AgentState：删除共享状态存储中该 {@code (userId, sessionId)} 槽位的全部持久化状态
+     * （含 {@code agent_state} 与沙箱恢复键），避免已删除会话在持久化层残留数据。
+     *
+     * <p>仅清理持久化存储：AgentScope 未提供逐出进程内 {@code stateCache} 的公开 API，内存残留随
+     * Agent 缓存失效重建或进程重启自然释放。该方法用于数据库事务提交后的资源回收，与 app 类型无关
+     * （会话记忆不属于 Workspace）；清理失败只告警，不能反向影响已经提交的会话删除。
+     */
+    public void clearChatSessionState(String appId, String tenantId, String userId, String sessionId) {
+        if (StringUtils.isAnyBlank(appId, sessionId)) {
+            log.warn("跳过 AgentScope 会话状态清理：缺少应用或会话标识");
+            return;
+        }
+        String resolvedTenantId = StringUtils.defaultIfBlank(tenantId, "default");
+        try {
+            sharedStateStore(appId, resolvedTenantId).delete(userId, sessionId);
+            log.info("已删除 AgentScope 会话持久化状态: app={}, session={}", appId, sessionId);
+        } catch (Exception e) {
+            log.warn("删除 AgentScope 会话持久化状态失败: app={}, session={}, reason={}", appId, sessionId, safeMessage(e), e);
+        }
+    }
+
     public void invalidateAll() {
         cache.clear();
     }
