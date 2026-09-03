@@ -16,7 +16,6 @@ import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +43,8 @@ class WorkspaceStorageTest {
         assertThat(files.read("tenant-a", app, "memory/note.md")).isEqualTo("local-note");
         assertThat(files.list("tenant-a", app))
                 .extracting(WorkspaceFileEntry::path)
-                .contains("AGENTS.md", "memory", "memory/note.md", "tools.json");
+                .contains("memory", "memory/note.md", "outputs", "outputs/.keep")
+                .doesNotContain("AGENTS.md", "tools.json");
         assertThat(tempDir.resolve("tenants/tenant-a/apps/app-1/memory/note.md"))
                 .hasContent("local-note");
         assertThat(tempDir.resolve(".remote-templates")).doesNotExist();
@@ -69,7 +69,8 @@ class WorkspaceStorageTest {
 
         assertThat(secondNode.read("tenant-a", app, "AGENTS.md")).isEqualTo("shared-agent");
         assertThat(secondNode.read("tenant-a", app, "knowledge/note.md")).isEqualTo("shared-note");
-        assertThat(secondNode.read("tenant-b", app, "AGENTS.md")).contains("Demo Agent");
+        // 另一租户首次访问时脚手架照常执行：outputs/.keep 可读（占位为空文件，服务端返回空内容提示）
+        assertThat(secondNode.read("tenant-b", app, "outputs/.keep")).isNotBlank();
         List<WorkspaceFileEntry> entries = secondNode.list("tenant-a", app);
         assertThat(entries)
                 .allSatisfy(entry -> assertThat(entry.path()).doesNotContain(".."))
@@ -90,6 +91,7 @@ class WorkspaceStorageTest {
                                 "agents",
                                 "knowledge",
                                 "memory",
+                                "outputs",
                                 "plans",
                                 "skills",
                                 "subagents",
@@ -112,9 +114,8 @@ class WorkspaceStorageTest {
                         .content())
                 .isEqualTo("internal-event");
 
-        Path remoteTemplate = tempDir.resolve(".remote-templates/mysql/tenants/tenant-a/apps/app-1/AGENTS.md");
+        Path remoteTemplate = tempDir.resolve(".remote-templates/mysql/tenants/tenant-a/apps/app-1/outputs/.keep");
         assertThat(remoteTemplate).exists();
-        assertThat(Files.readString(remoteTemplate)).contains("Demo Agent");
         assertThat(tempDir.resolve("tenants/tenant-a/apps/app-1")).doesNotExist();
     }
 
