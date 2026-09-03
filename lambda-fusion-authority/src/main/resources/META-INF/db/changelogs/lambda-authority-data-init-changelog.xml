@@ -906,7 +906,7 @@
 
 
     <!-- ==================== 服务管理菜单初始化 ==================== -->
-    <changeSet id="lambda-authority-2026081200100" author="jin">
+    <changeSet id="lambda-authority-20260812001001" author="jin">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_resources"/>
             <sqlCheck expectedResult="0">
@@ -919,7 +919,7 @@
             insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
                                       ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
                                       BUSINESS_EXPAND, ORDER_NO)
-            values ('aP9kMx2Q', 'jw1MUnwu', '服务管理', '/system/application/', 1, 1, null, 0, null,
+            values ('aP9kMx2Q', 'jw1MUnwu', '应用管理', '/system/application/', 1, 1, null, 0, null,
                     'carbon:application', 0, 'jw1MUnwu', 0, null, null, null, 0, null, null, 13),
                    ('bQ3nRt7W', 'aP9kMx2Q', '新增服务', 'application_add', 2147483647, 3, null, 0, '', null, 0,
                     'jw1MUnwu-aP9kMx2Q', 0, null, null, null, 0, null, null, 1),
