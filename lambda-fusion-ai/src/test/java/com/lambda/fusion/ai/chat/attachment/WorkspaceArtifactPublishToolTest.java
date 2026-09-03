@@ -187,6 +187,25 @@ class WorkspaceArtifactPublishToolTest {
     }
 
     @Test
+    void shouldAcceptSandboxVirtualRootPathWhenNormalizerUsesHostPrefix() throws Exception {
+        byte[] pdf = validPdf();
+        when(filesystem.ls(any(), eq("outputs")))
+                .thenReturn(LsResult.success(List.of(FileInfo.ofFile("outputs/report.pdf", pdf.length, ""))));
+        when(filesystem.downloadFiles(any(), eq(List.of("outputs/report.pdf"))))
+                .thenReturn(List.of(FileDownloadResponse.success("outputs/report.pdf", pdf)));
+        when(attachmentService.storeGenerated(
+                        eq("session-1"), any(Path.class), eq("report.pdf"), eq("application/pdf"), isNull()))
+                .thenReturn(attachment("report.pdf", "application/pdf"));
+
+        // 本地模式：归一化前缀是宿主工作区绝对路径，模型按工具描述照抄 /workspace/outputs/ 也应一次发布成功
+        ToolResultBlock result =
+                tool.publish("/workspace/outputs/report.pdf", null, null, runtimeContext("H:/ws/session-1"));
+
+        assertThat(result.getOutput()).singleElement().isInstanceOf(DataBlock.class);
+        verify(filesystem).downloadFiles(any(), eq(List.of("outputs/report.pdf")));
+    }
+
+    @Test
     void shouldRejectPathOutsideOutputsWithoutReadingSandbox() {
         ToolResultBlock result = tool.publish("/workspace/secrets.txt", null, null, runtimeContext());
 
@@ -285,13 +304,17 @@ class WorkspaceArtifactPublishToolTest {
     }
 
     private RuntimeContext runtimeContext() {
+        return runtimeContext("/workspace");
+    }
+
+    private RuntimeContext runtimeContext(String workspacePrefix) {
         return RuntimeContext.builder()
                 .userId("user-1")
                 .sessionId("session-1")
                 .put(RuntimeProperty.KEY_TENANT_ID, "tenant-1")
                 .put(RuntimeProperty.KEY_LF_SESSION_ID, "session-1")
                 .put(AbstractFilesystem.class, filesystem)
-                .put(WorkspacePathNormalizer.class, WorkspacePathNormalizer.of("/workspace"))
+                .put(WorkspacePathNormalizer.class, WorkspacePathNormalizer.of(workspacePrefix))
                 .build();
     }
 

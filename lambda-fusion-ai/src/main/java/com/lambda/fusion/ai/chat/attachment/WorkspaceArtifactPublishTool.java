@@ -4,6 +4,7 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.support.ChatFileSupport;
+import com.lambda.fusion.ai.runtime.annotation.AiTools;
 import com.lambda.fusion.ai.runtime.gateway.RuntimeProperty;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.agent.RuntimeContext;
@@ -39,14 +40,13 @@ import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.tika.Tika;
 import org.apache.tika.io.TikaInputStream;
-import org.springframework.stereotype.Component;
 
 /**
  * 将 AgentScope 工作区（宿主或沙箱）中的显式文件产物发布为当前对话附件。文件可通过工作区提供的
  * AgentScope Shell/Skill 创建，本工具只桥接受控下载、平台存储和消息附件引用。
  */
 @Slf4j
-@Component
+@AiTools
 @RequiredArgsConstructor
 public class WorkspaceArtifactPublishTool {
 
@@ -83,18 +83,18 @@ public class WorkspaceArtifactPublishTool {
     public ToolResultBlock publish(
             @ToolParam(
                             name = "path",
-                            description =
-                                    "Generated file path under outputs/; sandbox paths may use /workspace/outputs/")
+                            description = "Generated file path under outputs/, for example outputs/report.pdf.")
                     String path,
             @ToolParam(
                             name = "display_name",
-                            description = "Optional user-facing file name; extension must match path",
+                            description =
+                                    "Optional user-facing file name; defaults to the name in path. Extension must "
+                                            + "match path.",
                             required = false)
                     String displayName,
             @ToolParam(
                             name = "preview_path",
-                            description = "Optional generated PDF preview path under outputs/; sandbox paths may use "
-                                    + "/workspace/outputs/",
+                            description = "Optional PDF preview generated for the Office file, also under outputs/.",
                             required = false)
                     String previewPath,
             RuntimeContext context) {
@@ -186,6 +186,17 @@ public class WorkspaceArtifactPublishTool {
         String normalized = pathNormalizer.normalize(rawPath.trim()).replace('\\', '/');
         while (normalized.startsWith("./")) {
             normalized = normalized.substring(2);
+        }
+        // 本地模式归一化只注册宿主工作区前缀（见 HarnessAgent），不会剥掉模型按沙箱约定传的
+        // /workspace/outputs/ 虚拟根；与 normalizeListedPath 对齐，这里兜底剥离后统一校验。
+        if (normalized.startsWith("/workspace/")) {
+            normalized = normalized.substring("/workspace/".length());
+        }
+        if (normalized.startsWith("workspace/")) {
+            normalized = normalized.substring("workspace/".length());
+        }
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
         }
         AbstractFilesystem.validatePath(normalized);
         if (!normalized.startsWith(OUTPUT_DIRECTORY + "/") || normalized.endsWith("/")) {
