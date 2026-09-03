@@ -56,4 +56,11 @@ public class ApplicationEntity extends BaseEntity {
     @Schema(description = "是否启用")
     @TableField("ENABLED")
     private Boolean enabled;
+
+    /**
+     * 是否独立前端：独立前端应用的菜单不并入主控台导航，由对应前端按 application 参数单独获取
+     */
+    @Schema(description = "是否独立前端")
+    @TableField("STANDALONE")
+    private Boolean standalone;
 }

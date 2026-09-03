@@ -30,7 +30,8 @@ public class AuthenticationController {
             parameters = {
                 @Parameter(name = "parentId", description = "父菜单ID"),
                 @Parameter(name = "level", description = "菜单层级"),
-                @Parameter(name = "mode", description = "资源模式(0:系统资源,1:App资源)")
+                @Parameter(name = "mode", description = "资源模式(0:系统资源,1:App资源)"),
+                @Parameter(name = "application", description = "所属应用ID；不传时下发主控台菜单（排除独立前端应用），独立前端传入自身应用ID以获取专属菜单")
             })
     public List<MenuRoute> getUserMenus(@Parameter MenuQuery query) {
         return authenticationService.getUserMenus(query);

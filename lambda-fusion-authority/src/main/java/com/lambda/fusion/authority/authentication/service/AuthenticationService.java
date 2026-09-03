@@ -5,7 +5,6 @@ import com.lambda.fusion.authority.authentication.model.MenuQuery;
 import com.lambda.fusion.authority.authentication.model.MenuRoute;
 import com.lambda.fusion.authority.user.model.UserProfile;
 import com.lambda.fusion.core.identity.UserDetails;
-import com.lambda.fusion.core.utils.AuthUtils;
 import java.util.List;
 
 /**
@@ -25,7 +24,15 @@ public interface AuthenticationService {
     List<MenuRoute> getUserMenus(UserDetails user, String parentId, Integer level);
 
     /**
-     * 获取用户的导航菜单
+     * 获取用户的导航菜单（按 application 区分下发语义，SQL 层统一生效，dev/非 dev 一致）
+     *
+     * <ul>
+     *   <li>主控台前端：{@code /auth/menus?mode=0}（不传 application）——下发 APPLICATION 为空的
+     *       菜单 ∪ 属于 STANDALONE=0（非独立前端）应用的菜单；
+     *   <li>独立前端：{@code /auth/menus?mode=0&application={appId}}——只返回该应用的菜单树。
+     * </ul>
+     *
+     * <p>独立前端应用的菜单必须挂在标记了对应应用的目录下，否则主控台会出现空目录残留。
      *
      * @param user  登录用户
      * @param query 导航查询参数
@@ -36,14 +43,12 @@ public interface AuthenticationService {
     }
 
     /**
-     * 获取用户的导航菜单
+     * 获取当前登录用户的导航菜单，语义同 {@link #getUserMenus(UserDetails, MenuQuery)}
      *
      * @param query 导航查询参数
      * @return 导航菜单列表
      */
-    default List<MenuRoute> getUserMenus(MenuQuery query) {
-        return getUserMenus(AuthUtils.getUser(), query.getParentId(), query.getLevel());
-    }
+    List<MenuRoute> getUserMenus(MenuQuery query);
 
     /**
      * 根据角色ID获取用户列表

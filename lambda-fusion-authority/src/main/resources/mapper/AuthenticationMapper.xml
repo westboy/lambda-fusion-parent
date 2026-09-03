@@ -74,8 +74,17 @@
         t1.expand,
         t1.business_expand
         from la_resources t1
+        left join la_applications t2 on t2.id = t1.application
         where t1.res_type != 3
         and t1.res_mode = #{query.mode}
+        <!-- 主控台语义：未指定应用时下发未归类菜单与独立前端(STANDALONE=0)应用的菜单 -->
+        <if test="query.application == null or query.application == ''">
+            and (t1.application is null or t2.standalone = 0)
+        </if>
+        <!-- 独立前端语义：指定应用时只下发该应用的菜单（含目录） -->
+        <if test="query.application != null and query.application != ''">
+            and t1.application = #{query.application}
+        </if>
         <if test="query.ids != null and query.ids.size > 0">
             and t1.id in (
             select distinct t.resource_id from la_role_resources t where t.authority in

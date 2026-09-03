@@ -35,7 +35,7 @@ public class MenuQuery {
     private Integer mode = 0;
 
     /**
-     * 所属应用ID
+     * 所属应用ID；不传时下发主控台菜单（排除独立前端应用），独立前端传入自身应用ID以获取专属菜单
      */
     @Schema(description = "所属应用ID")
     private String application;

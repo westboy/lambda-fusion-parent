@@ -158,6 +158,31 @@ public class AuthenticationServiceImpl implements AuthenticationService, UserDet
         return getUserMenus(loginUser, query);
     }
 
+    /**
+     * 菜单下发语义（SQL 层统一过滤，dev/非 dev 一致）：
+     *
+     * <ul>
+     *   <li>主控台前端：{@code /auth/menus?mode=0}（不传 application）——下发 APPLICATION 为空的
+     *       菜单 ∪ 属于 STANDALONE=0（非独立前端）应用的菜单；
+     *   <li>独立前端：{@code /auth/menus?mode=0&application={appId}}——只返回该应用的菜单树。
+     * </ul>
+     */
+    @Override
+    public List<MenuRoute> getUserMenus(MenuQuery query) {
+        UserDetails loginUser = AuthUtils.getUser();
+        MenuQuery effective = new MenuQuery();
+        effective.setParentId(query.getParentId());
+        effective.setLevel(query.getLevel());
+        effective.setMode(query.getMode());
+        effective.setApplication(query.getApplication());
+        effective.setName(query.getName());
+        // 独立前端按 application 取菜单时同样受角色约束：非 dev 用户仍只下发其角色被授权的资源
+        if (!loginUser.isDev()) {
+            effective.setIds(new ArrayList<>(loginUser.getRoles()));
+        }
+        return getUserMenus(loginUser, effective);
+    }
+
     @Override
     public List<MenuRoute> getUserMenus(UserDetails userDetails, MenuQuery query) {
         List<MenuRoute> menuRoutes = authenticationMapper.selectNavigation(query);

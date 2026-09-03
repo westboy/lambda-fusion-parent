@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.*;
  * 应用管理API
  *
  * <p>应用作为资源（菜单）的分类维度，一个应用对应一个 Spring application.name，
- * 用于资源管理按应用归类菜单。
+ * 用于资源管理按应用归类菜单。标记为独立前端（STANDALONE）的应用，其菜单不并入
+ * 主控台导航，由对应前端按 application 参数单独获取（见 /auth/menus）。
  */
 @RestController
 @RequestMapping({"/authority/applications"})

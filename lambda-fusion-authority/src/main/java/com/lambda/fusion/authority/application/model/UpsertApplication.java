@@ -45,4 +45,10 @@ public class UpsertApplication extends BaseDTO<ApplicationEntity> {
      */
     @Schema(description = "是否启用")
     private Boolean enabled;
+
+    /**
+     * 是否独立前端：独立前端应用的菜单不并入主控台导航
+     */
+    @Schema(description = "是否独立前端")
+    private Boolean standalone;
 }

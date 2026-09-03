@@ -608,6 +608,18 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-authority-202609030001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="la_applications" columnName="STANDALONE"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_applications">
+            <column name="STANDALONE" type="int" defaultValueNumeric="0"
+                    remarks="是否独立前端:0:否,1:是。独立前端应用的菜单不并入主控台导航，由对应前端按 application 参数单独获取"/>
+        </addColumn>
+    </changeSet>
+
     <include file="lambda-authority-data-init-changelog.xml" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
