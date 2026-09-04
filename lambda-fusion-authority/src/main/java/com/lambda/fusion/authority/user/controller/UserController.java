@@ -3,6 +3,7 @@ package com.lambda.fusion.authority.user.controller;
 import static com.lambda.fusion.core.FusionConstants.AT;
 import static com.lambda.fusion.core.FusionConstants.ROLE_TENANT;
 
+import cn.dev33.satoken.annotation.SaCheckLogin;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -105,8 +106,7 @@ public class UserController {
     @GetMapping("/current")
     @Operation(summary = "查询当前用户的详细信息")
     public User getCurrent() {
-        LoginUser operator = OperatorUtils.getOperator();
-        return userService.getByUsername(operator.getName());
+        return userService.getCurrentUser(AuthUtils.getUser());
     }
 
     @SaCheckPermission(value = "authority:user:get-by-role")
@@ -146,7 +146,7 @@ public class UserController {
         userService.deleteUser(AuthUtils.getUser(), username);
     }
 
-    @SaCheckPermission(value = "authority:user:password-edit")
+    @SaCheckLogin
     @PutMapping("/password/edit")
     @Operation(summary = "修改用户密码", description = "用于用户自己修改密码")
     public void updateUserPassword(

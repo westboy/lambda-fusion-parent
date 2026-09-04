@@ -107,6 +107,11 @@ public class AuthorityProperties {
         private Integer periodChangeDays = 90;
 
         /**
+         * 密码即将过期的提前提醒天数 默认 7 天（仅在提醒窗口内向前端返回剩余天数）
+         */
+        private Integer remindDays = 7;
+
+        /**
          * 密码策略模式
          */
         public enum Mode {

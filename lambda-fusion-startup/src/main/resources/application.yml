@@ -80,6 +80,11 @@ lambda:
     authorize:
       password-strategy:
         mode: ${AUTHORIZE_PASSWORD_STRATEGY_MODE:ciphertext}
+        #### 密码有效期（默认关闭）：过期后登录将强制跳转修改密码页（dev/admin/tenantManager 豁免）####
+        enable-period-change: ${AUTHORIZE_ENABLE_PERIOD_CHANGE:false}
+        period-change-days: ${AUTHORIZE_PERIOD_CHANGE_DAYS:90}
+        #### 密码即将过期的提前提醒天数，进入窗口后铃铛显示剩余天数 ####
+        remind-days: ${AUTHORIZE_PERIOD_REMIND_DAYS:7}
     config:
       auto-refresh:
         enabled: true

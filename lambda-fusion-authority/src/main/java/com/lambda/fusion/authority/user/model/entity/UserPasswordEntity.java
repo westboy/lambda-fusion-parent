@@ -27,6 +27,6 @@ public class UserPasswordEntity {
     private String password;
 
     @Schema(description = "修改密码日期")
-    @TableField("UPDATED_AT")
+    @TableField("UPDATE_TIME")
     private Date updateTime;
 }

@@ -53,6 +53,15 @@ public interface UserService {
     User getCurrentUser(UserDetails userDetails);
 
     /***
+     * 评估密码时效：有效期策略 + 豁免角色 + 最近一次密码变更日志
+     * <p>密码过期时同步落库 password_reset_required 标记</p>
+     *
+     * @param userDetails 当前登录用户
+     * @return 密码时效评估结果
+     */
+    PasswordExpiry evaluatePasswordExpiry(UserDetails userDetails);
+
+    /***
      * 查询注册用户列表
      *
      * @param users 用户列表

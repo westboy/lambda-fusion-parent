@@ -6,7 +6,7 @@ import cn.dev33.satoken.stp.StpLogic;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateField;
 import cn.hutool.core.date.DateUtil;
-import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -128,32 +128,63 @@ public class UserServiceImpl implements UserService {
     public User getCurrentUser(UserDetails userDetails) {
         User user = this.getByUsername(userDetails.getName());
         UserInfo props = user.getProps();
-        if (props != null && properties.getPasswordStrategy().getEnablePeriodChange()) {
-            boolean notMatched = !userDetails.isDev() && !userDetails.isAdmin() && !userDetails.isTenantManager();
-            // 判断密码是否需要更新
-            if (notMatched && ObjectUtil.equals(props.getPasswordResetRequired(), false)) {
-                List<UserPasswordEntity> userUpdatePwdLogEntities =
-                        userUpdatePwdLogMapper.selectList(new LambdaQueryWrapper<UserPasswordEntity>()
-                                .select(UserPasswordEntity::getUpdateTime)
-                                .eq(UserPasswordEntity::getUsername, userDetails.getName())
-                                .isNotNull(UserPasswordEntity::getUpdateTime)
-                                .orderByDesc(UserPasswordEntity::getUpdateTime));
-                if (CollectionUtils.isNotEmpty(userUpdatePwdLogEntities)) {
-                    UserPasswordEntity userUpdatePwdLogEntity = userUpdatePwdLogEntities.getFirst();
-                    Integer passwordModifyDays =
-                            properties.getPasswordStrategy().getPeriodChangeDays();
-                    LocalDateTime nowTime = LocalDateTime.now();
-                    LocalDateTime lastUpdateTime = DateUtil.toLocalDateTime(userUpdatePwdLogEntity.getUpdateTime());
-                    long days = ChronoUnit.DAYS.between(lastUpdateTime, nowTime);
-                    if (days >= passwordModifyDays) {
-                        props.setPasswordResetRequired(true);
-                        props.setPasswordModifyDays((int) days);
-                        user.setProps(props);
-                    }
-                }
+        // 已带强制改密标记的用户无需再计算密码时效
+        if (props != null && Boolean.FALSE.equals(props.getPasswordResetRequired())) {
+            PasswordExpiry expiry = evaluatePasswordExpiry(userDetails);
+            if (expiry.isResetRequired()) {
+                props.setPasswordResetRequired(true);
+                props.setPasswordModifyDays(expiry.getUsedDays());
+                user.setProps(props);
             }
         }
         return user;
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @Override
+    public PasswordExpiry evaluatePasswordExpiry(UserDetails userDetails) {
+        PasswordExpiry expiry = new PasswordExpiry();
+        // 未启用密码有效期策略
+        if (!Boolean.TRUE.equals(properties.getPasswordStrategy().getEnablePeriodChange())) {
+            return expiry;
+        }
+        // 豁免角色：dev / admin / tenantManager 不参与密码有效期
+        boolean exempted = userDetails.isDev() || userDetails.isAdmin() || userDetails.isTenantManager();
+        if (exempted) {
+            return expiry;
+        }
+        List<UserPasswordEntity> userUpdatePwdLogEntities =
+                userUpdatePwdLogMapper.selectList(new LambdaQueryWrapper<UserPasswordEntity>()
+                        .select(UserPasswordEntity::getUpdateTime)
+                        .eq(UserPasswordEntity::getUsername, userDetails.getName())
+                        .isNotNull(UserPasswordEntity::getUpdateTime)
+                        .orderByDesc(UserPasswordEntity::getUpdateTime));
+        // 无密码变更记录（存量用户）视为未过期，自下一次密码变更起计时
+        if (CollectionUtils.isEmpty(userUpdatePwdLogEntities)) {
+            return expiry;
+        }
+        UserPasswordEntity userUpdatePwdLogEntity = userUpdatePwdLogEntities.getFirst();
+        Integer passwordModifyDays = properties.getPasswordStrategy().getPeriodChangeDays();
+        LocalDateTime nowTime = LocalDateTime.now();
+        LocalDateTime lastUpdateTime = DateUtil.toLocalDateTime(userUpdatePwdLogEntity.getUpdateTime());
+        long days = ChronoUnit.DAYS.between(lastUpdateTime, nowTime);
+        expiry.setUsedDays((int) days);
+        if (days >= passwordModifyDays) {
+            expiry.setResetRequired(true);
+            expiry.setRemainDays(0);
+            // 落库保持 /authority/users/current 与 /auth/userinfo 各出口一致
+            userInfoMapper.updateStatus(userDetails.getName(), true);
+        } else {
+            // 仅在提醒窗口内返回剩余天数（窗口外为 -1，前端据此不提醒）
+            int remain = (int) (passwordModifyDays - days);
+            Integer remindDays = properties.getPasswordStrategy().getRemindDays();
+            if (remindDays == null || remain > remindDays) {
+                expiry.setRemainDays(-1);
+            } else {
+                expiry.setRemainDays(remain);
+            }
+        }
+        return expiry;
     }
 
     @Override
@@ -263,6 +294,7 @@ public class UserServiceImpl implements UserService {
         userEntity.setTenantId(tenantId);
         userEntity.setCreatedBy(userDetails.getName());
         userMapper.insert(userEntity);
+        recordPasswordLog(userEntity.getUsername(), userEntity.getPassword());
 
         List<SimpleRole> roles = createUser.getAuthorities();
         assignRolesToUser(tenantId, userEntity.getUsername(), roles);
@@ -401,10 +433,7 @@ public class UserServiceImpl implements UserService {
             throw AuthorityBusinessException.originalPasswordError();
         }
         String encoded = passwordEncoder.encode(newPassword);
-        UserPasswordEntity userUpdatePwdLogEntity = new UserPasswordEntity();
-        userUpdatePwdLogEntity.setPassword(encoded);
-        userUpdatePwdLogEntity.setUsername(username);
-        userUpdatePwdLogMapper.insertLog(userUpdatePwdLogEntity);
+        recordPasswordLog(username, encoded);
         userMapper.updatePassword(username, encoded);
         userInfoMapper.updateStatus(username, false);
         StpLogic activeStpLogic = StpLogicUtils.getActiveStpLogic();
@@ -415,7 +444,9 @@ public class UserServiceImpl implements UserService {
     public String resetUserPassword(ResetPassword resetPassword) {
         AuthorityProperties.PasswordStrategy strategy = properties.getPasswordStrategy();
         Password password = PasswordGenerator.obtainPassword(strategy, resetPassword.getNewPassword());
-        userMapper.updatePassword(resetPassword.getUsername(), passwordEncoder.encode(password.getEncrypted()));
+        String encoded = passwordEncoder.encode(password.getEncrypted());
+        userMapper.updatePassword(resetPassword.getUsername(), encoded);
+        recordPasswordLog(resetPassword.getUsername(), encoded);
         UserInfoEntity userInfoEntity = new UserInfoEntity();
         userInfoEntity.setUsername(resetPassword.getUsername());
         userInfoEntity.setUpdatePwd(true);
@@ -426,6 +457,19 @@ public class UserServiceImpl implements UserService {
         StpLogic activeStpLogic = StpLogicUtils.getActiveStpLogic();
         activeStpLogic.logout(resetPassword.getUsername());
         return password.getEncrypted();
+    }
+
+    /**
+     * 记录密码变更日志（密码有效期的计时依据：取最近一条 UPDATE_TIME）
+     * @param username 用户账号
+     * @param encodedPassword 编码后的密码
+     */
+    private void recordPasswordLog(String username, String encodedPassword) {
+        UserPasswordEntity passwordLog = new UserPasswordEntity();
+        passwordLog.setId(IdUtil.fastSimpleUUID());
+        passwordLog.setUsername(username);
+        passwordLog.setPassword(encodedPassword);
+        userUpdatePwdLogMapper.insertLog(passwordLog);
     }
 
     @Override

@@ -24,6 +24,7 @@ import com.lambda.fusion.authority.user.mapper.UserInfoMapper;
 import com.lambda.fusion.authority.user.mapper.UserMapper;
 import com.lambda.fusion.authority.user.mapper.UserThirdPartMapper;
 import com.lambda.fusion.authority.user.model.CreateUser;
+import com.lambda.fusion.authority.user.model.PasswordExpiry;
 import com.lambda.fusion.authority.user.model.User;
 import com.lambda.fusion.authority.user.model.UserInfo;
 import com.lambda.fusion.authority.user.model.UserProfile;
@@ -221,6 +222,16 @@ public class AuthenticationServiceImpl implements AuthenticationService, UserDet
             user.setAvatar(userInfoEntity.getAvatar());
             user.setDesc(userInfoEntity.getRemark());
         }
+
+        // 密码有效期：已带强制改密标记的直接生效；否则按策略评估，过期时由评估方法落库
+        boolean passwordResetRequired = userInfoEntity != null && Boolean.TRUE.equals(userInfoEntity.getUpdatePwd());
+        PasswordExpiry expiry = new PasswordExpiry();
+        if (!passwordResetRequired) {
+            expiry = userService.evaluatePasswordExpiry(AuthUtils.getUser());
+            passwordResetRequired = expiry.isResetRequired();
+        }
+        user.setPasswordResetRequired(passwordResetRequired);
+        user.setPasswordRemainDays(passwordResetRequired ? 0 : expiry.getRemainDays());
 
         user.setToken(StpUtil.getTokenValue());
         user.setHomePath(configProperties.getApplication().getHomePath());
