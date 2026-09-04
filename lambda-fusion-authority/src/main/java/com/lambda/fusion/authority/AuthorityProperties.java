@@ -89,8 +89,11 @@ public class AuthorityProperties {
     public static class PasswordStrategy {
         /**
          * 密码策略模式
+         * <p>CIPHERTEXT（默认）：使用前端传入的密码，表单输入即登录密码；未传时兜底 md5f2(customize)</p>
+         * <p>RANDOM：忽略前端密码，存随机值（新增用户不返回密码，账号无人可登录，需慎用）</p>
+         * <p>FIXED：忽略前端密码，所有用户登录密码固定为 md5f2(customize) 的十六进制串</p>
          */
-        Mode mode = Mode.RANDOM;
+        Mode mode = Mode.CIPHERTEXT;
         /**
          * 当密码策略为固定值时生效
          */
