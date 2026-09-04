@@ -20,7 +20,7 @@ import com.lambda.fusion.authority.authentication.provider.wechat.WechatOpenLogi
 import com.lambda.fusion.authority.authentication.provider.wechat.WechatOpenLoginHandler;
 import com.lambda.fusion.authority.tenant.interceptor.TenantContextInterceptor;
 import com.lambda.fusion.authority.user.listener.UserOnlineLogListener;
-import com.lambda.fusion.authority.user.listener.UserSeeEventListener;
+import com.lambda.fusion.authority.user.listener.UserSseEventListener;
 import com.lambda.fusion.authority.user.service.UserOnlineLogService;
 import com.lambda.fusion.core.tree.filter.DefaultTreeDataFilter;
 import com.lambda.fusion.core.tree.filter.TreeDataFilter;
@@ -204,7 +204,7 @@ public class AuthorityConfigure implements WebMvcConfigurer {
     @ConditionalOnClass(SseEventListener.class)
     public SseEventListener userSeeEventListener(
             @Autowired(required = false) UserOnlineLogService userOnlineLogService) {
-        return new UserSeeEventListener(userOnlineLogService);
+        return new UserSseEventListener(userOnlineLogService);
     }
 
     @Bean

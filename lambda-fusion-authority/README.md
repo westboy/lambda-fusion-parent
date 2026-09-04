@@ -25,7 +25,7 @@ src/main/java/com/lambda/fusion/
    ├─ manager/
    ├─ helper/
    ├─ inteceptor/TenantContextInterceptor.java
-   └─ listenner/(UserOnlineLogListener, UserSeeEventListener)
+   └─ listener/(UserOnlineLogListener, UserSseEventListener)
 
 src/main/resources/META-INF/
 ├─ spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
@@ -56,7 +56,7 @@ com.lambda.fusion.autoconfig.AuthorityAutoConfiguration
 - 注册 `operationLogExecutor` 线程池
 - 条件注册：
   - `SaTokenListener` -> `UserOnlineLogListener`
-  - `SseEventListener` -> `UserSeeEventListener`
+  - `SseEventListener` -> `UserSseEventListener`
   - `ServiceBean<RemoteAuthenticationService>`（Dubbo 存在时）
 
 ## 配置模型
@@ -127,7 +127,7 @@ lambda:
 ## 事件监听与在线状态
 
 - `UserOnlineLogListener`：监听 Sa-Token 登录/登出事件，记录在线状态。
-- `UserSeeEventListener`：监听 SSE 连接事件并回调在线服务。
+- `UserSseEventListener`：监听 SSE 连接/断开事件并回调在线服务（连接→上线，断开→下线）。
 
 ## 依赖说明
 
@@ -147,4 +147,4 @@ lambda:
 
 - `TenantContextInterceptor` 强依赖 `RedisHelper` 进行域名到租户映射回查。
 - `EntityMetaFiller` 依赖 `SecurityUtils.getUser()`，匿名上下文下需关注填充行为。
-- `UserSeeEventListener` 的在线/离线回调语义与方法名相反，接入时需按源码行为验证。
+- `UserSseEventListener`：SSE 断开即记录下线，无重连宽限期，网络抖动重连期间在线状态可能短暂闪烁。
