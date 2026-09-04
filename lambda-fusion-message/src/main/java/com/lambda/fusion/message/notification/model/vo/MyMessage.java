@@ -12,7 +12,7 @@ import lombok.Data;
  * @author jin
  */
 @Data
-@AutoConverter(target = UserMessageEntity.class)
+@AutoConverter(target = UserMessageEntity.class, isReverse = true)
 @Schema(description = "我的消息")
 public class MyMessage {
 

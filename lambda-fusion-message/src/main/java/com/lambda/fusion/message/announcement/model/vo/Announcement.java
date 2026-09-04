@@ -15,7 +15,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@AutoConverter(target = AnnouncementEntity.class)
+@AutoConverter(target = AnnouncementEntity.class, isReverse = true)
 @Schema(description = "公告")
 public class Announcement extends BaseVO<AnnouncementEntity> {
 

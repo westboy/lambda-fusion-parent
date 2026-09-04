@@ -16,7 +16,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@AutoConverter(target = MessageTemplateEntity.class)
+@AutoConverter(target = MessageTemplateEntity.class, isReverse = true)
 @Schema(description = "消息模板")
 public class MessageTemplate extends BaseVO<MessageTemplateEntity> {
 
