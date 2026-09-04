@@ -74,6 +74,12 @@ lambda:
       server:
         auth-token: 111
       mode: server
+    #### 权限密码策略：CIPHERTEXT 使新增用户时前端传入的密码即登录密码 ####
+    #### （RANDOM 默认会丢弃表单密码改存随机值，导致新增后无法用表单密码登录）####
+    #### 未传密码的场景（如重置密码）回退 md5f2(customize) 并由接口返回可登录密码 ####
+    authorize:
+      password-strategy:
+        mode: ${AUTHORIZE_PASSWORD_STRATEGY_MODE:ciphertext}
     config:
       auto-refresh:
         enabled: true
