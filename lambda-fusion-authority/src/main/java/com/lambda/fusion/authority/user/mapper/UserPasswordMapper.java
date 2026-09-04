@@ -1,6 +1,7 @@
 package com.lambda.fusion.authority.user.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lambda.fusion.authority.user.model.entity.UserPasswordEntity;
 import org.apache.ibatis.annotations.Mapper;
@@ -17,4 +18,12 @@ public interface UserPasswordMapper extends BaseMapper<UserPasswordEntity> {
      * @param updatePwdLog 修改密码日志对象
      */
     void insertLog(UserPasswordEntity updatePwdLog);
+
+    /**
+     * 删除用户的密码变更日志（删除用户时同步清理，避免残留旧日志污染密码有效期计算）
+     * @param username 用户名
+     */
+    default void deleteByUsername(String username) {
+        delete(new LambdaQueryWrapper<UserPasswordEntity>().eq(UserPasswordEntity::getUsername, username));
+    }
 }

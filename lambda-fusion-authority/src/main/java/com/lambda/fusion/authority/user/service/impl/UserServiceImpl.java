@@ -409,6 +409,10 @@ public class UserServiceImpl implements UserService {
         roleMapper.deleteResourceRoleByAuthority(username);
         userOrganizationMapper.deleteUserOrganizationByUser(username);
         userFieldsMapper.deleteByUsername(username);
+        // la_user_info 主键为 USERNAME，残留会导致重建同名用户时主键冲突
+        userInfoMapper.deleteByUsername(username);
+        // 密码日志残留会把旧 UPDATE_TIME 当作新用户的密码修改时间，导致误判过期
+        userUpdatePwdLogMapper.deleteByUsername(username);
         // todo 删除用户数据权限
 
     }

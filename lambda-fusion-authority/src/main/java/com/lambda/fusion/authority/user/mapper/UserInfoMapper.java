@@ -1,6 +1,7 @@
 package com.lambda.fusion.authority.user.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lambda.fusion.authority.user.model.entity.UserInfoEntity;
@@ -31,6 +32,14 @@ public interface UserInfoMapper extends BaseMapper<UserInfoEntity> {
         return update(new LambdaUpdateWrapper<UserInfoEntity>()
                 .eq(UserInfoEntity::getUsername, userName)
                 .set(UserInfoEntity::getUpdatePwd, updatePwd));
+    }
+
+    /**
+     * 删除用户附加信息（删除用户时同步清理，主键为 USERNAME，残留会导致重建同名用户主键冲突）
+     * @param userName 用户名
+     */
+    default void deleteByUsername(String userName) {
+        delete(new LambdaQueryWrapper<UserInfoEntity>().eq(UserInfoEntity::getUsername, userName));
     }
 
     /**
