@@ -957,5 +957,26 @@
             ]]></sql>
     </changeSet>
 
+    <!-- ==================== 密码策略系统配置 ==================== -->
+    <changeSet id="lambda-authority-20260904100001" author="xiongmao">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_configs"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1)
+                FROM la_configs
+                WHERE PROPERTY_KEY = 'lambda.fusion.authorize.password-strategy.first-login-change-password'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_configs (PROPERTY_ID, PROPERTY_KEY, PROPERTY_VALUE, PROPERTY_NAME, PROPERTY_TYPE,
+                                    PROPERTY_DESC, APPLICATION, UPDATE_TIME)
+            values ('2036090410000000001',
+                    'lambda.fusion.authorize.password-strategy.first-login-change-password',
+                    '1', '新用户首次登录强制修改密码', 1,
+                    '新增用户首次登录时是否强制修改密码；关闭后首次登录直接使用创建时设置的密码',
+                    'public', now());
+            ]]></sql>
+    </changeSet>
+
 
 </databaseChangeLog>

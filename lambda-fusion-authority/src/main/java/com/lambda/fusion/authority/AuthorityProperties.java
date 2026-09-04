@@ -115,6 +115,11 @@ public class AuthorityProperties {
         private Integer remindDays = 7;
 
         /**
+         * 新增用户首次登录是否强制修改密码（可通过系统配置管理界面调整，public 配置全局生效）
+         */
+        private Boolean firstLoginChangePassword = true;
+
+        /**
          * 密码策略模式
          */
         public enum Mode {

@@ -305,6 +305,8 @@ public class UserServiceImpl implements UserService {
 
         UserInfoEntity userInfoEntity = createUser.getProps().toEntity();
         userInfoEntity.setUsername(userEntity.getUsername());
+        // 首登是否强制修改密码由密码策略统一控制（默认开启，可在系统配置管理界面调整）
+        userInfoEntity.setUpdatePwd(properties.getPasswordStrategy().getFirstLoginChangePassword());
         userInfoMapper.insert(userInfoEntity);
 
         SimpleOrganization simpleOrganization = createUser.getOrganization();
