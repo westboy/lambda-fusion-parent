@@ -31,6 +31,16 @@ public enum MessageErrorCode implements ErrorCode {
      */
     MESSAGE_CHANNEL_NOT_FOUND(14103, "消息渠道不存在"),
 
+    /**
+     * 消息模板不存在
+     */
+    MESSAGE_TEMPLATE_NOT_FOUND(14104, "消息模板不存在"),
+
+    /**
+     * 消息模板编码已存在
+     */
+    MESSAGE_TEMPLATE_CODE_EXISTS(14105, "消息模板编码已存在"),
+
     // ========== 公告相关错误 (14150-14189) ==========
     /**
      * 公告不存在

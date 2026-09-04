@@ -1,6 +1,7 @@
 package com.lambda.fusion.message.dispatch.model;
 
 import java.util.Collection;
+import java.util.Map;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -25,10 +26,10 @@ public class MessageEnvelope {
     /** 级别 */
     private final String level;
 
-    /** 标题 */
+    /** 标题（已渲染） */
     private final String title;
 
-    /** 正文 */
+    /** 正文（已渲染） */
     private final String content;
 
     /** 正文类型 */
@@ -42,6 +43,12 @@ public class MessageEnvelope {
 
     /** 来源业务单据ID */
     private final String bizId;
+
+    /** 模板编码（未使用模板时为 null） */
+    private final String templateCode;
+
+    /** 模板渲染变量 */
+    private final Map<String, Object> templateParams;
 
     /** 收件人集合 */
     private final Collection<String> receivers;

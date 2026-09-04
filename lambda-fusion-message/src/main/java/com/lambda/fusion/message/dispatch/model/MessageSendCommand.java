@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 import lombok.Data;
 
 /**
@@ -24,7 +25,7 @@ public class MessageSendCommand {
 
     @NotBlank(message = "标题不能为空")
     @Size(max = 255, message = "标题长度不能超过255个字符")
-    @Schema(description = "标题", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "标题（templateCode 存在时以模板渲染结果为准）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String title;
 
     @Schema(description = "正文")
@@ -36,6 +37,16 @@ public class MessageSendCommand {
     @NotEmpty(message = "收件人不能为空")
     @Schema(description = "收件人用户名列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<String> receivers;
+
+    @Schema(description = "投递渠道：inbox/email/sms，空则仅站内信", example = "[\"inbox\",\"sms\"]")
+    private List<String> channels;
+
+    @Size(max = 64, message = "模板编码长度不能超过64个字符")
+    @Schema(description = "消息模板编码，存在时按模板渲染标题与正文")
+    private String templateCode;
+
+    @Schema(description = "模板渲染变量")
+    private Map<String, Object> templateParams;
 
     @Size(max = 64, message = "来源业务类型长度不能超过64个字符")
     @Schema(description = "来源业务类型")

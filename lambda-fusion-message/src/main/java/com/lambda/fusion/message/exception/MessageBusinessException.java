@@ -72,6 +72,26 @@ public class MessageBusinessException extends BusinessException {
         return new MessageBusinessException(MessageErrorCode.MESSAGE_CHANNEL_NOT_FOUND, channel);
     }
 
+    /**
+     * 便捷方法：消息模板不存在异常
+     *
+     * @param code 模板编码
+     * @return MessageBusinessException
+     */
+    public static MessageBusinessException templateNotFound(String code) {
+        return new MessageBusinessException(MessageErrorCode.MESSAGE_TEMPLATE_NOT_FOUND, code);
+    }
+
+    /**
+     * 便捷方法：消息模板编码已存在异常
+     *
+     * @param code 模板编码
+     * @return MessageBusinessException
+     */
+    public static MessageBusinessException templateCodeExists(String code) {
+        return new MessageBusinessException(MessageErrorCode.MESSAGE_TEMPLATE_CODE_EXISTS, code);
+    }
+
     // ========== 公告相关便捷方法 ==========
 
     /**

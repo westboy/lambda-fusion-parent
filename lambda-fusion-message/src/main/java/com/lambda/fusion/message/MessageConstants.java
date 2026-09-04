@@ -16,6 +16,12 @@ public final class MessageConstants {
     /** 站内渠道标识。 */
     public static final String CHANNEL_INBOX = "inbox";
 
+    /** 邮件渠道标识。 */
+    public static final String CHANNEL_EMAIL = "email";
+
+    /** 短信渠道标识。 */
+    public static final String CHANNEL_SMS = "sms";
+
     /** 消息分类：系统消息。 */
     public static final String CATEGORY_SYSTEM = "system";
 
@@ -36,6 +42,9 @@ public final class MessageConstants {
 
     /** 正文类型：纯文本。 */
     public static final String CONTENT_TYPE_TEXT = "text";
+
+    /** 正文类型：HTML。 */
+    public static final String CONTENT_TYPE_HTML = "html";
 
     /** 公告范围：全员（当前租户内）。 */
     public static final String SCOPE_ALL = "all";

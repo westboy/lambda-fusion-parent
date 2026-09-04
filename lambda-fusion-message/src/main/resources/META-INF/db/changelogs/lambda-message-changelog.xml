@@ -170,4 +170,88 @@
         <addUniqueConstraint constraintName="uk_ar_announcement_reader" tableName="la_announcement_reads"
                              columnNames="ANNOUNCEMENT_ID, READER"/>
     </changeSet>
+
+    <changeSet id="lambda-message-202609040005" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_message_templates"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_message_templates" remarks="消息模板表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_message_templates_id" nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="CODE" type="varchar(64)" remarks="模板编码（业务幂等标识）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="NAME" type="varchar(64)" remarks="模板名称">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TITLE" type="varchar(255)" remarks="标题模板，支持 ${var} 占位符"/>
+            <column name="CONTENT" type="text" remarks="正文模板，支持 ${var} 占位符"/>
+            <column name="CONTENT_TYPE" type="varchar(16)" remarks="正文类型：text/html/markdown"/>
+            <column name="CHANNEL_PARAMS" type="text" remarks="渠道附加参数JSON，如 {&quot;sms&quot;:{&quot;templateId&quot;:&quot;...&quot;}}"/>
+            <column name="STATUS" type="int" defaultValueNumeric="1" remarks="状态：0停用，1启用">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REMARKS" type="varchar(280)" remarks="备注"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <addUniqueConstraint constraintName="uk_mt_tenant_code" tableName="la_message_templates"
+                             columnNames="TENANT_ID, CODE"/>
+    </changeSet>
+
+    <changeSet id="lambda-message-202609040006" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_message_deliveries"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_message_deliveries" remarks="外部渠道投递记录表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_message_deliveries_id" nullable="false"/>
+            </column>
+            <column name="MESSAGE_ID" type="varchar(32)" remarks="消息ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="CHANNEL" type="varchar(24)" remarks="渠道：email/sms">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TARGET" type="varchar(255)" remarks="投递目标：邮箱/手机号"/>
+            <column name="TEMPLATE_CODE" type="varchar(64)" remarks="使用的模板编码"/>
+            <column name="TEMPLATE_PARAMS" type="text" remarks="模板参数JSON"/>
+            <column name="STATUS" type="int" defaultValueNumeric="0" remarks="投递状态：0待发送，1成功，2失败">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RETRY_COUNT" type="int" defaultValueNumeric="0" remarks="重试次数">
+                <constraints nullable="false"/>
+            </column>
+            <column name="LAST_ERROR" type="varchar(1000)" remarks="最近一次失败原因"/>
+            <column name="SENT_AT" type="datetime" remarks="发送时间"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <createIndex indexName="idx_md_message" tableName="la_message_deliveries">
+            <column name="MESSAGE_ID"/>
+        </createIndex>
+        <createIndex indexName="idx_md_channel_status" tableName="la_message_deliveries">
+            <column name="CHANNEL"/>
+            <column name="STATUS"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>
