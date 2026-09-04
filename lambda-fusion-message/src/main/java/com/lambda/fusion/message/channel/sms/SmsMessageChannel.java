@@ -188,4 +188,55 @@ public class SmsMessageChannel implements MessageChannel {
         }
         return message.substring(0, 1000);
     }
+
+    @Override
+    public boolean retry(MessageDeliveryEntity delivery) {
+        SmsMessageSender sender = pickSender();
+        if (sender == null) {
+            delivery.setLastError("短信发送器未装配（请检查 lambda.sms.* 配置）");
+            return false;
+        }
+        if (delivery.getTarget() == null || delivery.getTarget().isBlank()) {
+            delivery.setLastError("投递记录缺少手机号，无法重试");
+            return false;
+        }
+        // 运营商模板ID取自模板 CHANNEL_PARAMS；模板参数用记录中保存的 JSON
+        String smsTemplateId =
+                delivery.getTemplateCode() == null ? null : resolveSmsTemplateIdByCode(delivery.getTemplateCode());
+        if (smsTemplateId == null || smsTemplateId.isBlank()) {
+            delivery.setLastError("短信运营商模板ID缺失（模板 CHANNEL_PARAMS 未配置 sms.templateId）");
+            return false;
+        }
+        try {
+            SmsSendResult result =
+                    sender.sendMessage(delivery.getTarget(), smsTemplateId, delivery.getTemplateParams());
+            if (result.isSuccess()) {
+                return true;
+            }
+            delivery.setLastError(truncate(result.getMessage()));
+            return false;
+        } catch (Exception e) {
+            log.warn("短信重试异常，target={}: {}", delivery.getTarget(), e.getMessage());
+            delivery.setLastError(truncate(e.getMessage()));
+            return false;
+        }
+    }
+
+    private String resolveSmsTemplateIdByCode(String code) {
+        MessageTemplateEntity template = templateService.getEnabledByCode(code);
+        if (template == null || template.getChannelParams() == null) {
+            return null;
+        }
+        try {
+            Map<String, Map<String, Object>> channelParams =
+                    objectMapper.readValue(template.getChannelParams(), new TypeReference<>() {});
+            Object templateId = channelParams.get("sms") == null
+                    ? null
+                    : channelParams.get("sms").get("templateId");
+            return templateId == null ? null : String.valueOf(templateId);
+        } catch (Exception e) {
+            log.warn("模板 CHANNEL_PARAMS 解析失败，code={}: {}", code, e.getMessage());
+            return null;
+        }
+    }
 }

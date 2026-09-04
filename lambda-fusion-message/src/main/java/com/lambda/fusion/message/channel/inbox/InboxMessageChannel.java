@@ -3,6 +3,7 @@ package com.lambda.fusion.message.channel.inbox;
 import com.lambda.fusion.message.MessageConstants;
 import com.lambda.fusion.message.channel.MessageChannel;
 import com.lambda.fusion.message.dispatch.model.MessageEnvelope;
+import com.lambda.fusion.message.dispatch.model.entity.MessageDeliveryEntity;
 import com.lambda.fusion.message.notification.service.UserMessageService;
 import java.util.Collection;
 import java.util.Map;
@@ -45,5 +46,11 @@ public class InboxMessageChannel implements MessageChannel {
                     "level", envelope.getLevel());
             notifier.notify(receivers, payload);
         }
+    }
+
+    @Override
+    public boolean retry(MessageDeliveryEntity delivery) {
+        // 站内渠道不产生投递记录，重试服务在入口处已排除本渠道；防御性返回失败
+        return false;
     }
 }

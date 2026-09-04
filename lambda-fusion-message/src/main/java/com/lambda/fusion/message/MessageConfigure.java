@@ -3,11 +3,14 @@ package com.lambda.fusion.message;
 import com.lambda.cloud.sms.SmsMessageSender;
 import com.lambda.cloud.sse.service.SseService;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.message.channel.bot.BotMessageChannel;
 import com.lambda.fusion.message.channel.email.EmailMessageChannel;
 import com.lambda.fusion.message.channel.inbox.SseNotifier;
 import com.lambda.fusion.message.channel.sms.SmsMessageChannel;
 import com.lambda.fusion.message.dispatch.resolver.MessageContactResolver;
+import com.lambda.fusion.message.dispatch.resolver.MessageRecipientResolver;
 import com.lambda.fusion.message.dispatch.resolver.impl.RemoteContactResolver;
+import com.lambda.fusion.message.dispatch.resolver.impl.RemoteScopeRecipientResolver;
 import com.lambda.fusion.message.dispatch.service.MessageDeliveryService;
 import com.lambda.fusion.message.template.service.MessageTemplateService;
 import org.apache.dubbo.config.ReferenceConfig;
@@ -79,6 +82,18 @@ public class MessageConfigure {
         public MessageContactResolver emailContactResolver(ObjectProvider<RemoteUserService> remoteUserService) {
             return new RemoteContactResolver("email", remoteUserService);
         }
+
+        @Bean
+        public MessageRecipientResolver orgRecipientResolver(
+                ObjectProvider<RemoteUserService> remoteUserService, ObjectMapper objectMapper) {
+            return RemoteScopeRecipientResolver.orgResolver(remoteUserService, objectMapper);
+        }
+
+        @Bean
+        public MessageRecipientResolver roleRecipientResolver(
+                ObjectProvider<RemoteUserService> remoteUserService, ObjectMapper objectMapper) {
+            return RemoteScopeRecipientResolver.roleResolver(remoteUserService, objectMapper);
+        }
     }
 
     /**
@@ -95,8 +110,10 @@ public class MessageConfigure {
                 ObjectProvider<JavaMailSender> mailSender,
                 ObjectProvider<MessageContactResolver> contactResolvers,
                 MessageDeliveryService deliveryService,
-                MessageProperties properties) {
-            return new EmailMessageChannel(mailSender, contactResolvers.stream().toList(), deliveryService, properties);
+                MessageProperties properties,
+                com.lambda.fusion.message.notification.mapper.MessageMapper messageMapper) {
+            return new EmailMessageChannel(
+                    mailSender, contactResolvers.stream().toList(), deliveryService, properties, messageMapper);
         }
     }
 
@@ -124,6 +141,24 @@ public class MessageConfigure {
                     templateService,
                     properties,
                     objectMapper);
+        }
+    }
+
+    /**
+     * 机器人 webhook 渠道：仅当渠道开关开启且至少配置了一个 webhook 时装配
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnProperty(prefix = "lambda.fusion.message.bot", name = "enabled", havingValue = "true")
+    public static class BotChannelConfigure {
+
+        @Bean
+        public BotMessageChannel botMessageChannel(
+                MessageProperties properties, MessageDeliveryService deliveryService, ObjectMapper objectMapper) {
+            if (properties.getBot().getWebhooks() == null
+                    || properties.getBot().getWebhooks().isEmpty()) {
+                throw new IllegalStateException("启动机器人渠道须至少配置一个 lambda.fusion.message.bot.webhooks");
+            }
+            return new BotMessageChannel(properties.getBot(), deliveryService, objectMapper);
         }
     }
 }

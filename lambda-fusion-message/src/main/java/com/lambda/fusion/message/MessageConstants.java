@@ -22,6 +22,9 @@ public final class MessageConstants {
     /** 短信渠道标识。 */
     public static final String CHANNEL_SMS = "sms";
 
+    /** 机器人 webhook 渠道标识。 */
+    public static final String CHANNEL_BOT = "bot";
+
     /** 消息分类：系统消息。 */
     public static final String CATEGORY_SYSTEM = "system";
 
@@ -51,6 +54,12 @@ public final class MessageConstants {
 
     /** 公告范围：指定用户。 */
     public static final String SCOPE_USER = "user";
+
+    /** 公告范围：指定组织（经 authority-api 解析用户所属组织）。 */
+    public static final String SCOPE_ORG = "org";
+
+    /** 公告范围：指定角色（经 authority-api 解析用户角色）。 */
+    public static final String SCOPE_ROLE = "role";
 
     /** 公告发布状态：草稿。 */
     public static final int PUBLISH_STATUS_DRAFT = 0;

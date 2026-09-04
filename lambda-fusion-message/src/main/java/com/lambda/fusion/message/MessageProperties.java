@@ -1,6 +1,8 @@
 package com.lambda.fusion.message;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -34,6 +36,12 @@ public class MessageProperties {
     @NestedConfigurationProperty
     private Sms sms = new Sms();
 
+    /**
+     * 机器人 webhook 渠道配置
+     */
+    @NestedConfigurationProperty
+    private Bot bot = new Bot();
+
     @Getter
     @Setter
     public static class Email {
@@ -62,5 +70,25 @@ public class MessageProperties {
          * 指定短信运营商（ALIYUN/TENCENT/MOCK），空则取容器内首个 SmsMessageSender
          */
         private String isp;
+    }
+
+    @Getter
+    @Setter
+    public static class Bot {
+
+        /**
+         * 是否启动机器人 webhook 渠道
+         */
+        private boolean enabled = false;
+
+        /**
+         * 机器人类型：DINGTALK / WECOM / FEISHU（协议互不兼容）
+         */
+        private String type = "DINGTALK";
+
+        /**
+         * 群机器人 webhook 地址列表（含 token，投递记录中脱敏）
+         */
+        private List<String> webhooks = new ArrayList<>();
     }
 }

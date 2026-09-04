@@ -7,6 +7,8 @@ import com.lambda.fusion.message.dispatch.model.MessageEnvelope;
 import com.lambda.fusion.message.dispatch.model.entity.MessageDeliveryEntity;
 import com.lambda.fusion.message.dispatch.resolver.MessageContactResolver;
 import com.lambda.fusion.message.dispatch.service.MessageDeliveryService;
+import com.lambda.fusion.message.notification.mapper.MessageMapper;
+import com.lambda.fusion.message.notification.model.entity.MessageEntity;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
@@ -34,16 +36,19 @@ public class EmailMessageChannel implements MessageChannel {
     private final List<MessageContactResolver> contactResolvers;
     private final MessageDeliveryService deliveryService;
     private final MessageProperties properties;
+    private final MessageMapper messageMapper;
 
     public EmailMessageChannel(
             ObjectProvider<JavaMailSender> mailSender,
             List<MessageContactResolver> contactResolvers,
             MessageDeliveryService deliveryService,
-            MessageProperties properties) {
+            MessageProperties properties,
+            MessageMapper messageMapper) {
         this.mailSender = mailSender;
         this.contactResolvers = contactResolvers;
         this.deliveryService = deliveryService;
         this.properties = properties;
+        this.messageMapper = messageMapper;
     }
 
     @Override
@@ -119,5 +124,42 @@ public class EmailMessageChannel implements MessageChannel {
         entity.setStatus(2);
         entity.setLastError(error != null && error.length() > 1000 ? error.substring(0, 1000) : error);
         return entity;
+    }
+
+    @Override
+    public boolean retry(MessageDeliveryEntity delivery) {
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (sender == null) {
+            delivery.setLastError("邮件发送器未装配（请检查 spring.mail.* 配置）");
+            return false;
+        }
+        // 正文取自消息主表（发送时已渲染）；目标直接用记录中的邮箱，不重新解析
+        MessageEntity message =
+                delivery.getMessageId() == null ? null : messageMapper.selectById(delivery.getMessageId());
+        if (message == null) {
+            delivery.setLastError("关联消息不存在，无法重试");
+            return false;
+        }
+        try {
+            MimeMessage mimeMessage = sender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, false, "UTF-8");
+            String from = properties.getEmail().getFrom();
+            if (from != null && !from.isBlank()) {
+                helper.setFrom(from);
+            }
+            helper.setTo(delivery.getTarget());
+            helper.setSubject(message.getTitle() == null ? "" : message.getTitle());
+            boolean html = MessageConstants.CONTENT_TYPE_HTML.equals(message.getContentType());
+            helper.setText(message.getContent() == null ? "" : message.getContent(), html);
+            sender.send(mimeMessage);
+            return true;
+        } catch (MessagingException e) {
+            log.warn("邮件重试失败，target={}: {}", delivery.getTarget(), e.getMessage());
+            delivery.setLastError(
+                    e.getMessage() != null && e.getMessage().length() > 1000
+                            ? e.getMessage().substring(0, 1000)
+                            : e.getMessage());
+            return false;
+        }
     }
 }
