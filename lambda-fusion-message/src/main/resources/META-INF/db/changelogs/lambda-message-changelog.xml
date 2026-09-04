@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="lambda-message-202609040001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_messages"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_messages" remarks="消息主表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_messages_id" nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="CATEGORY" type="varchar(24)" remarks="消息分类：system系统消息/user用户消息/biz业务通知"/>
+            <column name="LEVEL" type="varchar(16)" remarks="级别：info/important/urgent"/>
+            <column name="TITLE" type="varchar(255)" remarks="标题">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CONTENT" type="text" remarks="正文"/>
+            <column name="CONTENT_TYPE" type="varchar(16)" remarks="正文类型：text/html/markdown"/>
+            <column name="SENDER" type="varchar(64)" remarks="发送者"/>
+            <column name="BIZ_TYPE" type="varchar(64)" remarks="来源业务类型"/>
+            <column name="BIZ_ID" type="varchar(64)" remarks="来源业务单据ID"/>
+            <column name="REMARKS" type="varchar(280)" remarks="备注"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <createIndex indexName="idx_msg_tenant_category" tableName="la_messages">
+            <column name="TENANT_ID"/>
+            <column name="CATEGORY"/>
+            <column name="CREATED_AT"/>
+        </createIndex>
+        <createIndex indexName="idx_msg_biz" tableName="la_messages">
+            <column name="BIZ_TYPE"/>
+            <column name="BIZ_ID"/>
+        </createIndex>
+        <createIndex indexName="idx_msg_sender" tableName="la_messages">
+            <column name="SENDER"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-message-202609040002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_user_messages"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_user_messages" remarks="用户消息实例表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_user_messages_id" nullable="false"/>
+            </column>
+            <column name="MESSAGE_ID" type="varchar(32)" remarks="消息ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="RECEIVER" type="varchar(64)" remarks="收件人">
+                <constraints nullable="false"/>
+            </column>
+            <column name="IS_READ" type="int" defaultValueNumeric="0" remarks="是否已读：0未读，1已读">
+                <constraints nullable="false"/>
+            </column>
+            <column name="READ_TIME" type="datetime" remarks="首次已读时间"/>
+            <column name="IS_DELETED" type="int" defaultValueNumeric="0" remarks="用户侧删除：0正常，1已删除">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <addUniqueConstraint constraintName="uk_um_message_receiver" tableName="la_user_messages"
+                             columnNames="MESSAGE_ID, RECEIVER"/>
+        <createIndex indexName="idx_um_receiver_read" tableName="la_user_messages">
+            <column name="RECEIVER"/>
+            <column name="IS_READ"/>
+            <column name="IS_DELETED"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-message-202609040003" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_announcements"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_announcements" remarks="通知公告表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_announcements_id" nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="TITLE" type="varchar(255)" remarks="标题">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CONTENT" type="text" remarks="正文"/>
+            <column name="CONTENT_TYPE" type="varchar(16)" remarks="正文类型：text/html/markdown"/>
+            <column name="SCOPE_TYPE" type="varchar(24)" defaultValueNumeric="all" remarks="可见范围：all全员/user指定用户">
+                <constraints nullable="false"/>
+            </column>
+            <column name="SCOPE_TARGETS" type="text" remarks="范围目标JSON数组（用户名列表），all时为空"/>
+            <column name="PUBLISH_STATUS" type="int" defaultValueNumeric="0" remarks="发布状态：0草稿，1已发布，2已撤回">
+                <constraints nullable="false"/>
+            </column>
+            <column name="PUBLISH_TIME" type="datetime" remarks="发布时间"/>
+            <column name="EFFECTIVE_FROM" type="datetime" remarks="生效开始，空表示发布即生效"/>
+            <column name="EFFECTIVE_TO" type="datetime" remarks="生效结束，空表示长期有效"/>
+            <column name="IS_TOP" type="int" defaultValueNumeric="0" remarks="是否置顶：0否，1是">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ORDER_NO" type="int" defaultValueNumeric="0" remarks="排序号"/>
+            <column name="ENABLED" type="int" defaultValueNumeric="1" remarks="是否启用：0禁用，1启用">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REMARKS" type="varchar(280)" remarks="备注"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <createIndex indexName="idx_ann_tenant_status" tableName="la_announcements">
+            <column name="TENANT_ID"/>
+            <column name="PUBLISH_STATUS"/>
+            <column name="PUBLISH_TIME"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-message-202609040004" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_announcement_reads"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_announcement_reads" remarks="公告已读记录表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_announcement_reads_id" nullable="false"/>
+            </column>
+            <column name="ANNOUNCEMENT_ID" type="varchar(32)" remarks="公告ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="READER" type="varchar(64)" remarks="阅读人">
+                <constraints nullable="false"/>
+            </column>
+            <column name="READ_TIME" type="datetime" remarks="阅读时间"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <addUniqueConstraint constraintName="uk_ar_announcement_reader" tableName="la_announcement_reads"
+                             columnNames="ANNOUNCEMENT_ID, READER"/>
+    </changeSet>
+</databaseChangeLog>
