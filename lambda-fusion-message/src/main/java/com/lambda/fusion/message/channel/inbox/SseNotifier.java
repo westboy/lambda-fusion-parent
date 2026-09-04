@@ -8,10 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
- * SSE 推送通知器：向在线用户推送消息刷新信号（仅刷新信号，正文不走路）
+ * SSE 刷新信号通知器：向在线用户推送消息/公告的刷新信号（仅信号，正文不走路）
  * <p>
  * 仅在 lambda-cloud-starter-sse 存在时由 {@code MessageConfigure.SsePushConfigure} 装配；
- * 集群部署下定向推送可能覆盖不到连接在其他节点的用户，由客户端拉取补偿（见 docs/design/message-center.md §8）。
+ * 集群部署下定向推送经 starter-sse 的 TO_CLIENTS 路由、公告广播经 BROADCAST 路由。
  *
  * @author jin
  */
@@ -25,7 +25,7 @@ public class SseNotifier {
     }
 
     /**
-     * 向在线收件人推送刷新信号；单个用户推送失败不影响其他用户
+     * 向在线收件人定向推送刷新信号；单个用户推送失败不影响其他用户
      *
      * @param receivers 收件人集合
      * @param payload   推送负载（消息摘要字段）
@@ -41,6 +41,24 @@ public class SseNotifier {
             } catch (Exception e) {
                 log.warn("SSE 推送刷新信号失败，receiver={}: {}", receiver, e.getMessage());
             }
+        }
+    }
+
+    /**
+     * 全员广播刷新信号（公告发布/撤回；集群模式经 Redis 广播到各节点）
+     *
+     * @param eventName 事件名
+     * @param payload   推送负载
+     */
+    public void broadcast(String eventName, Map<String, Object> payload) {
+        SseService service = sseService.getIfAvailable();
+        if (service == null) {
+            return;
+        }
+        try {
+            service.broadcast(eventName, payload);
+        } catch (Exception e) {
+            log.warn("SSE 广播刷新信号失败: {}", e.getMessage());
         }
     }
 }

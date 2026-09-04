@@ -75,4 +75,11 @@ public interface AnnouncementService extends IService<AnnouncementEntity> {
      * @param id 公告ID
      */
     void markMyRead(String id);
+
+    /**
+     * 当前用户公告未读数：生效中且范围命中 - 已读
+     *
+     * @return 未读数
+     */
+    long countMyUnread();
 }

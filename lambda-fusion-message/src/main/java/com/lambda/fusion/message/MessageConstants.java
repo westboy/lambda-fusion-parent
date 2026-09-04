@@ -10,6 +10,9 @@ public final class MessageConstants {
     /** SSE 推送事件名：客户端收到后重新拉取未读数与消息列表（正文不走路）。 */
     public static final String SSE_EVENT_NOTIFICATION = "notification";
 
+    /** SSE 广播事件名：公告发布/撤回后通知客户端刷新公告未读数。 */
+    public static final String SSE_EVENT_ANNOUNCEMENT = "announcement";
+
     /** 系统消息发送者标识。 */
     public static final String SENDER_SYSTEM = "system";
 

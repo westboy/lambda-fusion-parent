@@ -38,12 +38,16 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
 
     private final AnnouncementReadService announcementReadService;
     private final Map<String, MessageRecipientResolver> recipientResolvers;
+    private final com.lambda.fusion.message.channel.inbox.SseNotifier sseNotifier;
 
     public AnnouncementServiceImpl(
-            AnnouncementReadService announcementReadService, List<MessageRecipientResolver> resolverList) {
+            AnnouncementReadService announcementReadService,
+            List<MessageRecipientResolver> resolverList,
+            com.lambda.fusion.message.channel.inbox.SseNotifier sseNotifier) {
         this.announcementReadService = announcementReadService;
         this.recipientResolvers = resolverList.stream()
                 .collect(Collectors.toUnmodifiableMap(MessageRecipientResolver::scopeType, Function.identity()));
+        this.sseNotifier = sseNotifier;
     }
 
     @Override
@@ -103,6 +107,15 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
         entity.setPublishStatus(MessageConstants.PUBLISH_STATUS_PUBLISHED);
         entity.setPublishTime(LocalDateTime.now());
         updateById(entity);
+        sseNotifier.broadcast(
+                MessageConstants.SSE_EVENT_ANNOUNCEMENT,
+                Map.of(
+                        "type",
+                        "publish",
+                        "announcementId",
+                        String.valueOf(entity.getId()),
+                        "title",
+                        entity.getTitle() == null ? "" : entity.getTitle()));
     }
 
     @Override
@@ -118,15 +131,16 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
         }
         entity.setPublishStatus(MessageConstants.PUBLISH_STATUS_REVOKED);
         updateById(entity);
+        sseNotifier.broadcast(
+                MessageConstants.SSE_EVENT_ANNOUNCEMENT,
+                Map.of("type", "revoke", "announcementId", String.valueOf(entity.getId())));
     }
 
     @Override
     public PageView<MyAnnouncement> pageMy(MyAnnouncementQuery query) {
         String username = AuthUtils.getUsername();
         // 读扩散：全量生效公告经范围解析过滤后内存分页（公告为低频数据，量级可控；org/role 范围接入后如需下推 SQL 再优化）
-        List<AnnouncementEntity> visible = list(query.getLambdaQueryWrapper()).stream()
-                .filter(entity -> containsScope(entity, username))
-                .toList();
+        List<AnnouncementEntity> visible = visibleAnnouncements(username);
 
         long total = visible.size();
         long current = query.getPage().getCurrent();
@@ -159,6 +173,27 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
             throw MessageBusinessException.announcementNotFound(id);
         }
         announcementReadService.markRead(id);
+    }
+
+    @Override
+    public long countMyUnread() {
+        String username = AuthUtils.getUsername();
+        List<String> visibleIds = visibleAnnouncements(username).stream()
+                .map(AnnouncementEntity::getId)
+                .toList();
+        if (visibleIds.isEmpty()) {
+            return 0;
+        }
+        long readCount = announcementReadService.readAnnouncementIds(visibleIds).size();
+        return visibleIds.size() - readCount;
+    }
+
+    /** 生效中且当前用户范围命中的公告（pageMy 与 countMyUnread 共用） */
+    private List<AnnouncementEntity> visibleAnnouncements(String username) {
+        MyAnnouncementQuery query = new MyAnnouncementQuery();
+        return list(query.getLambdaQueryWrapper()).stream()
+                .filter(entity -> containsScope(entity, username))
+                .toList();
     }
 
     private boolean containsScope(AnnouncementEntity entity, String username) {

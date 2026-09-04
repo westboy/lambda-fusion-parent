@@ -32,6 +32,12 @@ public class MyAnnouncementController {
         return announcementService.pageMy(query);
     }
 
+    @GetMapping("unread-count")
+    @Operation(summary = "我的公告未读数")
+    public Long unreadCount() {
+        return announcementService.countMyUnread();
+    }
+
     @PostMapping("/{id}/read")
     @Operation(summary = "标记公告已读")
     public void markRead(@PathVariable String id) {
