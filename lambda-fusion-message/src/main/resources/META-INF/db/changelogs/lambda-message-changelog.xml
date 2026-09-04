@@ -106,7 +106,7 @@
             </column>
             <column name="CONTENT" type="text" remarks="正文"/>
             <column name="CONTENT_TYPE" type="varchar(16)" remarks="正文类型：text/html/markdown"/>
-            <column name="SCOPE_TYPE" type="varchar(24)" defaultValueNumeric="all" remarks="可见范围：all全员/user指定用户">
+            <column name="SCOPE_TYPE" type="varchar(24)" defaultValue="all" remarks="可见范围：all全员/user指定用户">
                 <constraints nullable="false"/>
             </column>
             <column name="SCOPE_TARGETS" type="text" remarks="范围目标JSON数组（用户名列表），all时为空"/>
