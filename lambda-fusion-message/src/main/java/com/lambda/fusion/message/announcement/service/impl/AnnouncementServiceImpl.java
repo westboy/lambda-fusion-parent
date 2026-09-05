@@ -176,6 +176,34 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void markAllMyRead() {
+        String username = AuthUtils.getUsername();
+        List<String> visibleIds = visibleAnnouncements(username).stream()
+                .map(AnnouncementEntity::getId)
+                .toList();
+        if (visibleIds.isEmpty()) {
+            return;
+        }
+        java.util.Set<String> readIds = announcementReadService.readAnnouncementIds(visibleIds);
+        java.time.LocalDateTime now = LocalDateTime.now();
+        List<com.lambda.fusion.message.announcement.model.entity.AnnouncementReadEntity> toInsert = visibleIds.stream()
+                .filter(id -> !readIds.contains(id))
+                .map(id -> {
+                    com.lambda.fusion.message.announcement.model.entity.AnnouncementReadEntity entity =
+                            new com.lambda.fusion.message.announcement.model.entity.AnnouncementReadEntity();
+                    entity.setAnnouncementId(id);
+                    entity.setReader(username);
+                    entity.setReadTime(now);
+                    return entity;
+                })
+                .toList();
+        if (!toInsert.isEmpty()) {
+            announcementReadService.saveBatch(toInsert);
+        }
+    }
+
+    @Override
     public long countMyUnread() {
         String username = AuthUtils.getUsername();
         List<String> visibleIds = visibleAnnouncements(username).stream()

@@ -77,6 +77,11 @@ public interface AnnouncementService extends IService<AnnouncementEntity> {
     void markMyRead(String id);
 
     /**
+     * 当前用户全部可见公告标记已读（幂等，跳过已读）
+     */
+    void markAllMyRead();
+
+    /**
      * 当前用户公告未读数：生效中且范围命中 - 已读
      *
      * @return 未读数

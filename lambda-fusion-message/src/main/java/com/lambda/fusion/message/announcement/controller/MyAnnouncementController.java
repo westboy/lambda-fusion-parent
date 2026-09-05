@@ -43,4 +43,10 @@ public class MyAnnouncementController {
     public void markRead(@PathVariable String id) {
         announcementService.markMyRead(id);
     }
+
+    @PostMapping("read-all")
+    @Operation(summary = "全部公告标记已读")
+    public void markAllRead() {
+        announcementService.markAllMyRead();
+    }
 }
