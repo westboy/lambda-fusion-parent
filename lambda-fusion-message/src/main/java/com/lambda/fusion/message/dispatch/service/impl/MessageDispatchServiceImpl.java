@@ -78,7 +78,8 @@ public class MessageDispatchServiceImpl extends AbstractCrudService<MessageEntit
         entity.setContentType(defaultIfBlank(command.getContentType(), MessageConstants.CONTENT_TYPE_TEXT));
         entity.setTitle(title);
         entity.setContent(content);
-        entity.setSender(AuthUtils.getUsername());
+        // 发送人优先取命令显式携带值（远程/后台任务无登录上下文），为空才回退当前登录用户
+        entity.setSender(StringUtils.isNotBlank(command.getSender()) ? command.getSender() : AuthUtils.getUsername());
         entity.setBizType(command.getBizType());
         entity.setBizId(command.getBizId());
         entity.setRemarks(command.getRemarks());

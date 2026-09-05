@@ -77,6 +77,7 @@ public class RemoteMessageServiceAdapter implements RemoteMessageService {
             internal.setChannels(command.getChannels());
             internal.setBizType(command.getBizType());
             internal.setBizId(command.getBizId());
+            internal.setSender(command.getSender());
             internal.setRemarks("来自远程服务: " + StringUtils.defaultIfBlank(command.getSender(), "unknown"));
             messageDispatchService.send(internal);
             return true;

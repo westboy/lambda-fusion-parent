@@ -48,6 +48,10 @@ public class MessageSendCommand {
     @Schema(description = "模板渲染变量")
     private Map<String, Object> templateParams;
 
+    @Size(max = 64, message = "发送人长度不能超过64个字符")
+    @Schema(description = "发送人用户名：远程/后台任务显式传入；为空时回退当前登录用户")
+    private String sender;
+
     @Size(max = 64, message = "来源业务类型长度不能超过64个字符")
     @Schema(description = "来源业务类型")
     private String bizType;
