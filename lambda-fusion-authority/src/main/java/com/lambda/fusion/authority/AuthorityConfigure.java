@@ -25,6 +25,7 @@ import com.lambda.fusion.authority.user.service.UserOnlineLogService;
 import com.lambda.fusion.core.tree.filter.DefaultTreeDataFilter;
 import com.lambda.fusion.core.tree.filter.TreeDataFilter;
 import com.lambda.fusion.core.utils.AuthUtils;
+import com.lambda.fusion.message.api.RemoteMessageService;
 import com.lambda.fusion.permission.service.PermissionTokenVerifier;
 import com.lambda.security.service.ThirdPartyLoginService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -73,6 +74,20 @@ public class AuthorityConfigure implements WebMvcConfigurer {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "org.apache.dubbo.config.spring.ServiceBean")
     public static class DubboServiceConfiguration {
+
+        /**
+         * 远程消息发送服务引用：仅当 classpath 存在 message-api 且 Dubbo 可用时自建引用
+         * （check=false，message 未就绪时由 PasswordExpiryNotifier 降级跳过）。
+         */
+        @Bean
+        @ConditionalOnClass(name = "com.lambda.fusion.message.api.RemoteMessageService")
+        public RemoteMessageService remoteMessageService() {
+            org.apache.dubbo.config.ReferenceConfig<RemoteMessageService> reference =
+                    new org.apache.dubbo.config.ReferenceConfig<>();
+            reference.setInterface(RemoteMessageService.class);
+            reference.setCheck(false);
+            return reference.get();
+        }
 
         @Bean
         @DubboService(interfaceClass = RemoteAuthenticationService.class)

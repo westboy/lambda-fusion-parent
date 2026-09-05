@@ -12,6 +12,7 @@ import com.lambda.cloud.core.principal.LoginUser;
 import com.lambda.cloud.web.TenantHolder;
 import com.lambda.fusion.authority.AuthorityConstants;
 import com.lambda.fusion.authority.AuthorityProperties;
+import com.lambda.fusion.authority.authentication.adapter.PasswordExpiryNotifier;
 import com.lambda.fusion.authority.authentication.assembler.MenuRouteAssembler;
 import com.lambda.fusion.authority.authentication.mapper.AuthenticationMapper;
 import com.lambda.fusion.authority.authentication.model.*;
@@ -77,6 +78,7 @@ public class AuthenticationServiceImpl implements AuthenticationService, UserDet
     private final UserService userService;
     private final UserThirdPartService userThirdPartService;
     private final MenuRouteAssembler menuRouteAssembler;
+    private final PasswordExpiryNotifier passwordExpiryNotifier;
 
     @Override
     public LoginUser loginByUsername(String username, String loginType) {
@@ -232,6 +234,9 @@ public class AuthenticationServiceImpl implements AuthenticationService, UserDet
         }
         user.setPasswordResetRequired(passwordResetRequired);
         user.setPasswordRemainDays(passwordResetRequired ? 0 : expiry.getRemainDays());
+
+        // 密码临近过期时按频控策略发站内信提醒(<3 天每次登录,3~7 天每周一次);失败不影响登录
+        passwordExpiryNotifier.notifyIfNeeded(AuthUtils.getUser(), expiry);
 
         user.setToken(StpUtil.getTokenValue());
         user.setHomePath(configProperties.getApplication().getHomePath());
