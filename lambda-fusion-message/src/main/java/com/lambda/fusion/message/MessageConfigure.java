@@ -3,10 +3,12 @@ package com.lambda.fusion.message;
 import com.lambda.cloud.sms.SmsMessageSender;
 import com.lambda.cloud.sse.service.SseService;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.message.api.RemoteMessageService;
 import com.lambda.fusion.message.channel.bot.BotMessageChannel;
 import com.lambda.fusion.message.channel.email.EmailMessageChannel;
 import com.lambda.fusion.message.channel.inbox.SseNotifier;
 import com.lambda.fusion.message.channel.sms.SmsMessageChannel;
+import com.lambda.fusion.message.dispatch.adapter.RemoteMessageServiceAdapter;
 import com.lambda.fusion.message.dispatch.resolver.MessageContactResolver;
 import com.lambda.fusion.message.dispatch.resolver.MessageRecipientResolver;
 import com.lambda.fusion.message.dispatch.resolver.impl.RemoteContactResolver;
@@ -14,6 +16,7 @@ import com.lambda.fusion.message.dispatch.resolver.impl.RemoteScopeRecipientReso
 import com.lambda.fusion.message.dispatch.service.MessageDeliveryService;
 import com.lambda.fusion.message.template.service.MessageTemplateService;
 import org.apache.dubbo.config.ReferenceConfig;
+import org.apache.dubbo.config.annotation.DubboService;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -48,6 +51,26 @@ public class MessageConfigure {
         @Bean
         public SseNotifier sseNotifier(ObjectProvider<SseService> sseService) {
             return new SseNotifier(sseService);
+        }
+    }
+
+    /**
+     * 远程消息发送服务：仅当 classpath 存在 message-api 且 Dubbo 可用时经 Dubbo 暴露，
+     * 供其他服务（如 ai）远程发送消息（对齐 authority 侧 RemoteUserService 暴露模式）
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.fusion.message.api.RemoteMessageService")
+    public static class RemoteMessageServiceConfigure {
+
+        @Configuration(proxyBeanMethods = false)
+        @ConditionalOnClass(name = "org.apache.dubbo.config.spring.ServiceBean")
+        public static class DubboRemoteMessageConfiguration {
+
+            @Bean
+            @DubboService(interfaceClass = RemoteMessageService.class)
+            public RemoteMessageService remoteMessageService(RemoteMessageServiceAdapter adapter) {
+                return adapter;
+            }
         }
     }
 
