@@ -44,6 +44,7 @@ import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import com.lambda.fusion.ai.storage.LocalAiFileStorage;
 import com.lambda.fusion.ai.storage.OssAiFileStorage;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.message.api.RemoteMessageService;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
@@ -117,6 +118,24 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 @ComponentScan(basePackageClasses = AiConfigure.class)
 @EnableConfigurationProperties(AiProperties.class)
 public class AiConfigure {
+
+    /**
+     * 远程消息发送服务：仅当 classpath 存在 message-api 且 Dubbo 可用时自建引用（check=false，
+     * message 未就绪时由 {@code ScheduledTaskNotifier} 在调用阶段降级跳过）。
+     */
+    @Configuration
+    @ConditionalOnClass(name = "com.lambda.fusion.message.api.RemoteMessageService")
+    public static class RemoteMessageConfiguration {
+
+        @Bean
+        @ConditionalOnClass(name = "org.apache.dubbo.config.spring.ReferenceConfig")
+        public RemoteMessageService remoteMessageService() {
+            ReferenceConfig<RemoteMessageService> reference = new ReferenceConfig<>();
+            reference.setInterface(RemoteMessageService.class);
+            reference.setCheck(false);
+            return reference.get();
+        }
+    }
 
     /** 独立 Qwen Image 工具；是否存在仅由自身配置决定。 */
     @Configuration

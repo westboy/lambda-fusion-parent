@@ -86,6 +86,8 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         // 定时任务不参与主 Agent 路由，路由启用状态与调度启用状态相互独立。
         entity.setEnabled(Boolean.FALSE);
         entity.setScheduleEnabled(Boolean.TRUE.equals(dto.getScheduleEnabled()));
+        // 记录创建人：定时任务完成后向创建人发送站内信通知。
+        entity.setCreatedBy(AuthUtils.getUsername());
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         subAgentMapper.insert(entity);

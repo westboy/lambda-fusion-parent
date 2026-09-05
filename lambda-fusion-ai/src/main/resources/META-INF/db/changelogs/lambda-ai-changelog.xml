@@ -1037,5 +1037,20 @@
             </addColumn>
         </rollback>
     </changeSet>
+    <!-- ========== ai_sub_agent 增创建人(定时任务完成通知接收人) ========== -->
+    <changeSet id="lambda-ai-2026090500010" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="ai_sub_agent"/>
+                <not>
+                    <columnExists tableName="ai_sub_agent" columnName="created_by"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="ai_sub_agent">
+            <column name="created_by" type="varchar(128)"
+                    remarks="创建人用户名(定时任务完成站内信通知的默认接收人;历史数据为空则不通知)"/>
+        </addColumn>
+    </changeSet>
 
 </databaseChangeLog>

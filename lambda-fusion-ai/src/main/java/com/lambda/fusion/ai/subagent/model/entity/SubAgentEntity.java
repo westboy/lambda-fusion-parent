@@ -107,6 +107,10 @@ public class SubAgentEntity {
     @Schema(description = "备注")
     private String remark;
 
+    @TableField("created_by")
+    @Schema(description = "创建人用户名(定时任务完成通知的默认接收人)")
+    private String createdBy;
+
     @TableField("created_at")
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;

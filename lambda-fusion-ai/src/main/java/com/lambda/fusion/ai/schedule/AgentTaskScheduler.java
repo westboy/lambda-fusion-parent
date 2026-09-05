@@ -9,6 +9,7 @@ import com.lambda.fusion.ai.runtime.ModelResolver;
 import com.lambda.fusion.ai.runtime.ToolkitAssembler;
 import com.lambda.fusion.ai.schedule.service.ScheduledTaskLogService;
 import com.lambda.fusion.ai.subagent.model.entity.SubAgentEntity;
+import com.lambda.fusion.core.utils.AuthUtils;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -56,16 +57,17 @@ public class AgentTaskScheduler {
     private final ModelResolver modelResolver;
     private final ToolkitAssembler toolkitAssembler;
     private final ScheduledTaskLogService scheduledTaskLogService;
+    private final ScheduledTaskNotifier taskNotifier;
 
     /** 生成调度器内的唯一名称，以租户前缀隔离同名任务。 */
-    public static String scheduleName(String tenantId, String name) {
-        return tenantId + ":" + name;
+    public static String scheduleName(String id, String name) {
+        return id + ":" + name;
     }
 
     /** 提交或重排任务，并返回可在执行时恢复租户上下文的任务装饰器。 */
     public ScheduleAgentTask<Msg> scheduleTask(SubAgentEntity entity) {
         validate(entity);
-        String name = scheduleName(entity.getTenantId(), entity.getName());
+        String name = scheduleName(entity.getId(), entity.getName());
         // 更新任务时先取消同名旧调度，确保调度器只保留当前配置。
         agentScheduler.cancel(name);
 
@@ -157,7 +159,7 @@ public class AgentTaskScheduler {
         }
     }
 
-    /** 记录一次手动执行（MANUAL）；落库失败不影响执行结果。 */
+    /** 记录一次手动执行（MANUAL）；落库失败不影响执行结果。随后向任务创建人发送站内信通知。 */
     private void recordExecution(
             SubAgentEntity entity,
             boolean success,
@@ -174,6 +176,11 @@ public class AgentTaskScheduler {
                 errorMessage,
                 startedAt,
                 finishedAt);
+        // 手动触发在控制器线程执行，当前登录人即触发者；回填为创建人以保证必有接收人。
+        if (StringUtils.isBlank(entity.getCreatedBy())) {
+            entity.setCreatedBy(AuthUtils.getUsername());
+        }
+        taskNotifier.notifyResult(entity, success, output, errorMessage, startedAt, finishedAt, TaskTriggerType.MANUAL);
     }
 
     private void validate(SubAgentEntity entity) {
