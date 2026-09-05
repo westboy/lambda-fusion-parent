@@ -21,6 +21,9 @@ public class UserQuery extends PageQuery<User> {
     @Schema(description = "用户昵称")
     private String nickname;
 
+    @Schema(description = "关键字（同时模糊匹配用户名/昵称/手机号/邮箱）")
+    private String keyword;
+
     @Schema(description = "角色名称")
     private String authority;
 

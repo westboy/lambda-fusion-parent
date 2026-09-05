@@ -106,6 +106,9 @@
             <if test="parameters.nickname != null and parameters.nickname != ''">
                 and t.nickname like #{parameters.nickname}
             </if>
+            <if test="parameters.keyword != null and parameters.keyword != ''">
+                and (t.username like #{parameters.keyword} or t.nickname like #{parameters.keyword} or t.mobile like #{parameters.keyword} or t.email like #{parameters.keyword})
+            </if>
             <if test="parameters.mobile != null and parameters.mobile != ''">
                 and t.mobile like #{parameters.mobile}
             </if>

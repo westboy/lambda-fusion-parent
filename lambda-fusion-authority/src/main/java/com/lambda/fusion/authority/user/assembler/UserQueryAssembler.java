@@ -53,6 +53,9 @@ public class UserQueryAssembler {
         if (StringUtils.isNotBlank(userQuery.getMobile())) {
             userQueryContext.setMobile(fuzzyQuery(userQuery.getMobile()));
         }
+        if (StringUtils.isNotBlank(userQuery.getKeyword())) {
+            userQueryContext.setKeyword(fuzzyQuery(userQuery.getKeyword()));
+        }
         if (StringUtils.isNotBlank(tenantId)) {
             userQueryContext.setTenantId(tenantId);
         }

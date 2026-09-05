@@ -18,6 +18,7 @@ public class UserQueryContext {
     private String username;
     private String email;
     private String nickname;
+    private String keyword;
     private String mobile;
     private String tenantId;
     private String authority;
