@@ -48,7 +48,7 @@ public class ScheduledTaskLogServiceImpl implements ScheduledTaskLogService {
             entity.setTaskName(taskName);
             entity.setTriggerType(triggerType);
             entity.setStatus(success ? TaskExecStatus.SUCCESS.name() : TaskExecStatus.FAILED.name());
-            entity.setOutput(output);
+            entity.setResultOutput(output);
             entity.setErrorMessage(StringUtils.left(errorMessage, 1024));
             entity.setDurationMs(durationMillis(startedAt, finishedAt));
             entity.setStartedAt(startedAt);

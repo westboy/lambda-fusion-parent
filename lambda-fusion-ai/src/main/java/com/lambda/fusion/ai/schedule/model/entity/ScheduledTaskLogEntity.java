@@ -42,7 +42,7 @@ public class ScheduledTaskLogEntity {
 
     @TableField("result_output")
     @Schema(description = "Agent 最终输出全文(定时路径暂为空)")
-    private String output;
+    private String resultOutput;
 
     @TableField("error_message")
     @Schema(description = "失败信息")
