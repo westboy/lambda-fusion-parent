@@ -8,6 +8,8 @@ import com.lambda.fusion.ai.schedule.service.ScheduledTaskLogService;
 import com.lambda.fusion.ai.subagent.mapper.SubAgentMapper;
 import com.lambda.fusion.ai.subagent.model.entity.SubAgentEntity;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -15,9 +17,6 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobListener;
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 /**
  * 监听共享 Quartz {@code Scheduler} 的定时执行，补齐任务执行期间的租户上下文并记录执行结果。
@@ -132,7 +131,7 @@ public class AgentExecutionJobListener implements JobListener {
                     .eq(SubAgentEntity::getCategory, SubAgentCategory.SCHEDULED_TASK.getCode())
                     .eq(SubAgentEntity::getName, taskName));
         } catch (Exception e) {
-            log.warn("定时任务实体解析失败: taskId={}, name={}", id , taskName);
+            log.warn("定时任务实体解析失败: taskId={}, name={}", id, taskName);
             return null;
         }
     }

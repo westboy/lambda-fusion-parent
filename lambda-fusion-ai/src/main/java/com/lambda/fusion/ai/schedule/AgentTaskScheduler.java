@@ -59,7 +59,7 @@ public class AgentTaskScheduler {
     private final ScheduledTaskLogService scheduledTaskLogService;
     private final ScheduledTaskNotifier taskNotifier;
 
-    /** 生成调度器内的唯一名称，以租户前缀隔离同名任务。 */
+    /** 生成调度器内的唯一名称，以任务主键隔离同名任务（主键全局唯一，不受同名/跨租户影响）。 */
     public static String scheduleName(String id, String name) {
         return id + ":" + name;
     }
@@ -84,20 +84,20 @@ public class AgentTaskScheduler {
         return new TenantAwareTask(task, entity.getTenantId());
     }
 
-    public boolean cancel(String tenantId, String name) {
-        return agentScheduler.cancel(scheduleName(tenantId, name));
+    public boolean cancel(String id, String name) {
+        return agentScheduler.cancel(scheduleName(id, name));
     }
 
-    public boolean pause(String tenantId, String name) {
-        return agentScheduler.pause(scheduleName(tenantId, name));
+    public boolean pause(String id, String name) {
+        return agentScheduler.pause(scheduleName(id, name));
     }
 
-    public boolean resume(String tenantId, String name) {
-        return agentScheduler.resume(scheduleName(tenantId, name));
+    public boolean resume(String id, String name) {
+        return agentScheduler.resume(scheduleName(id, name));
     }
 
-    public TriggerState status(String tenantId, String name) {
-        return agentScheduler.getStatus(scheduleName(tenantId, name));
+    public TriggerState status(String id, String name) {
+        return agentScheduler.getStatus(scheduleName(id, name));
     }
 
     /**
@@ -108,7 +108,7 @@ public class AgentTaskScheduler {
      */
     @Deprecated
     public void triggerNow(SubAgentEntity entity) {
-        String name = scheduleName(entity.getTenantId(), entity.getName());
+        String name = scheduleName(entity.getId(), entity.getName());
         ScheduleAgentTask<Msg> task = agentScheduler.getScheduledAgent(name);
         if (task == null) {
             task = scheduleTask(entity);
@@ -130,7 +130,7 @@ public class AgentTaskScheduler {
     public void runOnce(SubAgentEntity entity) {
         validate(entity);
         RuntimeAgentConfig agentConfig = RuntimeAgentConfig.builder()
-                .name(scheduleName(entity.getTenantId(), entity.getName()))
+                .name(scheduleName(entity.getId(), entity.getName()))
                 .modelConfig(new EntityModelConfig(entity))
                 .sysPrompt(buildSysPrompt(entity))
                 .toolkit(buildToolkit(entity))

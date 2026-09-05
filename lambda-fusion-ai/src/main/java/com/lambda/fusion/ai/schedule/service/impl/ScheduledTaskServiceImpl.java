@@ -161,7 +161,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     public void delete(String id) {
         SubAgentEntity entity = requireTask(id);
         subAgentMapper.deleteById(id);
-        agentTaskScheduler.cancel(entity.getTenantId(), entity.getName());
+        agentTaskScheduler.cancel(entity.getId(), entity.getName());
     }
 
     /**
@@ -171,7 +171,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     @Transactional(rollbackFor = Exception.class)
     public void pause(String id) {
         SubAgentEntity entity = requireTask(id);
-        boolean paused = agentTaskScheduler.pause(entity.getTenantId(), entity.getName());
+        boolean paused = agentTaskScheduler.pause(entity.getId(), entity.getName());
         if (!paused) {
             log.warn("定时任务暂停时调度器未找到活动任务(可能未注册/已重启): id={}, name={}", id, entity.getName());
         }
@@ -201,7 +201,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
     @Override
     public TriggerState status(String id) {
         SubAgentEntity entity = requireTask(id);
-        return agentTaskScheduler.status(entity.getTenantId(), entity.getName());
+        return agentTaskScheduler.status(entity.getId(), entity.getName());
     }
 
     @Override
@@ -216,7 +216,7 @@ public class ScheduledTaskServiceImpl implements ScheduledTaskService {
         if (Boolean.TRUE.equals(entity.getScheduleEnabled())) {
             agentTaskScheduler.scheduleTask(entity);
         } else {
-            agentTaskScheduler.cancel(entity.getTenantId(), entity.getName());
+            agentTaskScheduler.cancel(entity.getId(), entity.getName());
         }
     }
 
