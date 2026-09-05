@@ -170,21 +170,14 @@ public class AuthorityConfigure implements WebMvcConfigurer {
             @Override
             public void insertFill(MetaObjectHandler handler, MetaObject metaObject) {
                 handler.strictInsertFill(metaObject, "createdAt", LocalDateTime.class, LocalDateTime.now());
-                handler.strictInsertFill(
-                        metaObject,
-                        "createdBy",
-                        String.class,
-                        AuthUtils.getUser().getUsername());
+                // 审计操作人须容忍无登录上下文（Quartz 后台线程、单机远程消息落库等），否则填充即抛异常中断写入。
+                handler.strictInsertFill(metaObject, "createdBy", String.class, AuthUtils.getSafeUsername());
             }
 
             @Override
             public void updateFill(MetaObjectHandler handler, MetaObject metaObject) {
                 handler.strictUpdateFill(metaObject, "updatedAt", LocalDateTime.class, LocalDateTime.now());
-                handler.strictUpdateFill(
-                        metaObject,
-                        "updatedBy",
-                        String.class,
-                        AuthUtils.getUser().getUsername());
+                handler.strictUpdateFill(metaObject, "updatedBy", String.class, AuthUtils.getSafeUsername());
             }
         };
     }
