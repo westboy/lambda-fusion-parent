@@ -38,16 +38,23 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
 
     private final AnnouncementReadService announcementReadService;
     private final Map<String, MessageRecipientResolver> recipientResolvers;
-    private final com.lambda.fusion.message.channel.inbox.SseNotifier sseNotifier;
+    private final org.springframework.beans.factory.ObjectProvider<com.lambda.fusion.message.channel.inbox.SseNotifier>
+            sseNotifier;
 
     public AnnouncementServiceImpl(
             AnnouncementReadService announcementReadService,
             List<MessageRecipientResolver> resolverList,
-            com.lambda.fusion.message.channel.inbox.SseNotifier sseNotifier) {
+            org.springframework.beans.factory.ObjectProvider<com.lambda.fusion.message.channel.inbox.SseNotifier>
+                    sseNotifier) {
         this.announcementReadService = announcementReadService;
         this.recipientResolvers = resolverList.stream()
                 .collect(Collectors.toUnmodifiableMap(MessageRecipientResolver::scopeType, Function.identity()));
         this.sseNotifier = sseNotifier;
+    }
+
+    /** SSE 通知器（SSE starter 缺失时为 null，静默跳过信号推送） */
+    private com.lambda.fusion.message.channel.inbox.SseNotifier notifier() {
+        return sseNotifier.getIfAvailable();
     }
 
     @Override
@@ -107,15 +114,18 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
         entity.setPublishStatus(MessageConstants.PUBLISH_STATUS_PUBLISHED);
         entity.setPublishTime(LocalDateTime.now());
         updateById(entity);
-        sseNotifier.broadcast(
-                MessageConstants.SSE_EVENT_ANNOUNCEMENT,
-                Map.of(
-                        "type",
-                        "publish",
-                        "announcementId",
-                        String.valueOf(entity.getId()),
-                        "title",
-                        entity.getTitle() == null ? "" : entity.getTitle()));
+        com.lambda.fusion.message.channel.inbox.SseNotifier notifier = notifier();
+        if (notifier != null) {
+            notifier.broadcast(
+                    MessageConstants.SSE_EVENT_ANNOUNCEMENT,
+                    Map.of(
+                            "type",
+                            "publish",
+                            "announcementId",
+                            String.valueOf(entity.getId()),
+                            "title",
+                            entity.getTitle() == null ? "" : entity.getTitle()));
+        }
     }
 
     @Override
@@ -131,9 +141,12 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
         }
         entity.setPublishStatus(MessageConstants.PUBLISH_STATUS_REVOKED);
         updateById(entity);
-        sseNotifier.broadcast(
-                MessageConstants.SSE_EVENT_ANNOUNCEMENT,
-                Map.of("type", "revoke", "announcementId", String.valueOf(entity.getId())));
+        com.lambda.fusion.message.channel.inbox.SseNotifier notifier = notifier();
+        if (notifier != null) {
+            notifier.broadcast(
+                    MessageConstants.SSE_EVENT_ANNOUNCEMENT,
+                    Map.of("type", "revoke", "announcementId", String.valueOf(entity.getId())));
+        }
     }
 
     @Override
@@ -173,6 +186,7 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
             throw MessageBusinessException.announcementNotFound(id);
         }
         announcementReadService.markRead(id);
+        notifyReadSignal();
     }
 
     @Override
@@ -200,6 +214,15 @@ public class AnnouncementServiceImpl extends AbstractCrudService<AnnouncementEnt
                 .toList();
         if (!toInsert.isEmpty()) {
             announcementReadService.saveBatch(toInsert);
+        }
+        notifyReadSignal();
+    }
+
+    /** 已读动作后向当前用户定向推送刷新信号（铃铛即时同步，多标签页一致） */
+    private void notifyReadSignal() {
+        com.lambda.fusion.message.channel.inbox.SseNotifier notifier = notifier();
+        if (notifier != null) {
+            notifier.notify(List.of(AuthUtils.getUsername()), Map.of("reason", "read"));
         }
     }
 

@@ -9,6 +9,7 @@ import com.lambda.cloud.core.utils.Assert;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.service.AbstractCrudService;
 import com.lambda.fusion.core.utils.AuthUtils;
+import com.lambda.fusion.message.channel.inbox.SseNotifier;
 import com.lambda.fusion.message.dispatch.model.MessageEnvelope;
 import com.lambda.fusion.message.notification.assembler.MyMessageAssembler;
 import com.lambda.fusion.message.notification.mapper.UserMessageMapper;
@@ -19,7 +20,9 @@ import com.lambda.fusion.message.notification.service.UserMessageService;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +42,7 @@ public class UserMessageServiceImpl extends AbstractCrudService<UserMessageEntit
     private static final int NOT_DELETED_FLAG = 0;
 
     private final MyMessageAssembler myMessageAssembler;
+    private final ObjectProvider<SseNotifier> sseNotifier;
 
     @Override
     public PageView<MyMessage> pageMy(MyMessageQuery query) {
@@ -69,6 +73,7 @@ public class UserMessageServiceImpl extends AbstractCrudService<UserMessageEntit
                 .in(UserMessageEntity::getId, ids)
                 .set(UserMessageEntity::getIsRead, READ_FLAG)
                 .set(UserMessageEntity::getReadTime, LocalDateTime.now()));
+        notifyReadSignal();
     }
 
     @Override
@@ -80,6 +85,7 @@ public class UserMessageServiceImpl extends AbstractCrudService<UserMessageEntit
                 .eq(UserMessageEntity::getIsDeleted, NOT_DELETED_FLAG)
                 .set(UserMessageEntity::getIsRead, READ_FLAG)
                 .set(UserMessageEntity::getReadTime, LocalDateTime.now()));
+        notifyReadSignal();
     }
 
     @Override
@@ -90,6 +96,15 @@ public class UserMessageServiceImpl extends AbstractCrudService<UserMessageEntit
                 .eq(UserMessageEntity::getId, id)
                 .eq(UserMessageEntity::getReceiver, AuthUtils.getUsername())
                 .set(UserMessageEntity::getIsDeleted, DELETED_FLAG));
+        notifyReadSignal();
+    }
+
+    /** 已读/删除后向当前用户定向推送刷新信号（铃铛即时同步，多标签页一致） */
+    private void notifyReadSignal() {
+        SseNotifier notifier = sseNotifier.getIfAvailable();
+        if (notifier != null) {
+            notifier.notify(List.of(AuthUtils.getUsername()), Map.of("reason", "read"));
+        }
     }
 
     @Override
