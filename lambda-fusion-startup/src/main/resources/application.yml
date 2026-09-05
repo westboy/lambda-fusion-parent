@@ -63,6 +63,7 @@ mybatis-plus:
     enabled: true
   configuration:
     default-enum-type-handler: org.apache.ibatis.type.EnumOrdinalTypeHandler
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 ################################# Lambda 配置 #################################
 lambda:
   #### 单机 Lucene 全文索引；多实例部署应关闭并改用共享检索服务 ####
