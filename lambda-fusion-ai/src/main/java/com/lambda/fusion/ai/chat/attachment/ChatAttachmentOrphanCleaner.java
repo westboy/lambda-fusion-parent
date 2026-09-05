@@ -40,7 +40,7 @@ public class ChatAttachmentOrphanCleaner {
         scheduler.scheduleWithFixedDelay(
                 this::runSafely, cfg.getIntervalMinutes(), cfg.getIntervalMinutes(), TimeUnit.MINUTES);
         log.info(
-                "孤儿附件回收任务已启动: intervalMinutes={}, retentionHours={}, batchSize={}",
+                "AI对话附件回收任务已启动: intervalMinutes={}, retentionHours={}, batchSize={}",
                 cfg.getIntervalMinutes(),
                 cfg.getRetentionHours(),
                 cfg.getBatchSize());
@@ -54,10 +54,10 @@ public class ChatAttachmentOrphanCleaner {
         try {
             int purged = attachmentService.purgeOrphans(cutoff, cfg.getBatchSize());
             if (log.isDebugEnabled()) {
-                log.debug("孤儿附件回收本轮结束: purged={}, cutoff={}", purged, cutoff);
+                log.debug("AI对话附件回收本轮结束: purged={}, cutoff={}", purged, cutoff);
             }
         } catch (RuntimeException e) {
-            log.warn("孤儿附件回收本轮失败，等待下一轮重试: cutoff={}, reason={}", cutoff, e.getMessage(), e);
+            log.warn("AI对话附件回收本轮失败，等待下一轮重试: cutoff={}, reason={}", cutoff, e.getMessage(), e);
         }
     }
 
