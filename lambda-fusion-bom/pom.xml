@@ -29,6 +29,11 @@
             </dependency>
             <dependency>
                 <groupId>com.lambda.cloud</groupId>
+                <artifactId>lambda-fusion-message-api</artifactId>
+                <version>${project.parent.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lambda.cloud</groupId>
                 <artifactId>lambda-fusion-config</artifactId>
                 <version>${project.parent.version}</version>
             </dependency>

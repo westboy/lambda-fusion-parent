@@ -26,6 +26,7 @@
         <module>lambda-fusion-datasource</module>
         <module>lambda-fusion-permission</module>
         <module>lambda-fusion-authority-api</module>
+        <module>lambda-fusion-message-api</module>
         <module>lambda-fusion-message</module>
     </modules>
 
