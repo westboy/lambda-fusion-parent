@@ -1,10 +1,14 @@
 package com.lambda.fusion.message.dispatch.adapter;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.message.api.RemoteMessageCommand;
 import com.lambda.fusion.message.api.RemoteMessageService;
 import com.lambda.fusion.message.dispatch.model.MessageSendCommand;
 import com.lambda.fusion.message.dispatch.service.MessageDispatchService;
+import com.lambda.fusion.message.notification.mapper.MessageMapper;
+import com.lambda.fusion.message.notification.model.entity.MessageEntity;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -27,6 +31,26 @@ import org.springframework.util.CollectionUtils;
 public class RemoteMessageServiceAdapter implements RemoteMessageService {
 
     private final MessageDispatchService messageDispatchService;
+    private final MessageMapper messageMapper;
+
+    @Override
+    public boolean existsRecent(String bizType, String bizId, int withinDays) {
+        if (StringUtils.isBlank(bizType) || StringUtils.isBlank(bizId) || withinDays <= 0) {
+            return false;
+        }
+        try {
+            LocalDateTime since = LocalDateTime.now().minusDays(withinDays);
+            Long count = messageMapper.selectCount(new LambdaQueryWrapper<MessageEntity>()
+                    .eq(MessageEntity::getBizType, bizType)
+                    .eq(MessageEntity::getBizId, bizId)
+                    .ge(MessageEntity::getCreatedAt, since));
+            return count != null && count > 0;
+        } catch (Exception e) {
+            // 判重失败宁可重发也不漏判，返回 false 让调用方继续发送
+            log.warn("远程消息判重查询失败: bizType={}, bizId={}", bizType, bizId, e);
+            return false;
+        }
+    }
 
     @Override
     public boolean send(RemoteMessageCommand command) {

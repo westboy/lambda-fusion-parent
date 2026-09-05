@@ -16,8 +16,19 @@ public interface RemoteMessageService {
     /**
      * 发送消息。
      *
-     * @param command 发送命令（须含 tenantId、sender、receivers、title）
+     * @param command 发送命令（须含 sender、receivers、title；tenantId 可空）
      * @return 是否成功受理；远程不可用或参数非法时实现侧返回 {@code false} 并记录日志，不抛业务异常
      */
     boolean send(RemoteMessageCommand command);
+
+    /**
+     * 判重：指定业务类型 + 业务单据ID 在近 {@code withinDays} 天内是否已发送过消息。
+     * 供调用方实现「N 天一次」类提醒的去重（如密码过期 7 天一条）。
+     *
+     * @param bizType    业务类型
+     * @param bizId      业务单据ID（幂等键）
+     * @param withinDays 窗口天数；{@code <=0} 表示不判重（恒返回 {@code false}）
+     * @return 窗口内已存在则 {@code true}；远程不可用时实现侧返回 {@code false}（宁可重发不漏判）
+     */
+    boolean existsRecent(String bizType, String bizId, int withinDays);
 }
