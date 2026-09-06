@@ -20,7 +20,7 @@
 
 ## 📋 项目简介
 
-Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全栈微服务开发框架，基于 Spring Boot 4 / Spring Cloud 2025.1 / JDK 21 构建，AI 能力由 **AgentScope 2.x** 多智能体运行时驱动。
+Lambda Fusion 是一套契约驱动的  **「企业级基础能力 + AI 智能平台」** 全栈微服务开发框架，基于 Spring Boot 4 / Spring Cloud 2025.1 / JDK 21 构建，AI 能力由 **AgentScope 2.x** 多智能体运行时驱动。
 
 在 [lambda-cloud-parent](https://gitee.com/westboy/lambda-cloud-parent) 基座之上，框架将两条主线能力统一沉淀为开箱即用的 `lambda-fusion-*` starter：
 
