@@ -138,6 +138,8 @@ lambda-fusion-parent/
 
 ## 🚀 快速开始
 
+> **想直接运行演示应用？** 查看 📖 [快速启动指南](docs/quick-start/quick-start.md) —— 使用 `lambda-fusion-startup`（端口 20005），只需配置环境变量即可启动，含配套前端联调说明。
+
 ### 环境要求
 
 - JDK 21+
