@@ -13,7 +13,7 @@
 | ☕ JDK | 21+ | 框架基于 JDK 21 构建 |
 | 🔧 Maven | 3.8+ | 无 wrapper，使用系统 `mvn` |
 | 🐬 MySQL | 8.0+ | 主库（业务数据 + Liquibase 建表 + 配置源） |
-| 🐘 PostgreSQL | 12+ | AI 库（pgvector 向量检索 / 知识库 RAG） |
+| 🐘 PostgreSQL | 12+ | AI 库（pgvector 向量检索 / 知识库 RAG）；**可选**，无 pg 可用 Lucene 全文 + 内存向量 |
 | 🍃 Redis | 6.0+ | 缓存与会话 |
 
 > 基座 `lambda-cloud-parent`、`lambda-cloud-project-parent` 需先安装到本地仓库或私服，再构建本仓库。
@@ -73,11 +73,19 @@ QINIU_REGION=cn-north-1
 |------|------|------|
 | **Nacos** | `NACOS_SERVER/PORT/GROUP/NAMESPACE/USER/PASSWORD` | 配置中心 / 注册中心地址 |
 | **主库 MySQL** | `MAIN_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | 业务主数据源，Liquibase 建表与动态配置源均使用它 |
-| **AI 库 PostgreSQL** | `AI_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | AI 智能平台数据源，知识库向量（pgvector）默认复用 |
+| **AI 库 PostgreSQL** | `AI_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | AI 智能平台数据源，知识库向量（pgvector）默认复用；**可选**，无 pg 时可降级（见下文） |
 | **Redis** | `REDIS_HOST/PORT/PASSWORD/DATABASE` | 缓存与会话存储 |
 | **七牛 OSS** | `QINIU_ACCESS_KEY/SECRET_KEY/BUCKET/REGION` | 附件对象存储（知识库文件、聊天附件） |
 
 ![环境变量](img/环境变量.png)
+
+> **没有 PostgreSQL？可以只跑 MySQL + Redis。** AI 智能平台的存储都可降级切换：
+>
+> - **Agent 工作区**：`AI_WORKSPACE_STORAGE_TYPE=LOCAL`（单节点，默认即 `MYSQL`）
+> - **知识库检索**：`AI_RAG_DEFAULT_RETRIEVAL_MODE=FULL_TEXT`（Lucene 全文检索，无需嵌入模型）
+> - **向量存储**：`AI_RAG_STORE_TYPE=MEMORY`（进程内向量存储，默认是 `PGVECTOR`）
+>
+> 这样 `AI_DB_*` 这组 PostgreSQL 环境变量可以不配，知识库走 **Lucene 全文 + 内存向量**。需要 pgvector 向量召回或多节点共享工作区时再引入 PostgreSQL 即可。
 
 ### 步骤 3：在运行配置中加载环境变量
 
