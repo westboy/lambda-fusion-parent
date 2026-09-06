@@ -11,7 +11,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.x-brightblue.svg)](https://spring.io/projects/spring-cloud)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://www.oracle.com/java/technologies/javase-downloads.html)
-[![AgentScope](https://img.shields.io/badge/AgentScope-2.0-ff69b4.svg)](https://github.com/agentscope-ai/agentscope)
+[![AgentScope](https://img.shields.io/badge/AgentScope-2.x-ff69b4.svg)](https://github.com/agentscope-ai/agentscope)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 </div>
@@ -20,7 +20,7 @@
 
 ## 📋 项目简介
 
-Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全栈微服务开发框架，基于 Spring Boot 4 / Spring Cloud 2025.1 / JDK 21 构建，AI 能力由 **AgentScope 2.0** 多智能体运行时驱动。
+Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全栈微服务开发框架，基于 Spring Boot 4 / Spring Cloud 2025.1 / JDK 21 构建，AI 能力由 **AgentScope 2.x** 多智能体运行时驱动。
 
 在 [lambda-cloud-parent](https://gitee.com/westboy/lambda-cloud-parent) 基座之上，框架将两条主线能力统一沉淀为开箱即用的 `lambda-fusion-*` starter：
 
@@ -44,7 +44,7 @@ Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全
 
 ## 🤖 AI应用开发能力
 
- 基于 **AgentScope 2.0** 构建，覆盖 **模型接入 → 知识增强 → Agent 编排 → 通道落地** 的完整链路：
+ 基于 **AgentScope 2.x** 构建，覆盖 **模型接入 → 知识增强 → Agent 编排 → 通道落地** 的完整链路：
 
 ### 🧠 智能应用
 
@@ -72,7 +72,7 @@ Lambda Fusion 是一套 **「企业级基础能力 + AI 智能平台」** 的全
 
 ```
 lambda-fusion-parent/
-├── 🤖 lambda-fusion-ai/                   # AI 智能平台（基于 AgentScope 2.0）
+├── 🤖 lambda-fusion-ai/                   # AI 智能平台（基于 AgentScope 2.x）
 ├── 📦 lambda-fusion-bom/                  # BOM 依赖管理
 ├── 🎯 lambda-fusion-core/                 # 核心模块（分页/CRUD/树/字典/身份）
 ├── 🔐 lambda-fusion-authority-api/        # 权限 API（Dubbo 远程认证 + Sa-Token 适配）
@@ -89,22 +89,22 @@ lambda-fusion-parent/
 
 ## 🛠️ 技术栈
 
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| ☕ **Java** | 21+ | 最新 LTS 版本，性能优异 |
-| 🍃 **Spring Boot** | 4.0.2 | 微服务开发框架 |
+| 技术 | 版本     | 说明 |
+|------|----------|------|
+| ☕ **Java** | 21+      | 最新 LTS 版本，性能优异 |
+| 🍃 **Spring Boot** | 4.0.2    | 微服务开发框架 |
 | ☁️ **Spring Cloud** | 2025.1.x | 微服务生态组件 |
-| 🤖 **AgentScope** | 2.0 | AI 多智能体运行时（harness / 模型 / 沙箱 / 通道 / 技能 / RAG） |
-| 🔎 **Lucene** | 10.5.1 | 单机中文全文检索与 BM25 召回 |
-| 🐘 **pgvector** | Latest | PostgreSQL 向量检索（知识库 RAG） |
-| 🔐 **Sa-Token** | Latest | 轻量级权限认证框架 |
-| 💾 **MyBatis Plus** | Latest | 增强版 ORM 框架 |
-| 🔄 **MapStruct** | Latest | 高性能对象映射 |
-| 🌶️ **Lombok** | Latest | 简化 Java 代码 |
-| ☁️ **Nacos** | Latest | 配置中心 / 注册中心 |
-| ☁️ **Dubbo** | Latest | 远程认证 / 数据源 / 权限元数据同步 |
-| ☕ **Caffeine** | Latest | 高性能本地缓存 |
-| 🔧 **Hutool** | Latest | Java 工具类库 |
+| 🤖 **AgentScope** | 2.x      | AI 多智能体运行时（harness / 模型 / 沙箱 / 通道 / 技能 / RAG） |
+| 🔎 **Lucene** | 10.5.1   | 单机中文全文检索与 BM25 召回 |
+| 🐘 **pgvector** | Latest   | PostgreSQL 向量检索（知识库 RAG） |
+| 🔐 **Sa-Token** | Latest   | 轻量级权限认证框架 |
+| 💾 **MyBatis Plus** | Latest   | 增强版 ORM 框架 |
+| 🔄 **MapStruct** | Latest   | 高性能对象映射 |
+| 🌶️ **Lombok** | Latest   | 简化 Java 代码 |
+| ☁️ **Nacos** | Latest   | 配置中心 / 注册中心 |
+| ☁️ **Dubbo** | Latest   | 远程认证 / 数据源 / 权限元数据同步 |
+| ☕ **Caffeine** | Latest   | 高性能本地缓存 |
+| 🔧 **Hutool** | Latest   | Java 工具类库 |
 
 ## 🎨 预览与体验
 
@@ -170,7 +170,7 @@ lambda-fusion-parent/
 按需引入，自由组合：
 
 ```xml
-<!-- AI 智能平台（基于 AgentScope 2.0） -->
+<!-- AI 智能平台（基于 AgentScope 2.x） -->
 <dependency>
     <groupId>com.lambda.cloud</groupId>
     <artifactId>lambda-fusion-ai</artifactId>
