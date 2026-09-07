@@ -107,6 +107,8 @@ public class AppServiceImpl implements AppService {
         entity.setSelfEvolve(dto.getSelfEvolve());
         entity.setSandboxBackend(sandboxBackend);
         entity.setAudience(StringUtils.defaultIfBlank(dto.getAudience(), "ALL"));
+        entity.setEnableImageUpload(Boolean.TRUE.equals(dto.getEnableImageUpload()));
+        entity.setEnableFileUpload(Boolean.TRUE.equals(dto.getEnableFileUpload()));
         entity.setEnabled(dto.getEnabled());
         entity.setCreatedBy(AuthUtils.getUser().getUsername());
         entity.setCreatedAt(LocalDateTime.now());
@@ -188,6 +190,12 @@ public class AppServiceImpl implements AppService {
         if (dto.getAudience() != null) {
             validateAudience(dto.getAudience());
             entity.setAudience(dto.getAudience());
+        }
+        if (dto.getEnableImageUpload() != null) {
+            entity.setEnableImageUpload(dto.getEnableImageUpload());
+        }
+        if (dto.getEnableFileUpload() != null) {
+            entity.setEnableFileUpload(dto.getEnableFileUpload());
         }
         if (dto.getEnabled() != null) {
             entity.setEnabled(dto.getEnabled());

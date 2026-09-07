@@ -31,4 +31,10 @@ public class AvailableApp {
 
     @Schema(description = "绑定模型是否支持视觉(图片输入)")
     private Boolean supportsVision;
+
+    @Schema(description = "允许终端用户上传图片(需绑定模型支持视觉输入)")
+    private Boolean enableImageUpload;
+
+    @Schema(description = "允许终端用户上传文档类附件")
+    private Boolean enableFileUpload;
 }

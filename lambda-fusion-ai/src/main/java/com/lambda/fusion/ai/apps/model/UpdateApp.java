@@ -53,6 +53,12 @@ public class UpdateApp {
     @Schema(description = "受众: B|C|ALL")
     private String audience;
 
+    @Schema(description = "允许终端用户上传图片(需绑定模型支持视觉输入)")
+    private Boolean enableImageUpload;
+
+    @Schema(description = "允许终端用户上传文档类附件")
+    private Boolean enableFileUpload;
+
     @Schema(description = "工具白名单")
     private List<String> toolsAllow;
 

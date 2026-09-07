@@ -178,7 +178,11 @@ public enum AiErrorCode implements ErrorCode {
 
     CHAT_RUN_AWAIT_CONFIRM_FAILED(30217, "对话运行进入待确认失败"),
 
-    TOOL_RESULT_MEDIA_MATERIALIZATION_FAILED(30218, "工具结果媒体物化失败");
+    TOOL_RESULT_MEDIA_MATERIALIZATION_FAILED(30218, "工具结果媒体物化失败"),
+
+    ATTACHMENT_IMAGE_UPLOAD_DISABLED(30219, "当前应用未开启图片上传"),
+
+    ATTACHMENT_FILE_UPLOAD_DISABLED(30220, "当前应用未开启附件上传");
 
     private final Integer code;
 

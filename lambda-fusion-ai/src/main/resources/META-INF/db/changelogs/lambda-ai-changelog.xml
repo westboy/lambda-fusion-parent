@@ -1053,4 +1053,19 @@
         </addColumn>
     </changeSet>
 
+    <!-- ========== ai_app 增终端用户上传开关 ========== -->
+    <changeSet id="lambda-ai-2026090700010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_app" columnName="enable_image_upload"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_app">
+            <column name="enable_image_upload" type="tinyint(1)" defaultValueNumeric="1"
+                    remarks="允许终端用户上传图片(1=允许,0=禁止;需绑定模型支持视觉输入)"/>
+            <column name="enable_file_upload" type="tinyint(1)" defaultValueNumeric="1"
+                    remarks="允许终端用户上传文档类附件(1=允许,0=禁止)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

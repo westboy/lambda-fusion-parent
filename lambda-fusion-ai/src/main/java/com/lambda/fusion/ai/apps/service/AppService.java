@@ -64,6 +64,8 @@ public interface AppService {
         view.setDescription(app.getDescription());
         view.setAppType(app.getAppType());
         view.setSupportsVision(app.getSupportsVision());
+        view.setEnableImageUpload(app.getEnableImageUpload());
+        view.setEnableFileUpload(app.getEnableFileUpload());
         return view;
     }
 }

@@ -84,6 +84,14 @@ public class AppEntity {
     @Schema(description = "受众: B|C|ALL")
     private String audience;
 
+    @TableField("enable_image_upload")
+    @Schema(description = "允许终端用户上传图片(需绑定模型支持视觉输入)")
+    private Boolean enableImageUpload;
+
+    @TableField("enable_file_upload")
+    @Schema(description = "允许终端用户上传文档类附件")
+    private Boolean enableFileUpload;
+
     @TableField(value = "tools_allow", typeHandler = JacksonTypeHandler.class)
     @Schema(description = "工具白名单")
     private List<String> toolsAllow;

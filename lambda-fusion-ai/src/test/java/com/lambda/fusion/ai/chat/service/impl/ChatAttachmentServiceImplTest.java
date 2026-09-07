@@ -10,13 +10,18 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
+import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.storage.AiFileStorage;
 import com.lambda.fusion.ai.storage.AiFileStorageResolver;
+import com.lambda.fusion.core.utils.AuthUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -25,6 +30,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -38,6 +46,7 @@ class ChatAttachmentServiceImplTest {
     private ChatSessionMapper sessionMapper;
     private AiFileStorageResolver storageResolver;
     private AiFileStorage storage;
+    private AppService appService;
     private ChatAttachmentServiceImpl service;
 
     @BeforeEach
@@ -46,6 +55,7 @@ class ChatAttachmentServiceImplTest {
         sessionMapper = mock(ChatSessionMapper.class);
         storage = mock(AiFileStorage.class);
         storageResolver = mock(AiFileStorageResolver.class);
+        appService = mock(AppService.class);
         when(storageResolver.resolve("LOCAL")).thenReturn(storage);
         when(storageResolver.resolve((String) null)).thenReturn(storage);
         when(storage.type()).thenReturn("LOCAL");
@@ -55,7 +65,8 @@ class ChatAttachmentServiceImplTest {
                 storageResolver,
                 new AiProperties(),
                 mock(ChatAttachmentPreviewTokenService.class),
-                mock(PlatformTransactionManager.class));
+                mock(PlatformTransactionManager.class),
+                appService);
     }
 
     @Test
@@ -215,6 +226,74 @@ class ChatAttachmentServiceImplTest {
         assertThat(purged).isZero();
         verifyNoInteractions(storage);
         verify(attachmentMapper, org.mockito.Mockito.never()).deleteById(anyString());
+    }
+
+    @Test
+    void shouldRejectImageUploadWhenAppDisablesImageUpload() {
+        ChatSessionEntity session = sessionOf("app-1");
+        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(session);
+        AppEntity app = new AppEntity();
+        app.setEnableImageUpload(false);
+        app.setEnableFileUpload(true);
+        when(appService.loadById("app-1")).thenReturn(app);
+
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            MockMultipartFile image = new MockMultipartFile("file", "pic.png", "image/png", new byte[] {1});
+
+            assertThatThrownBy(() -> service.upload("session-1", image))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(e -> assertThat(((AiBusinessException) e).getCode())
+                            .isEqualTo(AiErrorCode.ATTACHMENT_IMAGE_UPLOAD_DISABLED.getCode()));
+        }
+        verifyNoInteractions(attachmentMapper);
+    }
+
+    @Test
+    void shouldRejectDocumentUploadWhenAppDisablesFileUpload() {
+        ChatSessionEntity session = sessionOf("app-1");
+        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(session);
+        AppEntity app = new AppEntity();
+        app.setEnableImageUpload(true);
+        app.setEnableFileUpload(false);
+        when(appService.loadById("app-1")).thenReturn(app);
+
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            MockMultipartFile doc = new MockMultipartFile("file", "notes.txt", "text/plain", new byte[] {1});
+
+            assertThatThrownBy(() -> service.upload("session-1", doc))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(e -> assertThat(((AiBusinessException) e).getCode())
+                            .isEqualTo(AiErrorCode.ATTACHMENT_FILE_UPLOAD_DISABLED.getCode()));
+        }
+        verifyNoInteractions(attachmentMapper);
+    }
+
+    @Test
+    void shouldRejectUploadWhenSessionNotOwned() {
+        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(null);
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            MockMultipartFile doc = new MockMultipartFile("file", "notes.txt", "text/plain", new byte[] {1});
+
+            assertThatThrownBy(() -> service.upload("session-1", doc)).isInstanceOf(AiBusinessException.class);
+        }
+        verifyNoInteractions(appService);
+    }
+
+    private static ChatSessionEntity sessionOf(String appId) {
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId("session-1");
+        session.setAppId(appId);
+        session.setUserId("zhangsan");
+        return session;
+    }
+
+    private static com.lambda.fusion.core.identity.UserDetails user(String username) {
+        com.lambda.fusion.core.identity.UserDetails user = new com.lambda.fusion.core.identity.UserDetails();
+        user.setUsername(username);
+        return user;
     }
 
     private static ChatAttachmentEntity attachment(String sessionId, Long messageId) {

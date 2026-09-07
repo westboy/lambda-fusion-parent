@@ -3,6 +3,8 @@ package com.lambda.fusion.ai.chat.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.apps.model.entity.AppEntity;
+import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewPolicy;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
@@ -115,6 +117,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
     private final ChatAttachmentPreviewTokenService previewTokenService;
+    private final AppService appService;
     /** 存储写入前后的落库短事务；独立于调用方事务，保证附件记录不随外层回滚丢失。 */
     private final TransactionTemplate requiresNewTx;
 
@@ -124,12 +127,14 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             AiFileStorageResolver storageResolver,
             AiProperties aiProperties,
             ChatAttachmentPreviewTokenService previewTokenService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            AppService appService) {
         this.chatAttachmentMapper = chatAttachmentMapper;
         this.chatSessionMapper = chatSessionMapper;
         this.storageResolver = storageResolver;
         this.aiProperties = aiProperties;
         this.previewTokenService = previewTokenService;
+        this.appService = appService;
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.requiresNewTx = template;
@@ -145,6 +150,8 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         AiProperties.Chat.Attachment cfg = aiProperties.getChat().getAttachment();
         String extension = resolveExtension(file, cfg);
         validateSize(file, cfg);
+        String category = resolveCategory(extension, cfg);
+        validateUploadPermission(session, category);
 
         ChatAttachmentEntity entity = new ChatAttachmentEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
@@ -153,7 +160,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         entity.setFileType(extension);
         entity.setMimeType(file.getContentType());
         entity.setSizeBytes(file.getSize());
-        entity.setCategory(resolveCategory(extension, cfg));
+        entity.setCategory(category);
         entity.setCreatedAt(LocalDateTime.now());
 
         // MultipartFile 内容在请求结束后即被清理，先落临时文件再持久化；finally 立即删除
@@ -494,6 +501,22 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
     private static String resolveCategory(String extension, AiProperties.Chat.Attachment cfg) {
         return cfg.getImageTypes().contains(extension) ? CATEGORY_IMAGE : CATEGORY_DOCUMENT;
+    }
+
+    /**
+     * 用户上传的应用级权限边界：图片 = 应用开启图片上传；其余类别 = 应用开启附件上传。
+     * 可见性/启用态已在会话建立阶段校验，此处仅按会话归属应用读开关；图片与模型视觉能力的组合
+     * （supportsVision && enableImageUpload）在消息组装侧拦截，此处只管「应用是否允许该类别上传」。
+     */
+    private void validateUploadPermission(ChatSessionEntity session, String category) {
+        AppEntity app = appService.loadById(session.getAppId());
+        if (CATEGORY_IMAGE.equals(category)) {
+            if (!Boolean.TRUE.equals(app.getEnableImageUpload())) {
+                throw new AiBusinessException(AiErrorCode.ATTACHMENT_IMAGE_UPLOAD_DISABLED);
+            }
+        } else if (!Boolean.TRUE.equals(app.getEnableFileUpload())) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_FILE_UPLOAD_DISABLED);
+        }
     }
 
     private static long fileSize(Path source) {

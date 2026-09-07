@@ -56,6 +56,12 @@ public class CreateApp {
     @Schema(description = "受众: B|C|ALL")
     private String audience = "ALL";
 
+    @Schema(description = "允许终端用户上传图片(需绑定模型支持视觉输入)")
+    private Boolean enableImageUpload = Boolean.FALSE;
+
+    @Schema(description = "允许终端用户上传文档类附件")
+    private Boolean enableFileUpload = Boolean.FALSE;
+
     @Schema(description = "工具白名单")
     private List<String> toolsAllow;
 
