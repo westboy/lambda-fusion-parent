@@ -61,7 +61,7 @@ Lambda Fusion 是一套「企业级基础能力 + AI 智能平台」的全栈微
 |-------------------|------|
 | ♻️ **自演化**     | 应用在运行过程中持续自我优化演进 |
 | 🖥️ **多沙箱后端** | 代码与工具执行环境隔离，支持多种沙箱实现按需切换 |
-| 📚 **知识库 RAG** | 支持 Lucene 全文、向量及 RRF 混合召回；FULL_TEXT 模式无需嵌入模型，应用侧提供 `GENERIC` / `AGENTIC` / `BOTH` 三种注入模式 |
+| 📚 **知识库 RAG** | 支持 Lucene / OceanBase 全文、内存 / pgvector / OceanBase 向量及 RRF 混合召回；FULL_TEXT 模式无需嵌入模型，应用侧提供 `GENERIC` / `AGENTIC` / `BOTH` 三种注入模式 |
 | 🧠 **LLM 管理**   | 大模型统一接入与集中管理，模型能力即插即用 |
 | 🧩 **子代理**     | DB 驱动的子代理体系，定义持久化、运行可编排 |
 | 🛠️ **技能市场**   | 技能注册、沉淀与复用，Agent 能力可插拔扩展 |
@@ -99,6 +99,7 @@ lambda-fusion-parent/
 | 🤖 **AgentScope** | 2.x      | AI 多智能体运行时（harness / 模型 / 沙箱 / 通道 / 技能 / RAG） |
 | 🔎 **Lucene** | 10.5.1   | 单机中文全文检索与 BM25 召回 |
 | 🐘 **pgvector** | Latest   | PostgreSQL 向量检索（知识库 RAG） |
+| 🌊 **OceanBase** | 4.3.5+   | MySQL 模式：一台 OB 兼任主库与 AI 向量（VECTOR / HNSW）、全文（IK 分词）检索，使用后无需再安装 MySQL 与 PostgreSQL |
 | 🔐 **Sa-Token** | Latest   | 轻量级权限认证框架 |
 | 💾 **MyBatis Plus** | Latest   | 增强版 ORM 框架 |
 | 🔄 **MapStruct** | Latest   | 高性能对象映射 |
@@ -135,12 +136,15 @@ lambda-fusion-parent/
 ## 🚦 快速开始
 
 > **想直接运行演示应用？** 查看 📖 [快速启动指南](docs/quick-start/quick-start.md) —— 使用 `lambda-fusion-startup`，只需配置环境变量即可启动，含配套前端联调说明。
+>
+> **数据库用 OceanBase？** 查看 📖 [OceanBase 快速启动指南](docs/quick-start/quick-start-ob.md) —— 一台 OB（MySQL 模式）兼任主库与 AI 向量检索，无需安装 MySQL / PostgreSQL。
 
 ### 环境要求
 
 - JDK 21+
 - Maven 3.8+
-- MySQL 8.0+ / PostgreSQL 12+
+- MySQL 8.0+（或 OceanBase 4.3.5+ MySQL 模式，二选一；使用 OB 后无需再安装 MySQL 与 PostgreSQL）
+- PostgreSQL 12+（可选，仅 pgvector 向量检索需要）
 - Redis 6.0+
 
 ### 引入依赖

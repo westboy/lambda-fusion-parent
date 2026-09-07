@@ -12,8 +12,9 @@
 |------|------|------|
 | ☕ JDK | 21+ | 框架基于 JDK 21 构建 |
 | 🔧 Maven | 3.8+ | 无 wrapper，使用系统 `mvn` |
-| 🐬 MySQL | 8.0+ | 主库（业务数据 + Liquibase 建表 + 配置源） |
-| 🐘 PostgreSQL | 12+ | AI 库（pgvector 向量检索 / 知识库 RAG）；**可选**，无 pg 可用 Lucene 全文 + 内存向量 |
+| 🐬 MySQL | 8.0+ | 主库（业务数据 + Liquibase 建表 + 配置源）；与 OceanBase 二选一 |
+| 🐘 PostgreSQL | 12+ | AI 库（pgvector 向量检索 / 知识库 RAG）；**可选**，无 pg 可降级或改用 OceanBase（见下文） |
+| 🌊 OceanBase | 4.3.5+ | **可选**，MySQL 模式：一台 OB 同时承担主库与 AI 向量检索，使用后**无需再安装 MySQL 与 PostgreSQL**（见 [OceanBase 快速启动指南](quick-start-ob.md)） |
 | 🍃 Redis | 6.0+ | 缓存与会话 |
 
 > 基座 `lambda-cloud-parent`、`lambda-cloud-project-parent` 需先安装到本地仓库或私服，再构建本仓库。
@@ -73,7 +74,7 @@ QINIU_REGION=cn-north-1
 |------|------|------|
 | **Nacos** | `NACOS_SERVER/PORT/GROUP/NAMESPACE/USER/PASSWORD` | 配置中心 / 注册中心地址 |
 | **主库 MySQL** | `MAIN_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | 业务主数据源，Liquibase 建表与动态配置源均使用它 |
-| **AI 库 PostgreSQL** | `AI_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | AI 智能平台数据源，知识库向量（pgvector）默认复用；**可选**，无 pg 时可降级（见下文） |
+| **AI 库 PostgreSQL** | `AI_DB_URL/USERNAME/PASSWORD/DRIVER_CLASS_NAME` | AI 智能平台数据源，知识库向量（pgvector）默认复用；**可选**，无 pg 时可降级或改用 OceanBase 向量（见下文） |
 | **Redis** | `REDIS_HOST/PORT/PASSWORD/DATABASE` | 缓存与会话存储 |
 | **七牛 OSS** | `QINIU_ACCESS_KEY/SECRET_KEY/BUCKET/REGION` | 附件对象存储（知识库文件、聊天附件） |
 
@@ -86,6 +87,8 @@ QINIU_REGION=cn-north-1
 > - **向量存储**：`AI_RAG_STORE_TYPE=MEMORY`（进程内向量存储，默认是 `PGVECTOR`）
 >
 > 这样 `AI_DB_*` 这组 PostgreSQL 环境变量可以不配，知识库走 **Lucene 全文 + 内存向量**。需要 pgvector 向量召回或多节点共享工作区时再引入 PostgreSQL 即可。
+
+> **想用 OceanBase？MySQL 和 PostgreSQL 都不用装。** 一台 OceanBase（MySQL 模式，4.3.5+）即可同时承担主库与知识库向量检索，环境只剩 **OceanBase + Redis**（外加 Nacos），完整步骤见 📖 [OceanBase 快速启动指南](quick-start-ob.md)。
 
 ### 步骤 3：在运行配置中加载环境变量
 
@@ -126,5 +129,5 @@ pnpm dev        # 启动 web-tdesign 应用
 ## 五、常见问题
 
 - **构建报 `lambda-cloud-parent` 找不到**：先按根目录 [README](../../README.md) 把基座安装到本地仓库（`mvn clean install`）。
-- **启动报数据源连接失败**：检查 `.evn` 中 MySQL / PostgreSQL / Redis 地址与账号是否与本机一致，确认服务已启动。
+- **启动报数据源连接失败**：检查 `.evn` 中 MySQL / PostgreSQL / OceanBase / Redis 地址与账号是否与本机一致，确认服务已启动。
 - **构建需 JDK 21**：执行 `mvn -v` 确认当前 JDK，若不是 21 请先切换。
