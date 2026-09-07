@@ -28,6 +28,8 @@
         <module>lambda-fusion-authority-api</module>
         <module>lambda-fusion-message-api</module>
         <module>lambda-fusion-message</module>
+        <module>lambda-fusion-logger-api</module>
+        <module>lambda-fusion-logger</module>
     </modules>
 
     <dependencyManagement>

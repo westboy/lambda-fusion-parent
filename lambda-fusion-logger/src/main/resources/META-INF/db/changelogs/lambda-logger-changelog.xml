@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="lambda-logger-20260907000101" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_operation_logs"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_operation_logs" remarks="操作日志表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_operation_logs_id" nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
+            <column name="MODULE" type="varchar(100)" remarks="业务模块"/>
+            <column name="METHOD" type="varchar(255)" remarks="执行方法（类名.方法名）"/>
+            <column name="DESCRIPTION" type="varchar(500)" remarks="操作描述"/>
+            <column name="HTTP_METHOD" type="varchar(16)" remarks="HTTP 请求方法"/>
+            <column name="DETAIL" type="text" remarks="操作详情"/>
+            <column name="COST" type="bigint" remarks="执行耗时（毫秒）"/>
+            <column name="IP" type="varchar(64)" remarks="客户端 IP"/>
+            <column name="OPERATOR" type="varchar(64)" remarks="操作人用户名"/>
+            <column name="OPERATOR_ID" type="varchar(64)" remarks="操作人用户ID"/>
+            <column name="TIME" type="datetime" remarks="操作时间"/>
+            <column name="CREATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="创建时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CREATED_BY" type="varchar(64)" remarks="创建人"/>
+            <column name="UPDATED_AT" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="更新时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="UPDATED_BY" type="varchar(64)" remarks="更新人"/>
+        </createTable>
+        <createIndex indexName="idx_oplog_tenant_time" tableName="la_operation_logs">
+            <column name="TENANT_ID"/>
+            <column name="TIME"/>
+        </createIndex>
+        <createIndex indexName="idx_oplog_operator" tableName="la_operation_logs">
+            <column name="OPERATOR"/>
+        </createIndex>
+        <createIndex indexName="idx_oplog_module" tableName="la_operation_logs">
+            <column name="MODULE"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
