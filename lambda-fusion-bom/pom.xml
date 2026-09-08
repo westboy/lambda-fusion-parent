@@ -62,6 +62,16 @@
                 <artifactId>lambda-fusion-oss</artifactId>
                 <version>${project.parent.version}</version>
             </dependency>
+            <dependency>
+                <groupId>com.lambda.cloud</groupId>
+                <artifactId>lambda-fusion-logger</artifactId>
+                <version>${project.parent.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lambda.cloud</groupId>
+                <artifactId>lambda-fusion-ai</artifactId>
+                <version>${project.parent.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 </project>
