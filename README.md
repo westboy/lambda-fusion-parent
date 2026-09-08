@@ -165,6 +165,8 @@ lambda-fusion-parent/
 </dependencyManagement>
 ```
 
+> 若工程已基于 `lambda-cloud-project-parent:2026.1.1-SNAPSHOT`，其 `dependencyManagement` 已 import `lambda-fusion-bom`，可省略上面的 BOM import，直接按需引入模块依赖（无需版本号）。
+
 ### 使用模块
 
 按需引入，自由组合：
