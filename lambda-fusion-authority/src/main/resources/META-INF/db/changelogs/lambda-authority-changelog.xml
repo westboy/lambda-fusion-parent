@@ -88,7 +88,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="lambda-authority-202603120005" author="westboy">
+    <changeSet id="lambda-authority-2026031200051" author="westboy">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="la_resources"/>
@@ -586,7 +586,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-authority-202608120002" author="jin">
+    <changeSet id="lambda-authority-2026081200020" author="jin">
         <preConditions onFail="MARK_RAN">
             <not>
                 <columnExists tableName="la_resources" columnName="APPLICATION"/>

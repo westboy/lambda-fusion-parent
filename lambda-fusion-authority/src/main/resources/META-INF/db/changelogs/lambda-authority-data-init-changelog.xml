@@ -158,7 +158,7 @@
 
 
     <!-- ==================== 资源初始化 ==================== -->
-    <changeSet id="lambda-authority-20260312002910" author="westboy">
+    <changeSet id="lambda-authority-2026031200291020" author="westboy">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_resources"/>
             <sqlCheck expectedResult="0">
@@ -176,7 +176,7 @@
                     'jw1MUnwu-9e4sWAdn', 0, null, null, null, 0, '{"strWindowName":"_blank","token":false}"', null, 7),
                    ('1uYLUsrN', 'jw1MUnwu', '资源管理', '/system/menu/', 1, 1, null, 0, null, 'lucide:menu', 0,
                     'jw1MUnwu', 1, null, null, null, 0, null, null, 1),
-                   ('2016432791681531905', '4y3OpJFy', '字典删除', '/', 2147483647, 3, 'dict_info_delect', 0, null,
+                   ('2016432791681531905', '4y3OpJFy', '字典删除', 'dict_info_delete', 2147483647, 3, null, 0, null,
                     null, 0, 'jw1MUnwu-4y3OpJFy', 0, null, null, null, 1, null, null, 5),
                    ('2022298020778496002', 'jw1MUnwu', '区域管理', '/system/area/', 0, 1, null, 0, null,
                     'carbon:chart-area', 0, 'jw1MUnwu', 0, null, null, null, 0, null, null, 11),
@@ -233,7 +233,7 @@
                    ('O4HbLPnb', '1uYLUsrN', '更新资源', 'resource_edit', 2147483647, 3, null, 0, '', null, 0,
                     'jw1MUnwu-1uYLUsrN', 1, null, null, null, 0, null, null, 2),
                    ('OaiclMMf', 'jw1MUnwu', '系统配置', '/system/config/', 1, 1,
-                    'https://hlcxcx.hua001.net/?id=1812000000118401', 0, null, 'carbon:document-configuration', 0,
+                    null, 0, null, 'carbon:document-configuration', 0,
                     'jw1MUnwu', 1, null, '', null, 0, null, null, 9),
                    ('ORvXmJpF', 'jw1MUnwu', '系统日志', '/system/logs/', 1, 1, null, 0, null, 'carbon:catalog-publish',
                     1, 'jw1MUnwu', 0, null, null, null, 0, null, null, 8),
