@@ -103,25 +103,6 @@
         order by t1.res_level, t1.parent_id, t1.order_no
     </select>
 
-    <select id="selectResources" resultType="com.lambda.fusion.authority.resource.model.ResourceTree">
-        select
-            t1.id,
-            t1.res_name,
-            t1.parent_id,
-            t1.business_expand
-        from la_resources t1
-        inner join la_role_resources t2 on t1.id = t2.resource_id
-        <where>
-            <if test="mode != null">
-                t1.res_mode = #{mode}
-            </if>
-            <if test="types != null">
-                and t1.res_type in <foreach collection="types" open="(" close=")" separator="," item="item">#{item}</foreach>
-            </if>
-        </where>
-        order by t1.res_level, t1.parent_id, t1.order_no
-    </select>
-
     <select id="selectUserProfileByRoleId" resultType="com.lambda.fusion.authority.user.model.UserProfile">
         select u.username,
                u.nickname

@@ -4,12 +4,11 @@ import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.lambda.fusion.authority.authentication.model.AuthUser;
 import com.lambda.fusion.authority.authentication.model.MenuQuery;
 import com.lambda.fusion.authority.authentication.model.MenuRoute;
-import com.lambda.fusion.authority.authentication.model.ResourceQuery;
-import com.lambda.fusion.authority.resource.model.ResourceTree;
 import com.lambda.fusion.authority.user.model.UserProfile;
-import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
  * 认证数据访问层接口
@@ -42,14 +41,6 @@ public interface AuthenticationMapper {
      * @return 导航菜单列表
      */
     List<MenuRoute> selectNavigation(@Param("query") MenuQuery query);
-
-    /**
-     * 根据查询条件获取简单资源列表
-     *
-     * @param query 资源查询参数
-     * @return 简单资源列表
-     */
-    List<ResourceTree> selectResources(@Param("query") ResourceQuery query);
 
     /**
      * 根据角色ID获取用户列表
