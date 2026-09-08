@@ -69,4 +69,9 @@ public interface AuthenticationMapper {
     List<String> selectTenantAdminPermissions(@Param("username") String username);
 
     List<String> selectTenantAdminAuthorities(@Param("username") String username);
+
+    /**
+     * 获取全部按钮资源的权限标识（res_path），用于 ROLE_DEV 等豁免角色下放全量按钮权限
+     */
+    List<String> selectAllAuthorities();
 }

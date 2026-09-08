@@ -246,6 +246,10 @@ public class AuthenticationServiceImpl implements AuthenticationService, UserDet
 
     @Override
     public List<String> getUserPermissions() {
+        // ROLE_DEV 豁免：直接下放全部按钮权限标识，不走路径/角色过滤
+        if (AuthUtils.getUser().isDev()) {
+            return authenticationMapper.selectAllAuthorities();
+        }
         return authenticationMapper.selectAuthoritiesByUsername(
                 AuthUtils.getUser().getName());
     }

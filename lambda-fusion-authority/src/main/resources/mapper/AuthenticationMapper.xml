@@ -112,7 +112,7 @@
     </select>
 
     <select id="selectAuthoritiesByUsername" resultType="java.lang.String">
-        select r.id
+        select r.res_path
         from la_resources r
         where r.res_type = 3
           and (
@@ -147,6 +147,14 @@
                                                                       on org_r.organization_id = uo.organization_id
                                                   where uo.username = #{username}))
             )
+    </select>
+
+    <select id="selectAllAuthorities" resultType="java.lang.String">
+        select distinct r.res_path
+        from la_resources r
+        where r.res_type = 3
+          and r.res_path is not null
+          and r.res_path != ''
     </select>
 
     <select id="selectPermissionsByUsername" resultType="java.lang.String">
