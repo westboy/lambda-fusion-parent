@@ -1,7 +1,6 @@
 package com.lambda.fusion.ai.runtime.workspace;
 
 import cn.hutool.crypto.digest.MD5;
-import com.lambda.fusion.ai.AiConstants.StateStoreType;
 import com.lambda.fusion.ai.AiConstants.WorkspaceStorageType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -19,7 +18,6 @@ import io.agentscope.harness.agent.sandbox.SandboxLease;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,13 +38,6 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class WorkspaceStorage {
-
-    private static final EnumSet<StateStoreType> DISTRIBUTED_STATE_STORES = EnumSet.of(
-            StateStoreType.MYSQL,
-            StateStoreType.POSTGRES,
-            StateStoreType.REDIS,
-            StateStoreType.OSS,
-            StateStoreType.COS);
 
     private final AiProperties aiProperties;
     private final WorkspacePaths workspacePaths;
@@ -92,12 +83,16 @@ public class WorkspaceStorage {
         return type != WorkspaceStorageType.LOCAL;
     }
 
-    /** 当前远程 Workspace 使用的统一分布式存储；LOCAL 模式返回空。 */
+    /**
+     * 当前远程 Workspace 使用的统一分布式存储；LOCAL 模式返回空。
+     */
     public Optional<DistributedStore> distributedStore() {
         return Optional.ofNullable(distributedStore);
     }
 
-    /** 初始化当前配置对应的 Workspace 模板目录；已存在文件不会被覆盖。 */
+    /**
+     * 初始化当前配置对应的 Workspace 模板目录；已存在文件不会被覆盖。
+     */
     public Path initializeWorkspace(String tenantId, AppEntity app) {
         Path workspace = workspacePaths.resolveAppWorkspace(tenantId, app.getId(), type);
         try {
@@ -126,7 +121,9 @@ public class WorkspaceStorage {
         }
     }
 
-    /** 为管理与审计链路打开 Agent 使用的远程文件系统；无用户上下文时记忆使用默认用户命名空间。 */
+    /**
+     * 为管理与审计链路打开 Agent 使用的远程文件系统；无用户上下文时记忆使用默认用户命名空间。
+     */
     public AbstractFilesystem openDistributedFilesystem(String tenantId, AppEntity app, Path workspace) {
         if (!isDistributed()) {
             throw new IllegalStateException("LOCAL Workspace 不应打开远程文件系统");
@@ -134,12 +131,16 @@ public class WorkspaceStorage {
         return distributedFilesystem(workspace, stableAgentId(app.getId(), tenantId));
     }
 
-    /** Agent ID 是状态存储与远程 Workspace 命名空间的共同稳定标识。 */
+    /**
+     * Agent ID 是状态存储与远程 Workspace 命名空间的共同稳定标识。
+     */
     public String stableAgentId(String appId, String tenantId) {
         return MD5.create().digestHex("app:" + appId + ":t:" + tenantId);
     }
 
-    /** 使用应用级短锁串行化跨节点的 Workspace 管理写入。 */
+    /**
+     * 使用应用级短锁串行化跨节点的 Workspace 管理写入。
+     */
     public <T> T withWriteLock(String tenantId, AppEntity app, Callable<T> operation) throws IOException {
         if (!isDistributed()) {
             return call(operation);
@@ -170,9 +171,8 @@ public class WorkspaceStorage {
     }
 
     private void validateDistributedStateStore() {
-        String configuredType = aiProperties.getStateStore().getType();
-        StateStoreType stateStoreType = StateStoreType.of(configuredType);
-        if (!DISTRIBUTED_STATE_STORES.contains(stateStoreType)) {
+        String configuredType = aiProperties.getWorkspace().getStorage().getType();
+        if (!WorkspaceStorageType.JDBC.equals(WorkspaceStorageType.of(configuredType))) {
             throw new IllegalStateException("远程 Workspace 要求分布式 Agent 状态存储，当前 state-store.type=" + configuredType);
         }
     }

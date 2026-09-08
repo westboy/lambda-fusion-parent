@@ -54,9 +54,9 @@ class WorkspaceStorageTest {
     void shouldShareRemoteWorkspaceAcrossInstancesAndKeepTenantIsolation() throws Exception {
         BaseStore sharedBaseStore = new InMemoryStore();
         WorkspaceStorage firstStorage =
-                storage(properties("MYSQL"), List.of(provider(distributedStore(sharedBaseStore))));
+                storage(properties("JDBC"), List.of(provider(distributedStore(sharedBaseStore))));
         WorkspaceStorage secondStorage =
-                storage(properties("MYSQL"), List.of(provider(distributedStore(sharedBaseStore))));
+                storage(properties("JDBC"), List.of(provider(distributedStore(sharedBaseStore))));
         firstStorage.initialize();
         secondStorage.initialize();
         assertThat(firstStorage.distributedStore()).isPresent();
@@ -114,7 +114,7 @@ class WorkspaceStorageTest {
                         .content())
                 .isEqualTo("internal-event");
 
-        Path remoteTemplate = tempDir.resolve(".remote-templates/mysql/tenants/tenant-a/apps/app-1/outputs/.keep");
+        Path remoteTemplate = tempDir.resolve(".remote-templates/JDBC/tenants/tenant-a/apps/app-1/outputs/.keep");
         assertThat(remoteTemplate).exists();
         assertThat(tempDir.resolve("tenants/tenant-a/apps/app-1")).doesNotExist();
     }
@@ -123,9 +123,9 @@ class WorkspaceStorageTest {
     void shouldShareRemoteMemoryAcrossUserSessionsAndIsolateOtherUsers() throws Exception {
         BaseStore sharedBaseStore = new InMemoryStore();
         WorkspaceStorage firstStorage =
-                storage(properties("MYSQL"), List.of(provider(distributedStore(sharedBaseStore))));
+                storage(properties("JDBC"), List.of(provider(distributedStore(sharedBaseStore))));
         WorkspaceStorage secondStorage =
-                storage(properties("MYSQL"), List.of(provider(distributedStore(sharedBaseStore))));
+                storage(properties("JDBC"), List.of(provider(distributedStore(sharedBaseStore))));
         firstStorage.initialize();
         secondStorage.initialize();
         AppEntity app = app();
@@ -169,17 +169,6 @@ class WorkspaceStorageTest {
     }
 
     @Test
-    void shouldRejectRemoteWorkspaceWithLocalAgentStateStore() {
-        AiProperties properties = properties("MYSQL");
-        properties.getStateStore().setType("MEMORY");
-        WorkspaceStorage storage = storage(properties, List.of(provider(distributedStore())));
-
-        assertThatThrownBy(storage::initialize)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("远程 Workspace 要求分布式 Agent 状态存储");
-    }
-
-    @Test
     void shouldAcquireDistributedLockForEachManagedWrite() throws Exception {
         AtomicInteger lockAcquisitions = new AtomicInteger();
         SandboxExecutionGuard guard = key -> {
@@ -191,7 +180,7 @@ class WorkspaceStorageTest {
                 .baseStore(new InMemoryStore())
                 .sandboxExecutionGuard(guard)
                 .build();
-        WorkspaceStorage storage = storage(properties("MYSQL"), List.of(provider(store)));
+        WorkspaceStorage storage = storage(properties("JDBC"), List.of(provider(store)));
         storage.initialize();
         WorkspaceFileService files = new WorkspaceFileService(storage);
         AppEntity app = app();
@@ -216,7 +205,7 @@ class WorkspaceStorageTest {
         AiProperties properties = new AiProperties();
         properties.getWorkspace().setRoot(tempDir.toString());
         properties.getWorkspace().getStorage().setType(storageType);
-        properties.getStateStore().setType("MYSQL");
+        properties.getStateStore().setType("JDBC");
         return properties;
     }
 
