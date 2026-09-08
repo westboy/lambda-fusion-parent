@@ -228,7 +228,7 @@ class WorkspaceStorageTest {
         return new WorkspaceDistributedStoreProvider() {
             @Override
             public WorkspaceStorageType type() {
-                return WorkspaceStorageType.MYSQL;
+                return WorkspaceStorageType.JDBC;
             }
 
             @Override

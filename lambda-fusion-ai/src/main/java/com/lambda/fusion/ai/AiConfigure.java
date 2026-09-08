@@ -45,10 +45,6 @@ import com.lambda.fusion.ai.storage.LocalAiFileStorage;
 import com.lambda.fusion.ai.storage.OssAiFileStorage;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.message.api.RemoteMessageService;
-import com.qcloud.cos.COSClient;
-import com.qcloud.cos.ClientConfig;
-import com.qcloud.cos.auth.BasicCOSCredentials;
-import com.qcloud.cos.region.Region;
 import io.agentscope.core.nacos.skill.NacosSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.GitSkillRepository;
@@ -60,11 +56,9 @@ import io.agentscope.extensions.channel.feishu.FeishuCallbackController;
 import io.agentscope.extensions.channel.feishu.FeishuChannel;
 import io.agentscope.extensions.channel.wecom.WeComCallbackController;
 import io.agentscope.extensions.channel.wecom.WeComChannel;
-import io.agentscope.extensions.cos.CosAgentStateStore;
-import io.agentscope.extensions.mysql.MysqlDistributedStore;
+import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
 import io.agentscope.extensions.oss.OssAgentStateStore;
-import io.agentscope.extensions.postgresql.PostgresDistributedStore;
 import io.agentscope.extensions.postgresql.state.PostgresAgentStateStore;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 import io.agentscope.extensions.sandbox.agentrun.AgentRunFilesystemSpec;
@@ -385,56 +379,28 @@ public class AiConfigure {
     public static class WorkspaceStorageConfig {
 
         @Configuration
-        @ConditionalOnClass(name = "io.agentscope.extensions.mysql.MysqlDistributedStore")
+        @ConditionalOnClass(name = "io.agentscope.extensions.jdbc.JdbcDistributedStore")
         @ConditionalOnBean(DataSource.class)
         @RequiredArgsConstructor
-        public static class MysqlWorkspaceStorageConfiguration {
+        public static class WorkspaceStorageConfiguration {
 
             private final AiProperties aiProperties;
             private final DataSource dataSource;
 
             @Bean
-            public WorkspaceDistributedStoreProvider mysqlWorkspaceDistributedStoreProvider() {
+            public WorkspaceDistributedStoreProvider jdbcWorkspaceDistributedStoreProvider() {
                 return new WorkspaceDistributedStoreProvider() {
                     @Override
                     public WorkspaceStorageType type() {
-                        return WorkspaceStorageType.MYSQL;
+                        return WorkspaceStorageType.JDBC;
                     }
 
                     @Override
                     public io.agentscope.harness.agent.DistributedStore create() {
-                        AiProperties.Workspace.Storage.Mysql cfg =
-                                aiProperties.getWorkspace().getStorage().getMysql();
+                        AiProperties.Workspace.Storage.Jdbc cfg =
+                                aiProperties.getWorkspace().getStorage().getJdbc();
                         DataSource ds = StateStoreDataSources.resolveNamed(dataSource, cfg.getDatasource());
-                        return MysqlDistributedStore.create(ds);
-                    }
-                };
-            }
-        }
-
-        @Configuration
-        @ConditionalOnClass(name = "io.agentscope.extensions.postgresql.PostgresDistributedStore")
-        @ConditionalOnBean(DataSource.class)
-        @RequiredArgsConstructor
-        public static class PostgresWorkspaceStorageConfiguration {
-
-            private final AiProperties aiProperties;
-            private final DataSource dataSource;
-
-            @Bean
-            public WorkspaceDistributedStoreProvider postgresWorkspaceDistributedStoreProvider() {
-                return new WorkspaceDistributedStoreProvider() {
-                    @Override
-                    public WorkspaceStorageType type() {
-                        return WorkspaceStorageType.POSTGRES;
-                    }
-
-                    @Override
-                    public io.agentscope.harness.agent.DistributedStore create() {
-                        AiProperties.Workspace.Storage.Postgres cfg =
-                                aiProperties.getWorkspace().getStorage().getPostgres();
-                        DataSource ds = StateStoreDataSources.resolveNamed(dataSource, cfg.getDatasource());
-                        return PostgresDistributedStore.create(ds);
+                        return JdbcDistributedStore.create(ds);
                     }
                 };
             }
@@ -563,39 +529,6 @@ public class AiConfigure {
                                 .build(cfg.getEndpoint(), cfg.getAccessKeyId(), cfg.getAccessKeySecret());
                         return OssAgentStateStore.builder()
                                 .ossClient(ossClient)
-                                .bucketName(cfg.getBucketName())
-                                .keyPrefix(cfg.getKeyPrefix())
-                                .build();
-                    }
-                };
-            }
-        }
-
-        // CosAgentStateStore 被 shade 进 agentscope.jar 恒在场，真正决定能否构建的是腾讯 COS SDK
-        @Configuration
-        @ConditionalOnClass(name = {"io.agentscope.extensions.cos.CosAgentStateStore", "com.qcloud.cos.COSClient"})
-        @RequiredArgsConstructor
-        public static class CosStateStoreConfiguration {
-
-            private final AiProperties aiProperties;
-
-            @Bean
-            public StateStoreProvider cosStateStoreProvider() {
-                return new StateStoreProvider() {
-                    @Override
-                    public AiConstants.StateStoreType type() {
-                        return AiConstants.StateStoreType.COS;
-                    }
-
-                    @Override
-                    public AgentStateStore create() {
-                        AiProperties.StateStore.Cos cfg =
-                                aiProperties.getStateStore().getCos();
-                        BasicCOSCredentials cred = new BasicCOSCredentials(cfg.getSecretId(), cfg.getSecretKey());
-                        ClientConfig clientConfig = new ClientConfig(new Region(cfg.getRegion()));
-                        COSClient cosClient = new COSClient(cred, clientConfig);
-                        return CosAgentStateStore.builder()
-                                .cosClient(cosClient)
                                 .bucketName(cfg.getBucketName())
                                 .keyPrefix(cfg.getKeyPrefix())
                                 .build();

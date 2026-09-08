@@ -96,14 +96,12 @@ lambda:
         username: ${MAIN_DB_USERNAME}
         password: ${MAIN_DB_PASSWORD}
     ai:
-      #### AgentScope Workspace：LOCAL 单节点；MYSQL/POSTGRES 多节点共享。切换后不迁移旧数据 ####
+      #### AgentScope Workspace：LOCAL 单节点；JDBC 多节点共享。切换后不迁移旧数据 ####
       workspace:
         storage:
-          type: ${AI_WORKSPACE_STORAGE_TYPE:MYSQL}
-          mysql:
+          type: ${AI_WORKSPACE_STORAGE_TYPE:JDBC}
+          jdbc:
             datasource: ${AI_WORKSPACE_MYSQL_DATASOURCE:master}
-          postgres:
-            datasource: ${AI_WORKSPACE_POSTGRES_DATASOURCE:ai-postgres}
       #### WORKSPACE 自演化长期记忆：默认每 10 分钟最多刷新一次 ####
       memory:
         flush:

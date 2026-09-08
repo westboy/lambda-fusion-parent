@@ -341,27 +341,17 @@ public class AiProperties {
         @Data
         public static class Storage {
 
-            /** 存储类型：LOCAL / MYSQL / POSTGRES。 */
+            /** 存储类型：LOCAL / JDBC。 */
             private String type = "LOCAL";
 
             @Valid
-            private Mysql mysql = new Mysql();
-
-            @Valid
-            private Postgres postgres = new Postgres();
+            private AiProperties.Workspace.Storage.Jdbc jdbc = new Jdbc();
 
             @Data
-            public static class Mysql {
+            public static class Jdbc {
 
                 /** dynamic-datasource 数据源名。 */
                 private String datasource = "master";
-            }
-
-            @Data
-            public static class Postgres {
-
-                /** dynamic-datasource 数据源名。 */
-                private String datasource = "ai-postgres";
             }
         }
     }

@@ -638,9 +638,7 @@ public interface AiConstants {
     enum WorkspaceStorageType {
         LOCAL("LOCAL", "本地文件系统（单节点）"),
 
-        MYSQL("MYSQL", "MySQL（分布式）"),
-
-        POSTGRES("POSTGRES", "PostgreSQL（分布式）");
+        JDBC("JDBC", "JDBC（分布式）");
 
         private final String code;
 
