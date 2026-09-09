@@ -221,13 +221,15 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    public List<AccessPermission> getAccessPermission(UserDetails userDetails, String authority, Integer mode) {
+    public List<AccessPermission> getAccessPermission(
+            UserDetails userDetails, String authority, Integer mode, String application) {
         if (authority == null) {
             throw AuthorityBusinessException.invalidParameter("角色标识不能为空");
         }
-        Map<String, Object> parameters = Maps.newHashMapWithExpectedSize(3);
+        Map<String, Object> parameters = Maps.newHashMapWithExpectedSize(4);
         parameters.put("authority", authority);
         parameters.put("mode", Optional.ofNullable(mode).orElse(0));
+        parameters.put("application", application);
         if (!userDetails.isDev()) {
             Set<String> authorities = userDetails.getRoles();
             authorities.add(userDetails.getUsername());

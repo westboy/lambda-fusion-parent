@@ -93,9 +93,10 @@ public interface RoleService {
      * @param userDetails 当前用户
      * @param id 角色id
      * @param mode 角色模式
+     * @param application 所属应用ID，null 表示全部应用
      * @return
      */
-    List<AccessPermission> getAccessPermission(UserDetails userDetails, String id, Integer mode);
+    List<AccessPermission> getAccessPermission(UserDetails userDetails, String id, Integer mode, String application);
 
     /**
      * 保存角色权限

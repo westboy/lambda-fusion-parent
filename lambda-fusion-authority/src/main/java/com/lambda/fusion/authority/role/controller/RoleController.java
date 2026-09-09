@@ -154,8 +154,9 @@ public class RoleController {
     @Operation(description = "查询指定角色的权限信息", summary = "查询指定角色的权限信息")
     public List<AccessPermission> getAccessPermission(
             @Parameter(description = "角色名称", required = true) @PathVariable String authority,
-            @Parameter(description = "模式-0:后台资源,1:APP资源") Integer mode) {
-        return roleService.getAccessPermission(AuthUtils.getUser(), authority, mode);
+            @Parameter(description = "模式-0:后台资源,1:APP资源") Integer mode,
+            @Parameter(description = "所属应用ID，不传表示全部应用") @RequestParam(required = false) String application) {
+        return roleService.getAccessPermission(AuthUtils.getUser(), authority, mode, application);
     }
 
     @SaCheckPermission(value = "authority:role:permission-grant")

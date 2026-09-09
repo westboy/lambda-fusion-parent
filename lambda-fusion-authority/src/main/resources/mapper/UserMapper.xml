@@ -303,6 +303,9 @@
         <if test="mode != null and mode != ''">
             and t1.res_mode = #{mode}
         </if>
+        <if test="application != null and application != ''">
+            and t1.application = #{application}
+        </if>
         order by t1.res_level, t1.parent_id, t1.orderno
     </select>
     <select id="selectUserPermissions" resultType="java.lang.String">

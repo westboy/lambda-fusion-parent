@@ -239,7 +239,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public List<Permission> getUserPermissions(String username, String mode) {
+    public List<Permission> getUserPermissions(String username, String mode, String application) {
         if (username == null) {
             throw AuthorityBusinessException.invalidParameter("username不能为空");
         }
@@ -259,7 +259,7 @@ public class UserServiceImpl implements UserService {
                 ids = Collections.emptyList();
             }
         }
-        return userMapper.selectUserPermissionsByIdsAndMode(ids, mode);
+        return userMapper.selectUserPermissionsByIdsAndMode(ids, mode, application);
     }
 
     @CacheEvict(value = "LAResourceOwners", allEntries = true)

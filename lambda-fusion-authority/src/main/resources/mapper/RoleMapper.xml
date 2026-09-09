@@ -9,6 +9,7 @@
         <result column="PARENT_ID" property="parentId"/>
         <result column="res_type" property="type"/>
         <result column="checked" property="checked"/>
+        <result column="application" property="application"/>
     </resultMap>
 
     <select id="queryRoles" resultType="com.lambda.fusion.authority.role.model.Role">
@@ -192,6 +193,7 @@
             t.res_level,
             t.res_type,
             t.icon,
+            t.application,
             (case when t3.resource_id is not null then 1 else 0 end ) as checked,
             t.order_no
         from la_resources t
@@ -200,6 +202,9 @@
         </if>
         left join la_role_resources t3 on t3.resource_id = t.id and t3.authority = #{parameters.authority}
         where t.is_dev = 0 and t.res_type != 0 and t.res_mode = #{parameters.mode}
+        <if test="parameters.application != null and parameters.application != ''">
+            and t.application = #{parameters.application}
+        </if>
         <if test="parameters.authorities != null and parameters.authorities.size > 0">
             and t2.authority in
             <foreach collection="parameters.authorities" item="item" open="(" close=")" separator=",">

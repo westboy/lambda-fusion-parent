@@ -202,8 +202,9 @@ public class UserController {
     @Operation(summary = "查询用户所有权限")
     public List<Permission> userPermissions(
             @PathVariable @Parameter(description = "用户ID", required = true) String username,
-            @RequestParam(required = false) String mode) {
-        List<Permission> permissions = userService.getUserPermissions(username, mode);
+            @RequestParam(required = false) String mode,
+            @Parameter(description = "所属应用ID，不传表示全部应用") @RequestParam(required = false) String application) {
+        List<Permission> permissions = userService.getUserPermissions(username, mode, application);
         return TreeBuilder.build(permissions);
     }
 

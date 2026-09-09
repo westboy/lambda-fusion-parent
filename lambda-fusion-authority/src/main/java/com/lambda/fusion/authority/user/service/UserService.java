@@ -181,8 +181,9 @@ public interface UserService {
      *
      * @param username
      * @param mode
+     * @param application 所属应用ID，null 表示全部应用
      */
-    List<Permission> getUserPermissions(String username, String mode);
+    List<Permission> getUserPermissions(String username, String mode, String application);
 
     /**
      * 获取所有用户下拉数据

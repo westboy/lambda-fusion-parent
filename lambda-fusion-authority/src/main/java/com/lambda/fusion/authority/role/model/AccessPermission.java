@@ -33,6 +33,9 @@ public class AccessPermission implements TreeNode<AccessPermission> {
 
     private Integer status;
 
+    @Schema(description = "所属应用ID")
+    private String application;
+
     @Override
     public String id() {
         return getId();

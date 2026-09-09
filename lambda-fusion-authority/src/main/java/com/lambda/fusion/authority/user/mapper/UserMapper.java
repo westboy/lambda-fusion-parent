@@ -152,8 +152,10 @@ public interface UserMapper extends BaseMapper<UserEntity> {
      *
      * @param ids
      * @param mode
+     * @param application 所属应用ID，null 表示全部应用
      */
-    List<Permission> selectUserPermissionsByIdsAndMode(List<String> ids, @Param("mode") String mode);
+    List<Permission> selectUserPermissionsByIdsAndMode(
+            @Param("ids") List<String> ids, @Param("mode") String mode, @Param("application") String application);
 
     /**
      * 查询用户的权限
