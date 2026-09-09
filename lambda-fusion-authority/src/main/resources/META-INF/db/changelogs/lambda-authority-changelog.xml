@@ -480,31 +480,6 @@
                        constraintName="pk_la_api_resources"/>
     </changeSet>
 
-    <changeSet id="lambda-authority-202603120110" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <not>
-                <tableExists tableName="la_operation_logs"/>
-            </not>
-        </preConditions>
-        <createTable tableName="la_operation_logs" remarks="操作日志">
-            <column name="ID" type="varchar(20)">
-                <constraints primaryKey="true" primaryKeyName="pk_la_operation_logs_id" nullable="false"/>
-            </column>
-            <column name="METHOD" type="varchar(255)" remarks="方法"/>
-            <column name="DESCRIPTION" type="varchar(255)" remarks="描述"/>
-            <column name="OPERATOR" type="varchar(255)" remarks="操作人员"/>
-            <column name="OPERATION" type="varchar(255)" remarks="操作方式"/>
-            <column name="CREATE_DATE" type="datetime" defaultValueComputed="CURRENT_TIMESTAMP" remarks="操作时间">
-                <constraints nullable="false"/>
-            </column>
-            <column name="COST" type="int" remarks="处理耗时"/>
-            <column name="DETAIL" type="varchar(4000)" remarks="详情"/>
-            <column name="TENANT_ID" type="varchar(32)" remarks="租户"/>
-            <column name="MODULE" type="varchar(32)" remarks="模块名"/>
-            <column name="OPERATOR_ID" type="varchar(32)" remarks="用户ID"/>
-        </createTable>
-    </changeSet>
-
     <changeSet id="lambda-authority-2026031201131" author="westboy">
         <preConditions onFail="MARK_RAN">
             <not>
