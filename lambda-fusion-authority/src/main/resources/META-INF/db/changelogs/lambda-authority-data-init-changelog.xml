@@ -770,7 +770,7 @@
 
 
     <!-- ==================== 用户初始化 ==================== -->
-    <changeSet id="lambda-authority-2026071000001" author="westboy">
+    <changeSet id="lambda-authority-20260710000010" author="westboy">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_users"/>
             <sqlCheck expectedResult="0">
@@ -874,7 +874,7 @@
 
 
     <!-- ==================== 用户角色关联初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100011" author="westboy">
+    <changeSet id="lambda-authority-202607101000110" author="westboy">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_user_roles"/>
             <sqlCheck expectedResult="0">
