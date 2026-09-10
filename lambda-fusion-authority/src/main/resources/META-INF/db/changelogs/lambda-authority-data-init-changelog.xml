@@ -794,7 +794,7 @@
         <insert tableName="la_users">
             <column name="USERNAME" value="17610125091"/>
             <column name="PASSWORD"
-                    value="06b612e3a9b53da74bbebcaa0047128ea0e5c5ac911318c816753f3e1681c7d3ee8992b0af471ef3"/>
+                    value="f17989709f1281a080d3a86d089bc4f4a63dbb0e1c4f538cb7ae974b0371e6a3ca4e2144ff40a501"/>
             <column name="NICKNAME" value="熊猫"/>
             <column name="MOBILE" value="17610125091"/>
             <column name="EMAIL"/>
