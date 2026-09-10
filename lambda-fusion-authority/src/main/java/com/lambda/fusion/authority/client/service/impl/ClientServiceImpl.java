@@ -102,9 +102,9 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, ClientEntity>
 
     @Caching(
             evict = {
-                    @CacheEvict(value = "ResourceOwners", allEntries = true),
-                    @CacheEvict(value = "auth:role", allEntries = true),
-                    @CacheEvict(value = "auth:permission", allEntries = true)
+                @CacheEvict(value = "ResourceOwners", allEntries = true),
+                @CacheEvict(value = "auth:role", allEntries = true),
+                @CacheEvict(value = "auth:permission", allEntries = true)
             })
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -120,9 +120,9 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, ClientEntity>
 
     @Caching(
             evict = {
-                    @CacheEvict(value = "ResourceOwners", allEntries = true),
-                    @CacheEvict(value = "auth:role", allEntries = true),
-                    @CacheEvict(value = "auth:permission", allEntries = true)
+                @CacheEvict(value = "ResourceOwners", allEntries = true),
+                @CacheEvict(value = "auth:role", allEntries = true),
+                @CacheEvict(value = "auth:permission", allEntries = true)
             })
     @Override
     @Transactional(rollbackFor = Exception.class)
