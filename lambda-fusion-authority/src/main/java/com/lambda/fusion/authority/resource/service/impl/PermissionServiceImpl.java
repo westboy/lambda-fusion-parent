@@ -20,6 +20,8 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -119,6 +121,12 @@ public class PermissionServiceImpl implements PermissionService {
         return groups;
     }
 
+    @Caching(
+            evict = {
+                    @CacheEvict(value = "ResourceOwners", allEntries = true),
+                    @CacheEvict(value = "auth:role", allEntries = true),
+                    @CacheEvict(value = "auth:permission", allEntries = true)
+            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void bind(String resourceId, String permissionId) {
@@ -131,6 +139,12 @@ public class PermissionServiceImpl implements PermissionService {
         }
     }
 
+    @Caching(
+            evict = {
+                    @CacheEvict(value = "ResourceOwners", allEntries = true),
+                    @CacheEvict(value = "auth:role", allEntries = true),
+                    @CacheEvict(value = "auth:permission", allEntries = true)
+            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void unbind(String resourceId, String permissionId) {

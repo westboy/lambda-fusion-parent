@@ -29,6 +29,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,6 +100,12 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, ClientEntity>
         return roots;
     }
 
+    @Caching(
+            evict = {
+                    @CacheEvict(value = "ResourceOwners", allEntries = true),
+                    @CacheEvict(value = "auth:role", allEntries = true),
+                    @CacheEvict(value = "auth:permission", allEntries = true)
+            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void bindApiPermission(UserDetails userDetails, String clientId, String permissionId) {
@@ -111,6 +118,12 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, ClientEntity>
         }
     }
 
+    @Caching(
+            evict = {
+                    @CacheEvict(value = "ResourceOwners", allEntries = true),
+                    @CacheEvict(value = "auth:role", allEntries = true),
+                    @CacheEvict(value = "auth:permission", allEntries = true)
+            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void unbindApiPermission(UserDetails userDetails, String clientId, String permissionId) {
