@@ -1068,4 +1068,41 @@
         </addColumn>
     </changeSet>
 
+    <!-- ========== AI 工作台菜单（顶级独立节点，原前端静态路由落库） ========== -->
+    <changeSet id="lambda-ai-2026091000010" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_resources"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1)
+                FROM la_resources
+                WHERE RES_PATH = '/ai'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('AiTop0001', null, 'AI 工作台', '/ai', 0, 1, null, 0, null, 'lucide:brain', 0, null, 0, null, null,
+                    null, 1, null, null, 200),
+                   ('AiApp0001', 'AiTop0001', '智能管理', '/ai/apps/', 1, 1, null, 0, null, 'lucide:bot', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 1),
+                   ('AiChat001', 'AiTop0001', '对话体验', '/ai/chat/', 1, 1, null, 0, null, 'lucide:message-square', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 2),
+                   ('AiLlm0001', 'AiTop0001', '模型管理', '/ai/llm/', 1, 1, null, 0, null, 'lucide:cpu', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 3),
+                   ('AiKnow001', 'AiTop0001', '知识库', '/ai/knowledge/', 1, 1, null, 0, null, 'lucide:database', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 4),
+                   ('AiSubA001', 'AiTop0001', '专家代理', '/ai/sub-agents/', 1, 1, null, 0, null, 'lucide:network', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 5),
+                   ('AiTask001', 'AiTop0001', '定时任务', '/ai/scheduled-tasks/', 1, 1, null, 0, null, 'lucide:clock', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 6),
+                   ('AiMcp0001', 'AiTop0001', 'MCP服务', '/ai/mcp/', 1, 1, null, 0, null, 'lucide:plug', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 7),
+                   ('AiSkill01', 'AiTop0001', '技能市场', '/ai/skills/', 1, 1, null, 0, null, 'lucide:sparkles', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 8),
+                   ('AiChan001', 'AiTop0001', '渠道配置', '/ai/channels/', 1, 1, null, 0, null, 'lucide:radio', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 9);
+            ]]></sql>
+    </changeSet>
+
 </databaseChangeLog>
