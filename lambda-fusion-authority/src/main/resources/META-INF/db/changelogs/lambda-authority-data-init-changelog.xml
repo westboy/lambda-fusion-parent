@@ -802,7 +802,7 @@
             <column name="TENANT_ID"/>
             <column name="CREATED_BY" value="13303820660"/>
             <column name="CREATED_AT" value="2026-04-06 15:47:24"/>
-            <column name="EXPIRED_TIME"/>
+            <column name="EXPIRED_TIME" value="2099-11-07 00:00:00"/>
         </insert>
     </changeSet>
 
@@ -882,11 +882,6 @@
                 FROM la_user_roles
             </sqlCheck>
         </preConditions>
-        <insert tableName="la_user_roles">
-            <column name="USERNAME" value="111"/>
-            <column name="AUTHORITY" value="ROLE_TENANT"/>
-            <column name="TENANT_ID"/>
-        </insert>
         <insert tableName="la_user_roles">
             <column name="USERNAME" value="13303820660"/>
             <column name="AUTHORITY" value="ROLE_DEV"/>
