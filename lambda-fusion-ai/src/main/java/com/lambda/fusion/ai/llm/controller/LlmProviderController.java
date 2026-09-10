@@ -45,7 +45,7 @@ public class LlmProviderController {
     }
 
     @SaCheckPermission(value = "ai:llm-provider:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增 LLM 提供方")
     @Operation(summary = "新增 LLM 提供方")
     @PostMapping
     public LlmProviderEntity create(@RequestBody @Valid CreateLlmProvider dto) {
@@ -53,7 +53,7 @@ public class LlmProviderController {
     }
 
     @SaCheckPermission(value = "ai:llm-provider:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新 LLM 提供方")
     @Operation(summary = "更新 LLM 提供方")
     @PutMapping("/{id}")
     public void update(
@@ -63,7 +63,7 @@ public class LlmProviderController {
     }
 
     @SaCheckPermission(value = "ai:llm-provider:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除 LLM 提供方")
     @Operation(summary = "删除 LLM 提供方")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "提供方ID", required = true) @PathVariable String id) {

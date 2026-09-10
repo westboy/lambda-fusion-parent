@@ -48,14 +48,14 @@ public class DataSourceController {
         return dataSourceManageService.getById(id);
     }
 
-    @OperationLog
+    @OperationLog(module = "数据源管理", value = "新增数据源")
     @PostMapping
     @Operation(summary = "新增数据源", description = "新增记录")
     public void save(@RequestBody @Valid UpsertDataSource input) {
         dataSourceManageService.save(input);
     }
 
-    @OperationLog
+    @OperationLog(module = "数据源管理", value = "更新数据源")
     @PutMapping("/{id}")
     @Operation(summary = "更新数据源", description = "更新记录")
     public void update(
@@ -64,7 +64,7 @@ public class DataSourceController {
         dataSourceManageService.update(id, input);
     }
 
-    @OperationLog
+    @OperationLog(module = "数据源管理", value = "删除数据源")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除数据源", description = "删除记录")
     public void delete(@Parameter(description = "数据源编号", required = true) @PathVariable String id) {

@@ -37,7 +37,7 @@ public class AppPublicationController {
     }
 
     @SaCheckPermission(value = "ai:app-publication:publish")
-    @OperationLog
+    @OperationLog(module = "AI", value = "发布应用(幂等,首次生成稳定链接)")
     @Operation(summary = "发布应用(幂等,首次生成稳定链接)")
     @PutMapping
     public AppPublication publish(@Parameter(description = "应用ID", required = true) @PathVariable String appId) {
@@ -45,7 +45,7 @@ public class AppPublicationController {
     }
 
     @SaCheckPermission(value = "ai:app-publication:unpublish")
-    @OperationLog
+    @OperationLog(module = "AI", value = "下线应用(幂等,保留链接)")
     @Operation(summary = "下线应用(幂等,保留链接)")
     @DeleteMapping
     public AppPublication unpublish(@Parameter(description = "应用ID", required = true) @PathVariable String appId) {

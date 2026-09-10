@@ -69,7 +69,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增定时任务")
     @Operation(summary = "新增定时任务")
     @PostMapping
     public SubAgentEntity create(@RequestBody @Valid CreateScheduledTask dto) {
@@ -77,7 +77,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新定时任务")
     @Operation(summary = "更新定时任务")
     @PutMapping("/{id}")
     public void update(
@@ -87,7 +87,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除定时任务")
     @Operation(summary = "删除定时任务")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "任务ID", required = true) @PathVariable String id) {
@@ -95,7 +95,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:pause")
-    @OperationLog
+    @OperationLog(module = "AI", value = "暂停定时任务调度")
     @Operation(summary = "暂停定时任务调度")
     @PostMapping("/{id}/pause")
     public void pause(@Parameter(description = "任务ID", required = true) @PathVariable String id) {
@@ -103,7 +103,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:resume")
-    @OperationLog
+    @OperationLog(module = "AI", value = "恢复定时任务调度")
     @Operation(summary = "恢复定时任务调度")
     @PostMapping("/{id}/resume")
     public void resume(@Parameter(description = "任务ID", required = true) @PathVariable String id) {
@@ -111,7 +111,7 @@ public class ScheduledTaskController {
     }
 
     @SaCheckPermission(value = "ai:scheduled-task:trigger")
-    @OperationLog
+    @OperationLog(module = "AI", value = "立即触发一次定时任务")
     @Operation(summary = "立即触发一次定时任务")
     @PostMapping("/{id}/trigger")
     public void trigger(@Parameter(description = "任务ID", required = true) @PathVariable String id) {

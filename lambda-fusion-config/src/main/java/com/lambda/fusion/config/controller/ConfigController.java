@@ -128,7 +128,7 @@ public class ConfigController {
      *
      * @see SaveConfig 保存参数详细说明
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "新增配置信息")
     @PostMapping
     @Operation(summary = "新增配置信息", description = "创建新的系统配置项，支持配置选项，需要开发者权限")
     public void save(@RequestBody @Valid SaveConfig source) {
@@ -149,7 +149,7 @@ public class ConfigController {
      * @param updateConfig 配置更新DTO，支持增量更新，通过参数校验
      * @see UpdateConfig 更新参数详细说明
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "更新配置信息")
     @PutMapping("/{id}")
     @Operation(summary = "更新配置信息", description = "支持增量更新配置基本信息和选项，需要开发者权限")
     public void updateConfig(
@@ -167,7 +167,7 @@ public class ConfigController {
      * <h3>权限要求：</h3>
      * <p>需要 ROLE_DEV 角色权限。
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "删除配置信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除配置信息", description = "根据ID删除配置及其所有选项，操作不可逆，需要开发者权限")
     public void delete(@Parameter(description = "配置ID", required = true) @PathVariable String id) {
@@ -190,7 +190,7 @@ public class ConfigController {
      * <h3>权限要求：</h3>
      * <p>需要 ROLE_DEV 角色权限。
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "应用配置刷新")
     @PatchMapping("/refresh")
     @Operation(summary = "应用配置刷新", description = "触发系统配置动态刷新，使配置变更立即生效")
     public void refresh() {
@@ -361,7 +361,7 @@ public class ConfigController {
      *
      * <p>根据配置选项ID更新选项的详细信息，支持增量更新，保护关键字段不被修改。
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "更新配置选项信息")
     @SaCheckRole("ROLE_DEV")
     @PutMapping("/options/{id}")
     @Operation(summary = "根据编号更新选项信息", description = "支持增量更新配置选项，保护关键字段，需要开发者权限")
@@ -383,7 +383,7 @@ public class ConfigController {
      * <p>根据配置选项ID删除指定的配置选项，操作不可逆，删除前会记录选项信息用于审计。
      *
      */
-    @OperationLog
+    @OperationLog(module = "系统配置", value = "删除配置选项信息")
     @SaCheckRole("ROLE_DEV")
     @DeleteMapping("/options/{id}")
     @Operation(summary = "根据编号删除选项信息", description = "物理删除配置选项，操作不可逆，需要开发者权限")

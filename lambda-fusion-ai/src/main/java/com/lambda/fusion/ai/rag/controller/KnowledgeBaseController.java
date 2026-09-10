@@ -48,7 +48,7 @@ public class KnowledgeBaseController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-base:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增知识库")
     @Operation(summary = "新增知识库")
     @PostMapping
     public KnowledgeBaseEntity create(@RequestBody @Valid CreateKnowledgeBase dto) {
@@ -56,7 +56,7 @@ public class KnowledgeBaseController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-base:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新知识库")
     @Operation(summary = "更新知识库")
     @PutMapping("/{id}")
     public void update(
@@ -66,7 +66,7 @@ public class KnowledgeBaseController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-base:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除知识库(级联删除文档、派生索引与原文件)")
     @Operation(summary = "删除知识库(级联删除文档、派生索引与原文件)")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "知识库ID", required = true) @PathVariable String id) {
@@ -83,7 +83,7 @@ public class KnowledgeBaseController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-base:index-rebuild")
-    @OperationLog
+    @OperationLog(module = "AI", value = "重建知识库派生索引(复用原文件并异步重新入库)")
     @Operation(summary = "重建知识库派生索引(复用原文件并异步重新入库)")
     @PostMapping("/{id}/indexes/rebuild")
     public KnowledgeIndexRebuildResult rebuildIndexes(

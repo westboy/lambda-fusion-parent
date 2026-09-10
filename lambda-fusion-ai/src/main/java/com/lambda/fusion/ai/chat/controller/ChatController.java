@@ -57,7 +57,6 @@ public class ChatController {
     }
 
     @SaCheckPermission(value = "ai:chat-session:add")
-    @OperationLog
     @Operation(summary = "创建会话")
     @PostMapping
     public ChatSessionEntity create(@RequestBody @Valid CreateSession dto) {
@@ -65,7 +64,7 @@ public class ChatController {
     }
 
     @SaCheckPermission(value = "ai:chat-session:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除会话")
     @Operation(summary = "删除会话")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "会话ID", required = true) @PathVariable String id) {
@@ -147,7 +146,7 @@ public class ChatController {
     }
 
     @SaCheckPermission(value = "ai:chat-session:run-stop")
-    @OperationLog
+    @OperationLog(module = "AI", value = "停止指定对话Run")
     @Operation(summary = "停止指定对话Run")
     @PostMapping("/{id}/runs/{runId}/stop")
     public void stop(

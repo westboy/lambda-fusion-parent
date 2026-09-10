@@ -45,7 +45,7 @@ public class AppsController {
     }
 
     @SaCheckPermission(value = "ai:app:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增智能应用")
     @Operation(summary = "新增智能应用")
     @PostMapping
     public AppEntity create(@RequestBody @Valid CreateApp dto) {
@@ -53,7 +53,7 @@ public class AppsController {
     }
 
     @SaCheckPermission(value = "ai:app:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新智能应用")
     @Operation(summary = "更新智能应用")
     @PutMapping("/{id}")
     public void update(
@@ -63,7 +63,7 @@ public class AppsController {
     }
 
     @SaCheckPermission(value = "ai:app:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除智能应用")
     @Operation(summary = "删除智能应用")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "应用ID", required = true) @PathVariable String id) {

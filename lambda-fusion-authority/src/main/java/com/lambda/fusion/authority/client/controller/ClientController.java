@@ -2,6 +2,7 @@ package com.lambda.fusion.authority.client.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.client.model.ClientEntity;
 import com.lambda.fusion.authority.client.model.ClientQuery;
 import com.lambda.fusion.authority.client.model.UpsertClient;
@@ -49,6 +50,7 @@ public class ClientController {
     }
 
     @SaCheckPermission(value = "authority:client:add")
+    @OperationLog(module = "客户端管理", value = "新增客户端信息")
     @PostMapping
     @Operation(summary = "新增客户端信息", description = "新增客户端信息")
     public void save(@Parameter(description = "客户端信息", required = true) @Valid @RequestBody UpsertClient upsertClient) {
@@ -68,6 +70,7 @@ public class ClientController {
     }
 
     @SaCheckPermission(value = "authority:client:update")
+    @OperationLog(module = "客户端管理", value = "更新客户端信息")
     @PutMapping("/{id}")
     @Operation(summary = "更新客户端信息", description = "更新客户端信息")
     public void update(
@@ -85,6 +88,7 @@ public class ClientController {
     }
 
     @SaCheckPermission(value = "authority:client:api-permission-bind")
+    @OperationLog(module = "客户端管理", value = "绑定客户端接口权限")
     @PutMapping("/{id}/api-permissions/{permissionId}")
     @Operation(summary = "绑定客户端接口权限", description = "将指定接口权限绑定到客户端")
     public void bindApiPermission(
@@ -94,6 +98,7 @@ public class ClientController {
     }
 
     @SaCheckPermission(value = "authority:client:api-permission-unbind")
+    @OperationLog(module = "客户端管理", value = "解绑客户端接口权限")
     @DeleteMapping("/{id}/api-permissions/{permissionId}")
     @Operation(summary = "解绑客户端接口权限", description = "将指定接口权限从客户端解绑")
     public void unbindApiPermission(
@@ -103,6 +108,7 @@ public class ClientController {
     }
 
     @SaCheckPermission(value = "authority:client:delete")
+    @OperationLog(module = "客户端管理", value = "删除客户端信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除客户端信息", description = "根据编号删除客户端信息")
     public void delete(@Parameter(description = "编号", required = true) @PathVariable String id) {

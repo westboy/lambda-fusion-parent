@@ -45,7 +45,7 @@ public class ChatAttachmentController {
     private final AiProperties aiProperties;
 
     @SaCheckPermission(value = "ai:chat-attachment:upload")
-    @OperationLog
+    @OperationLog(module = "AI", value = "上传对话附件(图片/文档)")
     @Operation(summary = "上传对话附件(图片/文档)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ChatAttachmentView upload(
@@ -62,7 +62,7 @@ public class ChatAttachmentController {
     }
 
     @SaCheckPermission(value = "ai:chat-attachment:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除未发送附件")
     @Operation(summary = "删除未发送附件")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "附件ID", required = true) @PathVariable String id) {

@@ -45,7 +45,7 @@ public class LlmModelController {
     }
 
     @SaCheckPermission(value = "ai:llm-model:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增 LLM 模型")
     @Operation(summary = "新增 LLM 模型")
     @PostMapping
     public LlmModelEntity create(@RequestBody @Valid CreateLlmModel dto) {
@@ -53,7 +53,7 @@ public class LlmModelController {
     }
 
     @SaCheckPermission(value = "ai:llm-model:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新 LLM 模型")
     @Operation(summary = "更新 LLM 模型")
     @PutMapping("/{id}")
     public void update(
@@ -63,7 +63,7 @@ public class LlmModelController {
     }
 
     @SaCheckPermission(value = "ai:llm-model:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除 LLM 模型")
     @Operation(summary = "删除 LLM 模型")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "模型ID", required = true) @PathVariable String id) {

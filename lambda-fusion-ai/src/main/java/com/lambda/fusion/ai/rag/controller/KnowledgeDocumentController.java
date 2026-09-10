@@ -46,7 +46,7 @@ public class KnowledgeDocumentController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-document:upload")
-    @OperationLog
+    @OperationLog(module = "AI", value = "上传文档(异步解析切块入库, 立即返回 PENDING 行)")
     @Operation(summary = "上传文档(异步解析切块入库, 立即返回 PENDING 行)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public KnowledgeDocumentEntity upload(
@@ -59,7 +59,7 @@ public class KnowledgeDocumentController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-document:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除文档(同步删除派生索引与原文件)")
     @Operation(summary = "删除文档(同步删除派生索引与原文件)")
     @DeleteMapping("/{documentId}")
     public void delete(
@@ -69,7 +69,7 @@ public class KnowledgeDocumentController {
     }
 
     @SaCheckPermission(value = "ai:knowledge-document:reingest")
-    @OperationLog
+    @OperationLog(module = "AI", value = "重新解析切块入库(复用原文件并异步替换派生索引)")
     @Operation(summary = "重新解析切块入库(复用原文件并异步替换派生索引)")
     @PostMapping("/{documentId}/reingest")
     public KnowledgeDocumentEntity reingest(

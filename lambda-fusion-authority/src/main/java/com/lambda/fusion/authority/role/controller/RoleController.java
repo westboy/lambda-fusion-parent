@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.lambda.cloud.core.utils.Assert;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.AuthorityConstants;
 import com.lambda.fusion.authority.role.model.*;
 import com.lambda.fusion.authority.role.service.RoleService;
@@ -108,6 +109,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:add")
+    @OperationLog(module = "角色管理", value = "新增角色信息")
     @PostMapping
     @Operation(description = "新增角色信息", summary = "新增角色信息")
     public Role add(@Parameter(description = "角色信息", required = true) @RequestBody CreateRole createRole) {
@@ -115,6 +117,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:update")
+    @OperationLog(module = "角色管理", value = "更新角色信息")
     @PutMapping("/{authority}")
     @Operation(description = "更新角色信息", summary = "更新角色信息")
     public Role update(
@@ -126,6 +129,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:delete")
+    @OperationLog(module = "角色管理", value = "删除角色信息")
     @DeleteMapping("/{authority}")
     @Operation(description = "删除角色信息", summary = "删除角色信息")
     public void delete(@Parameter(description = "角色名称", required = true) @PathVariable String authority) {
@@ -136,6 +140,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:disable")
+    @OperationLog(module = "角色管理", value = "禁用角色")
     @PatchMapping("/{authority}/disabled")
     @Operation(description = "禁用角色", summary = "禁用角色")
     public void disabled(@PathVariable @Parameter(description = "角色名称", required = true) String authority) {
@@ -143,6 +148,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:enable")
+    @OperationLog(module = "角色管理", value = "启用角色")
     @PatchMapping("/{authority}/enabled")
     @Operation(description = "启用角色", summary = "启用角色")
     public void enabled(@PathVariable @Parameter(description = "角色名称", required = true) String authority) {
@@ -160,6 +166,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:permission-grant")
+    @OperationLog(module = "角色管理", value = "授予指定角色的特定权限")
     @PutMapping("/{authority}/grant/{resourceId}")
     @Operation(description = "授予指定角色的特定权限", summary = "授予指定角色的特定权限")
     public void grantRolePermission(
@@ -172,6 +179,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:permission-revoke")
+    @OperationLog(module = "角色管理", value = "删除指定角色的特定权限")
     @DeleteMapping("/{authority}/grant/{resourceId}")
     @Operation(description = "删除指定角色的特定权限", summary = "删除指定角色的特定权限")
     public void revokeRolePermission(
@@ -181,6 +189,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role:assign-users")
+    @OperationLog(module = "角色管理", value = "角色批量分配用户")
     @Operation(description = "角色批量分配用户", summary = "角色批量分配用户")
     @PostMapping("/assignUsers")
     public void assignUsersToRole(@Valid @RequestBody BatchAssignUserRole req) {
@@ -197,6 +206,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role-group:add")
+    @OperationLog(module = "角色管理", value = "新增角色分组")
     @Operation(description = "新增角色分组", summary = "新增角色分组")
     @PostMapping("/group")
     public Group addGroup(@Parameter Group group) {
@@ -204,6 +214,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role-group:update")
+    @OperationLog(module = "角色管理", value = "修改角色分组")
     @Operation(description = "修改角色分组", summary = "修改角色分组")
     @PutMapping("/group")
     public Group updateGroup(@Parameter Group group) {
@@ -211,6 +222,7 @@ public class RoleController {
     }
 
     @SaCheckPermission(value = "authority:role-group:delete")
+    @OperationLog(module = "角色管理", value = "删除角色分组")
     @Operation(description = "删除角色分组", summary = "删除角色分组")
     @DeleteMapping("/group/{groupId}")
     public void deleteGroup(@Parameter(description = "分组ID") @PathVariable String groupId) {

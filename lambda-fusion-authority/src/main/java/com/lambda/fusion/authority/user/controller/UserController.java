@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.core.principal.LoginUser;
 import com.lambda.cloud.core.utils.ConvertUtils;
 import com.lambda.cloud.core.utils.OperatorUtils;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.exception.AuthorityBusinessException;
 import com.lambda.fusion.authority.organization.service.OrganizationService;
 import com.lambda.fusion.authority.role.model.SimpleRole;
@@ -118,6 +119,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:add")
+    @OperationLog(module = "用户管理", value = "新增用户信息")
     @PostMapping
     @Operation(summary = "新增用户信息")
     public User add(@Parameter(description = "用户信息", required = true) @Valid @RequestBody CreateUser createUser) {
@@ -129,6 +131,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:update")
+    @OperationLog(module = "用户管理", value = "更新用户信息")
     @PutMapping(value = "/{username}")
     @Operation(summary = "更新用户信息")
     public User update(
@@ -140,6 +143,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:delete")
+    @OperationLog(module = "用户管理", value = "删除用户信息")
     @DeleteMapping(value = "/{username}")
     @Operation(summary = "删除用户信息")
     public void delete(@PathVariable @Parameter(description = "用户名", required = true) String username) {
@@ -147,6 +151,7 @@ public class UserController {
     }
 
     @SaCheckLogin
+    @OperationLog(module = "用户管理", value = "修改用户密码")
     @PutMapping("/password/edit")
     @Operation(summary = "修改用户密码", description = "用于用户自己修改密码")
     public void updateUserPassword(
@@ -165,6 +170,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:password-reset")
+    @OperationLog(module = "用户管理", value = "重置用户密码")
     @PutMapping("/password/reset")
     @Operation(summary = "重置用户密码", description = "主要由用户管理员使用")
     public String resetUserPassword(
@@ -177,6 +183,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:disable")
+    @OperationLog(module = "用户管理", value = "禁用用户")
     @PatchMapping("/{username}/disabled")
     @Operation(summary = "禁用用户")
     public void disabled(@PathVariable @Parameter(description = "用户名称", required = true) String username) {
@@ -184,6 +191,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:enable")
+    @OperationLog(module = "用户管理", value = "启用用户")
     @PatchMapping("/{username}/enabled")
     @Operation(summary = "启用用户")
     public void enabled(@PathVariable @Parameter(description = "用户名称", required = true) String username) {
@@ -191,6 +199,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:unlock")
+    @OperationLog(module = "用户管理", value = "解锁用户")
     @PatchMapping("/{username}/unlock")
     @Operation(summary = "解锁用户")
     public void unlock(@PathVariable @Parameter(description = "用户名称", required = true) String username) {
@@ -217,6 +226,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:third-part-unbind")
+    @OperationLog(module = "用户管理", value = "解除第三方绑定")
     @PatchMapping(value = "/unbind/{username}/{type}")
     @Operation(summary = "解除第三方绑定")
     public void unbind(
@@ -286,6 +296,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:tenant-admin-add")
+    @OperationLog(module = "用户管理", value = "添加租户管理员用户信息")
     @PutMapping(value = "/tenant/{tenantId}/admins")
     @Operation(summary = "添加租户管理员用户信息")
     public User addTenantUser(
@@ -300,6 +311,7 @@ public class UserController {
     }
 
     @SaCheckPermission(value = "authority:user:tenant-admin-update")
+    @OperationLog(module = "用户管理", value = "更新租户管理员用户信息")
     @PutMapping(value = "/tenant/{tenantId}/admins/{username}")
     @Operation(summary = "更新租户管理员用户信息")
     public User updateTenantUser(

@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.application.model.ApplicationEntity;
 import com.lambda.fusion.authority.application.model.ApplicationQuery;
 import com.lambda.fusion.authority.application.model.UpsertApplication;
@@ -59,6 +60,7 @@ public class ApplicationController {
     }
 
     @SaCheckPermission(value = "authority:application:add")
+    @OperationLog(module = "应用管理", value = "新增应用信息")
     @PostMapping
     @Operation(summary = "新增应用信息", description = "新增应用信息")
     public void save(@Parameter(description = "应用信息", required = true) @Valid @RequestBody UpsertApplication source) {
@@ -73,6 +75,7 @@ public class ApplicationController {
     }
 
     @SaCheckPermission(value = "authority:application:update")
+    @OperationLog(module = "应用管理", value = "更新应用信息")
     @PutMapping("/{id}")
     @Operation(summary = "更新应用信息", description = "更新应用信息")
     public void update(
@@ -92,6 +95,7 @@ public class ApplicationController {
     }
 
     @SaCheckPermission(value = "authority:application:delete")
+    @OperationLog(module = "应用管理", value = "删除应用信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除应用信息", description = "删除应用信息，应用下存在资源时不允许删除")
     public void delete(@Parameter(description = "应用ID", required = true) @PathVariable String id) {

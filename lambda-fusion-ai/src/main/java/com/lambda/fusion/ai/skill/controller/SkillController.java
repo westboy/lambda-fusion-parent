@@ -64,7 +64,7 @@ public class SkillController {
     }
 
     @SaCheckPermission(value = "ai:skill:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增技能")
     @Operation(summary = "新增技能")
     @PostMapping
     public SkillView create(@RequestBody @Valid CreateSkill dto) {
@@ -79,7 +79,7 @@ public class SkillController {
     }
 
     @SaCheckPermission(value = "ai:skill:package-import")
-    @OperationLog
+    @OperationLog(module = "AI", value = "导入技能包")
     @Operation(summary = "导入技能包")
     @PostMapping(value = "/packages/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SkillPackageImportResult importPackage(
@@ -90,7 +90,7 @@ public class SkillController {
     }
 
     @SaCheckPermission(value = "ai:skill:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新技能")
     @Operation(summary = "更新技能")
     @PutMapping("/{name}")
     public void update(
@@ -100,7 +100,7 @@ public class SkillController {
     }
 
     @SaCheckPermission(value = "ai:skill:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除技能")
     @Operation(summary = "删除技能")
     @DeleteMapping("/{name}")
     public void delete(@Parameter(description = "技能名", required = true) @PathVariable String name) {

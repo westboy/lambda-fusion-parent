@@ -1,4 +1,4 @@
-package com.fusion.startup.ai;
+package com.fusion.startup.ai.tools;
 
 import cn.hutool.core.util.HexUtil;
 import com.lambda.cloud.netty.protocol.annotation.ProtocolField;

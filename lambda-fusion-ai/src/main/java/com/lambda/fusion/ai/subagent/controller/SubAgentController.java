@@ -45,7 +45,7 @@ public class SubAgentController {
     }
 
     @SaCheckPermission(value = "ai:sub-agent:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增子代理")
     @Operation(summary = "新增子代理")
     @PostMapping
     public SubAgentEntity create(@RequestBody @Valid CreateSubAgent dto) {
@@ -53,7 +53,7 @@ public class SubAgentController {
     }
 
     @SaCheckPermission(value = "ai:sub-agent:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新子代理")
     @Operation(summary = "更新子代理")
     @PutMapping("/{id}")
     public void update(
@@ -63,7 +63,7 @@ public class SubAgentController {
     }
 
     @SaCheckPermission(value = "ai:sub-agent:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除子代理")
     @Operation(summary = "删除子代理")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "子代理ID", required = true) @PathVariable String id) {

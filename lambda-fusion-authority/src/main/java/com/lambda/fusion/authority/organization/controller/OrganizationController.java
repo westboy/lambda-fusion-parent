@@ -4,6 +4,7 @@ import static com.lambda.fusion.core.utils.SqlParamUtils.fuzzyQuery;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.core.utils.OperatorUtils;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.exception.AuthorityBusinessException;
 import com.lambda.fusion.authority.organization.model.CreateOrganization;
 import com.lambda.fusion.authority.organization.model.Organization;
@@ -80,6 +81,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:add")
+    @OperationLog(module = "组织管理", value = "新增组织机构信息")
     @PostMapping({"", "/{id}"})
     @Operation(summary = "新增组织机构信息", description = "当id为非空时新增其子组织机构信息")
     public Organization addOrganization(
@@ -96,6 +98,7 @@ public class OrganizationController {
         return organizationService.addOrganization(createOrganization);
     }
 
+    @OperationLog(module = "组织管理", value = "更新组织机构信息")
     @PutMapping("/{id}")
     @Operation(summary = "更新组织机构信息", description = "根据编号更新指定的组织机构信息")
     public Organization updateOrganization(
@@ -111,6 +114,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:delete")
+    @OperationLog(module = "组织管理", value = "删除组织机构信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除组织机构信息", description = "根据编号删除指定的组织机构信息")
     public void delete(@Parameter(description = "组织编号", required = true) @PathVariable String id) {
@@ -132,6 +136,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:user-add")
+    @OperationLog(module = "组织管理", value = "添加用户组织信息")
     @PostMapping("/user/{username}")
     @Operation(summary = "添加用户组织信息", description = "添加用户组织信息")
     public UserOrganization addUserOrganization(
@@ -142,6 +147,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:user-delete")
+    @OperationLog(module = "组织管理", value = "删除用户组织信息")
     @DeleteMapping("/user/{username}")
     @Operation(summary = "删除用户组织信息", description = "删除用户添加组织信息")
     public void deleteUserOrganization(
@@ -150,6 +156,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:user-update")
+    @OperationLog(module = "组织管理", value = "更新用户组织关系")
     @PutMapping("/user/{username}")
     @Operation(summary = "更新用户组织关系", description = "更新用户组织关系")
     public UserOrganization updateUserOrganization(
@@ -160,6 +167,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:enable")
+    @OperationLog(module = "组织管理", value = "启用组织机构")
     @PatchMapping("/{id}/enabled")
     @Operation(summary = "启用组织机构")
     public void enabled(@PathVariable @Parameter(description = "机构Id", required = true) String id) {
@@ -171,6 +179,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:disable")
+    @OperationLog(module = "组织管理", value = "禁用组织机构")
     @PatchMapping("/{id}/disabled")
     @Operation(summary = "禁用组织机构")
     public void disabled(@PathVariable @Parameter(description = "机构Id", required = true) String id) {
@@ -182,6 +191,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:import")
+    @OperationLog(module = "组织管理", value = "导入excel批量增加组织")
     @Operation(summary = "导入excel批量增加组织")
     @PostMapping({"/import"})
     public void importExcel(@RequestParam("file") MultipartFile file) {
@@ -189,6 +199,7 @@ public class OrganizationController {
     }
 
     @SaCheckPermission(value = "authority:org:move")
+    @OperationLog(module = "组织管理", value = "移动组织")
     @PatchMapping("/{id}")
     @Operation(
             summary = "移动组织",

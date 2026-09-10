@@ -45,7 +45,7 @@ public class McpServerController {
     }
 
     @SaCheckPermission(value = "ai:mcp-server:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增 MCP 服务")
     @Operation(summary = "新增 MCP 服务")
     @PostMapping
     public McpServerEntity create(@RequestBody @Valid CreateMcpServer dto) {
@@ -53,7 +53,7 @@ public class McpServerController {
     }
 
     @SaCheckPermission(value = "ai:mcp-server:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新 MCP 服务")
     @Operation(summary = "更新 MCP 服务")
     @PutMapping("/{id}")
     public void update(
@@ -63,7 +63,7 @@ public class McpServerController {
     }
 
     @SaCheckPermission(value = "ai:mcp-server:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除 MCP 服务")
     @Operation(summary = "删除 MCP 服务")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "服务ID", required = true) @PathVariable String id) {

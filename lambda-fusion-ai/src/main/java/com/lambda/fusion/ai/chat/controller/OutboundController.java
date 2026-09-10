@@ -34,7 +34,7 @@ public class OutboundController {
     private final ObjectProvider<HarnessGateway> gatewayProvider;
 
     @SaCheckPermission(value = "ai:outbound:send")
-    @OperationLog
+    @OperationLog(module = "AI", value = "主动推送出站消息到外部通道")
     @Operation(summary = "主动推送出站消息到外部通道")
     @PostMapping("/send")
     public ResponseEntity<Map<String, Object>> send(@RequestBody SendOutbound req) {

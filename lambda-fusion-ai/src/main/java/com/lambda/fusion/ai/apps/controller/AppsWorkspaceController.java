@@ -67,7 +67,7 @@ public class AppsWorkspaceController {
     }
 
     @SaCheckPermission(value = "ai:app-workspace:write")
-    @OperationLog
+    @OperationLog(module = "AI", value = "写入 workspace 文件")
     @Operation(summary = "写入 workspace 文件")
     @PutMapping("/file")
     public void write(

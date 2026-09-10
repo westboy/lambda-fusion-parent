@@ -53,7 +53,7 @@ public class ChannelConfigController {
     }
 
     @SaCheckPermission(value = "ai:channel-config:add")
-    @OperationLog
+    @OperationLog(module = "AI", value = "新增通道路由配置")
     @Operation(summary = "新增通道路由配置")
     @PostMapping
     public ChannelConfigEntity create(@RequestBody @Valid CreateChannelConfig dto) {
@@ -61,7 +61,7 @@ public class ChannelConfigController {
     }
 
     @SaCheckPermission(value = "ai:channel-config:update")
-    @OperationLog
+    @OperationLog(module = "AI", value = "更新通道路由配置")
     @Operation(summary = "更新通道路由配置")
     @PutMapping("/{id}")
     public void update(
@@ -71,7 +71,7 @@ public class ChannelConfigController {
     }
 
     @SaCheckPermission(value = "ai:channel-config:delete")
-    @OperationLog
+    @OperationLog(module = "AI", value = "删除通道路由配置")
     @Operation(summary = "删除通道路由配置")
     @DeleteMapping("/{id}")
     public void delete(@Parameter(description = "配置ID", required = true) @PathVariable String id) {

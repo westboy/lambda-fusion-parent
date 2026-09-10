@@ -3,6 +3,7 @@ package com.lambda.fusion.authority.resource.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.annotation.SaMode;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.authentication.model.MenuQuery;
 import com.lambda.fusion.authority.resource.model.ApiPermissionTreeNode;
 import com.lambda.fusion.authority.resource.model.CreateResource;
@@ -60,6 +61,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:add")
+    @OperationLog(module = "资源管理", value = "新增资源信息")
     @PostMapping({"/{id}", "/"})
     @Operation(summary = "新增资源信息", description = "当id为非空时新增其子资源信息")
     public Resource add(
@@ -71,6 +73,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:update")
+    @OperationLog(module = "资源管理", value = "更新资源信息")
     @PutMapping("/{id}")
     @Operation(summary = "更新资源信息", description = "根据编号更新指定的资源信息")
     public Resource update(
@@ -80,6 +83,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:delete")
+    @OperationLog(module = "资源管理", value = "删除资源信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除资源信息", description = "根据编号删除指定的资源信息")
     public void delete(@PathVariable @Parameter(description = "资源编号", required = true) String id) {
@@ -87,6 +91,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:move")
+    @OperationLog(module = "资源管理", value = "移动资源")
     @PatchMapping("/{id}")
     @Operation(
             summary = "移动资源",
@@ -116,6 +121,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:api-permission-bind")
+    @OperationLog(module = "资源管理", value = "绑定接口权限")
     @PutMapping("/{id}/api-permissions/{permissionId}")
     @Operation(summary = "绑定接口权限", description = "将指定接口权限绑定到菜单资源")
     public void bindApiPermission(
@@ -125,6 +131,7 @@ public class ResourceController {
     }
 
     @SaCheckPermission(value = "authority:resource:api-permission-unbind")
+    @OperationLog(module = "资源管理", value = "解绑接口权限")
     @DeleteMapping("/{id}/api-permissions/{permissionId}")
     @Operation(summary = "解绑接口权限", description = "将指定接口权限从菜单资源解绑")
     public void unbindApiPermission(

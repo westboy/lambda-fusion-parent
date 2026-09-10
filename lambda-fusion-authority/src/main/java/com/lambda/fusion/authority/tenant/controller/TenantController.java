@@ -5,6 +5,7 @@ import cn.dev33.satoken.annotation.SaCheckRole;
 import cn.dev33.satoken.annotation.SaIgnore;
 import cn.dev33.satoken.annotation.SaMode;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.authority.tenant.model.TenantDomainInfo;
 import com.lambda.fusion.authority.tenant.model.TenantEntity;
 import com.lambda.fusion.authority.tenant.model.TenantOption;
@@ -59,6 +60,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:add")
+    @OperationLog(module = "租户管理", value = "新增租户信息信息(含LOGO)")
     @PostMapping
     @Operation(summary = "新增租户信息信息(含LOGO)", description = "新增租户信息信息，支持表单与LOGO同请求提交")
     public TenantEntity saveTenant(
@@ -70,6 +72,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:update")
+    @OperationLog(module = "租户管理", value = "更新租户信息信息(含LOGO)")
     @PostMapping(value = "/{id}")
     @Operation(summary = "更新租户信息信息(含LOGO)", description = "更新租户信息信息，支持表单与LOGO同请求提交")
     public TenantEntity updateTenant(
@@ -83,6 +86,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:delete")
+    @OperationLog(module = "租户管理", value = "删除租户信息信息")
     @DeleteMapping("/{id}")
     @Operation(summary = "删除租户信息信息", description = "删除租户信息信息")
     public void deleteTenant(@Parameter(description = "租户编号", required = true) @PathVariable String id) {
@@ -90,6 +94,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:enable")
+    @OperationLog(module = "租户管理", value = "启用租户")
     @PatchMapping("/{id}/enabled")
     @Operation(summary = "启用租户")
     public void enabledTenant(@PathVariable @Parameter(description = "租户编号", required = true) String id) {
@@ -97,6 +102,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:disable")
+    @OperationLog(module = "租户管理", value = "禁用租户")
     @PatchMapping("/{id}/disabled")
     @Operation(summary = "禁用租户")
     public void disabledTenant(@PathVariable @Parameter(description = "租户编号", required = true) String id) {
@@ -104,6 +110,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:domain-bind")
+    @OperationLog(module = "租户管理", value = "绑定租户域名")
     @PutMapping("/{id}/domain")
     @Operation(summary = "绑定租户域名", description = "为指定租户绑定自定义域名，域名全局唯一")
     public void bindDomain(
@@ -113,6 +120,7 @@ public class TenantController {
     }
 
     @SaCheckPermission(value = "authority:tenant:domain-unbind")
+    @OperationLog(module = "租户管理", value = "解绑租户域名")
     @DeleteMapping("/{id}/domain")
     @Operation(summary = "解绑租户域名", description = "解除指定租户的域名绑定")
     public void unbindDomain(@PathVariable @Parameter(description = "租户编号", required = true) String id) {
