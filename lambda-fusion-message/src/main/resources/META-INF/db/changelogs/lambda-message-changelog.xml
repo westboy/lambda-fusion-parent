@@ -254,4 +254,35 @@
             <column name="STATUS"/>
         </createIndex>
     </changeSet>
+
+    <!-- ========== 消息中心菜单（顶级独立节点，原前端静态路由落库） ========== -->
+    <changeSet id="lambda-message-202609100001" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_resources"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1)
+                FROM la_resources
+                WHERE RES_PATH = '/message'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('MsgTop001', null, '消息中心', '/message', 0, 1, null, 0, null, 'lucide:bell', 0, null, 0, null,
+                    null, null, 0, null, null, 90),
+                   ('MsgMy0001', 'MsgTop001', '我的消息', '/message/my-messages/', 1, 1, null, 0, null, 'lucide:mail', 0,
+                    'MsgTop001', 0, null, null, null, 0, null, null, 1),
+                   ('MsgAnn001', 'MsgTop001', '通知公告', '/message/announcements/', 1, 1, null, 0, null,
+                    'lucide:megaphone', 0, 'MsgTop001', 0, null, null, null, 0, null, null, 2),
+                   ('MsgMgmt01', 'MsgTop001', '消息管理', '/message/messages/', 1, 1, null, 0, null, 'lucide:inbox', 0,
+                    'MsgTop001', 0, null, null, null, 0, null, null, 3),
+                   ('MsgAnnM01', 'MsgTop001', '公告管理', '/message/announcements-admin/', 1, 1, null, 0, null,
+                    'lucide:megaphone-off', 0, 'MsgTop001', 0, null, null, null, 0, null, null, 4),
+                   ('MsgTpl001', 'MsgTop001', '消息模板', '/message/templates/', 1, 1, null, 0, null,
+                    'lucide:layout-template', 0, 'MsgTop001', 0, null, null, null, 0, null, null, 5),
+                   ('MsgDlv001', 'MsgTop001', '投递记录', '/message/deliveries/', 1, 1, null, 0, null,
+                    'lucide:package-check', 0, 'MsgTop001', 0, null, null, null, 0, null, null, 6);
+            ]]></sql>
+    </changeSet>
 </databaseChangeLog>
