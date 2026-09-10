@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.apps.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.apps.model.AppPublication;
 import com.lambda.fusion.ai.apps.service.AppPublicationService;
@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * @author Jin
  */
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "智能应用发布管理")
 @RestController
 @RequestMapping("/v1/ai/apps/{appId}/publication")
@@ -30,12 +29,14 @@ public class AppPublicationController {
 
     private final AppPublicationService appPublicationService;
 
+    @SaCheckPermission(value = "ai:app-publication:get")
     @Operation(summary = "查询应用发布状态与代码")
     @GetMapping
     public AppPublication get(@Parameter(description = "应用ID", required = true) @PathVariable String appId) {
         return appPublicationService.get(appId);
     }
 
+    @SaCheckPermission(value = "ai:app-publication:publish")
     @OperationLog
     @Operation(summary = "发布应用(幂等,首次生成稳定链接)")
     @PutMapping
@@ -43,6 +44,7 @@ public class AppPublicationController {
         return appPublicationService.publish(appId);
     }
 
+    @SaCheckPermission(value = "ai:app-publication:unpublish")
     @OperationLog
     @Operation(summary = "下线应用(幂等,保留链接)")
     @DeleteMapping

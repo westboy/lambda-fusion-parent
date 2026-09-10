@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.subagent.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.subagent.model.CreateSubAgent;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "子代理管理")
 @RestController
 @RequestMapping("/v1/ai/sub-agents")
@@ -31,18 +30,21 @@ public class SubAgentController {
 
     private final SubAgentService subAgentService;
 
+    @SaCheckPermission(value = "ai:sub-agent:page")
     @Operation(summary = "分页查询子代理")
     @GetMapping("/page")
     public Page<SubAgentEntity> page(@Valid SubAgentPage query) {
         return subAgentService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:sub-agent:get")
     @Operation(summary = "查询子代理详情")
     @GetMapping("/{id}")
     public SubAgentEntity get(@Parameter(description = "子代理ID", required = true) @PathVariable String id) {
         return subAgentService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:sub-agent:add")
     @OperationLog
     @Operation(summary = "新增子代理")
     @PostMapping
@@ -50,6 +52,7 @@ public class SubAgentController {
         return subAgentService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:sub-agent:update")
     @OperationLog
     @Operation(summary = "更新子代理")
     @PutMapping("/{id}")
@@ -59,6 +62,7 @@ public class SubAgentController {
         subAgentService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:sub-agent:delete")
     @OperationLog
     @Operation(summary = "删除子代理")
     @DeleteMapping("/{id}")

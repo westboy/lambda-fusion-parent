@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.apps.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.fusion.ai.apps.model.AvailableApp;
 import com.lambda.fusion.ai.apps.service.AppService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,6 +25,7 @@ public class AppAvailabilityController {
 
     private final AppService appService;
 
+    @SaCheckPermission(value = "ai:app:available")
     @Operation(summary = "列出当前用户可用的应用（按 audience+角色 / owner 过滤，安全视图）")
     @GetMapping("/available")
     public List<AvailableApp> available() {

@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.skill.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.skill.model.CreateSkill;
 import com.lambda.fusion.ai.skill.model.SkillPackageImportResult;
@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "技能市场管理")
 @RestController
 @RequestMapping("/v1/ai/skills")
@@ -36,6 +35,7 @@ public class SkillController {
 
     private final SkillService skillService;
 
+    @SaCheckPermission(value = "ai:skill:list")
     @Operation(summary = "列出全部技能")
     @GetMapping
     public List<SkillView> list(
@@ -44,6 +44,7 @@ public class SkillController {
         return skillService.list(includeResources);
     }
 
+    @SaCheckPermission(value = "ai:skill:get")
     @Operation(summary = "查询技能")
     @GetMapping("/{name}")
     public SkillView get(
@@ -53,6 +54,7 @@ public class SkillController {
         return skillService.get(name, includeResources);
     }
 
+    @SaCheckPermission(value = "ai:skill:resource-get")
     @Operation(summary = "查询单个技能资源")
     @GetMapping("/{name}/resources/content")
     public SkillResourceView getResource(
@@ -61,6 +63,7 @@ public class SkillController {
         return skillService.getResource(name, path);
     }
 
+    @SaCheckPermission(value = "ai:skill:add")
     @OperationLog
     @Operation(summary = "新增技能")
     @PostMapping
@@ -68,12 +71,14 @@ public class SkillController {
         return skillService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:skill:package-inspect")
     @Operation(summary = "预检技能包")
     @PostMapping(value = "/packages/inspect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SkillPackageInspection inspectPackage(@RequestParam("file") MultipartFile file) {
         return skillService.inspectPackage(file);
     }
 
+    @SaCheckPermission(value = "ai:skill:package-import")
     @OperationLog
     @Operation(summary = "导入技能包")
     @PostMapping(value = "/packages/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -84,6 +89,7 @@ public class SkillController {
         return skillService.importPackage(file, skillNames, overwrite);
     }
 
+    @SaCheckPermission(value = "ai:skill:update")
     @OperationLog
     @Operation(summary = "更新技能")
     @PutMapping("/{name}")
@@ -93,6 +99,7 @@ public class SkillController {
         skillService.update(name, dto);
     }
 
+    @SaCheckPermission(value = "ai:skill:delete")
     @OperationLog
     @Operation(summary = "删除技能")
     @DeleteMapping("/{name}")

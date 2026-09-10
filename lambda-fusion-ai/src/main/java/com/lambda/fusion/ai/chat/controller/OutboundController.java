@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.chat.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.chat.model.SendOutbound;
 import io.agentscope.core.message.Msg;
@@ -26,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
  * @author Jin
  */
 @Tag(name = "AI 出站消息")
-@SaCheckRole("ROLE_DEV")
 @RestController
 @RequestMapping("/v1/ai/outbound")
 @RequiredArgsConstructor
@@ -34,6 +33,7 @@ public class OutboundController {
 
     private final ObjectProvider<HarnessGateway> gatewayProvider;
 
+    @SaCheckPermission(value = "ai:outbound:send")
     @OperationLog
     @Operation(summary = "主动推送出站消息到外部通道")
     @PostMapping("/send")

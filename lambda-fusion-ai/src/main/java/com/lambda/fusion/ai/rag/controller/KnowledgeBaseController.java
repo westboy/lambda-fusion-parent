@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.rag.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.rag.model.CreateKnowledgeBase;
@@ -25,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "知识库管理")
 @RestController
 @RequestMapping("/v1/ai/knowledge-bases")
@@ -34,18 +33,21 @@ public class KnowledgeBaseController {
 
     private final KnowledgeBaseService knowledgeBaseService;
 
+    @SaCheckPermission(value = "ai:knowledge-base:page")
     @Operation(summary = "分页查询知识库")
     @GetMapping("/page")
     public Page<KnowledgeBaseEntity> page(@Valid KnowledgeBasePage query) {
         return knowledgeBaseService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:get")
     @Operation(summary = "查询知识库详情")
     @GetMapping("/{id}")
     public KnowledgeBaseEntity get(@Parameter(description = "知识库ID", required = true) @PathVariable String id) {
         return knowledgeBaseService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:add")
     @OperationLog
     @Operation(summary = "新增知识库")
     @PostMapping
@@ -53,6 +55,7 @@ public class KnowledgeBaseController {
         return knowledgeBaseService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:update")
     @OperationLog
     @Operation(summary = "更新知识库")
     @PutMapping("/{id}")
@@ -62,6 +65,7 @@ public class KnowledgeBaseController {
         knowledgeBaseService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:delete")
     @OperationLog
     @Operation(summary = "删除知识库(级联删除文档、派生索引与原文件)")
     @DeleteMapping("/{id}")
@@ -69,6 +73,7 @@ public class KnowledgeBaseController {
         knowledgeBaseService.delete(id);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:retrieval-test")
     @Operation(summary = "测试知识库检索召回")
     @PostMapping("/{id}/retrieval-test")
     public RetrievalProbe testRetrieval(
@@ -77,6 +82,7 @@ public class KnowledgeBaseController {
         return knowledgeBaseService.testRetrieval(id, command);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-base:index-rebuild")
     @OperationLog
     @Operation(summary = "重建知识库派生索引(复用原文件并异步重新入库)")
     @PostMapping("/{id}/indexes/rebuild")

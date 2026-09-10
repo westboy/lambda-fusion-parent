@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.apps.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.apps.model.AppPageQuery;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "智能应用管理")
 @RestController
 @RequestMapping("/v1/ai/apps")
@@ -31,18 +30,21 @@ public class AppsController {
 
     private final AppService appService;
 
+    @SaCheckPermission(value = "ai:app:page")
     @Operation(summary = "分页查询智能应用")
     @GetMapping("/page")
     public Page<AppEntity> page(@Valid AppPageQuery query) {
         return appService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:app:get")
     @Operation(summary = "查询智能应用详情")
     @GetMapping("/{id}")
     public AppEntity get(@Parameter(description = "应用ID", required = true) @PathVariable String id) {
         return appService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:app:add")
     @OperationLog
     @Operation(summary = "新增智能应用")
     @PostMapping
@@ -50,6 +52,7 @@ public class AppsController {
         return appService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:app:update")
     @OperationLog
     @Operation(summary = "更新智能应用")
     @PutMapping("/{id}")
@@ -59,6 +62,7 @@ public class AppsController {
         appService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:app:delete")
     @OperationLog
     @Operation(summary = "删除智能应用")
     @DeleteMapping("/{id}")

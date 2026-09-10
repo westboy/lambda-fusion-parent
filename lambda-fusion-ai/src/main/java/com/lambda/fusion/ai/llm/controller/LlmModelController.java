@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.llm.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.llm.model.CreateLlmModel;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "LLM 模型管理")
 @RestController
 @RequestMapping("/v1/ai/llm-models")
@@ -31,18 +30,21 @@ public class LlmModelController {
 
     private final LlmModelService llmModelService;
 
+    @SaCheckPermission(value = "ai:llm-model:page")
     @Operation(summary = "分页查询 LLM 模型")
     @GetMapping("/page")
     public Page<LlmModelEntity> page(@Valid LlmModelPage query) {
         return llmModelService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:llm-model:get")
     @Operation(summary = "查询 LLM 模型详情")
     @GetMapping("/{id}")
     public LlmModelEntity get(@Parameter(description = "模型ID", required = true) @PathVariable String id) {
         return llmModelService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:llm-model:add")
     @OperationLog
     @Operation(summary = "新增 LLM 模型")
     @PostMapping
@@ -50,6 +52,7 @@ public class LlmModelController {
         return llmModelService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:llm-model:update")
     @OperationLog
     @Operation(summary = "更新 LLM 模型")
     @PutMapping("/{id}")
@@ -59,6 +62,7 @@ public class LlmModelController {
         llmModelService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:llm-model:delete")
     @OperationLog
     @Operation(summary = "删除 LLM 模型")
     @DeleteMapping("/{id}")

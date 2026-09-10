@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.schedule.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.schedule.model.CreateScheduledTask;
@@ -30,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * @author Jin
  */
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "定时任务管理")
 @RestController
 @RequestMapping("/v1/ai/scheduled-tasks")
@@ -39,24 +38,28 @@ public class ScheduledTaskController {
 
     private final ScheduledTaskService scheduledTaskService;
 
+    @SaCheckPermission(value = "ai:scheduled-task:page")
     @Operation(summary = "分页查询定时任务")
     @GetMapping("/page")
     public Page<SubAgentEntity> page(@Valid ScheduledTaskPage query) {
         return scheduledTaskService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:get")
     @Operation(summary = "查询定时任务详情")
     @GetMapping("/{id}")
     public SubAgentEntity get(@Parameter(description = "任务ID", required = true) @PathVariable String id) {
         return scheduledTaskService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:status")
     @Operation(summary = "查询定时任务调度状态")
     @GetMapping("/{id}/status")
     public TriggerState status(@Parameter(description = "任务ID", required = true) @PathVariable String id) {
         return scheduledTaskService.status(id);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:log-page")
     @Operation(summary = "分页查询定时任务执行记录")
     @GetMapping("/{id}/logs/page")
     public Page<ScheduledTaskLogEntity> pageLogs(
@@ -65,6 +68,7 @@ public class ScheduledTaskController {
         return scheduledTaskService.pageLogs(id, query);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:add")
     @OperationLog
     @Operation(summary = "新增定时任务")
     @PostMapping
@@ -72,6 +76,7 @@ public class ScheduledTaskController {
         return scheduledTaskService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:update")
     @OperationLog
     @Operation(summary = "更新定时任务")
     @PutMapping("/{id}")
@@ -81,6 +86,7 @@ public class ScheduledTaskController {
         scheduledTaskService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:delete")
     @OperationLog
     @Operation(summary = "删除定时任务")
     @DeleteMapping("/{id}")
@@ -88,6 +94,7 @@ public class ScheduledTaskController {
         scheduledTaskService.delete(id);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:pause")
     @OperationLog
     @Operation(summary = "暂停定时任务调度")
     @PostMapping("/{id}/pause")
@@ -95,6 +102,7 @@ public class ScheduledTaskController {
         scheduledTaskService.pause(id);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:resume")
     @OperationLog
     @Operation(summary = "恢复定时任务调度")
     @PostMapping("/{id}/resume")
@@ -102,6 +110,7 @@ public class ScheduledTaskController {
         scheduledTaskService.resume(id);
     }
 
+    @SaCheckPermission(value = "ai:scheduled-task:trigger")
     @OperationLog
     @Operation(summary = "立即触发一次定时任务")
     @PostMapping("/{id}/trigger")

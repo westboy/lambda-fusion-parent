@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.chat.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
@@ -41,18 +42,21 @@ public class ChatController {
     private final ChatMessageService chatMessageService;
     private final ChatService chatService;
 
+    @SaCheckPermission(value = "ai:chat-session:page")
     @Operation(summary = "分页查询当前用户的会话")
     @GetMapping("/page")
     public Page<ChatSessionEntity> page(@Valid ChatSessionPage query) {
         return chatSessionService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:get")
     @Operation(summary = "查询会话详情")
     @GetMapping("/{id}")
     public ChatSessionEntity get(@Parameter(description = "会话ID", required = true) @PathVariable String id) {
         return chatSessionService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:add")
     @OperationLog
     @Operation(summary = "创建会话")
     @PostMapping
@@ -60,6 +64,7 @@ public class ChatController {
         return chatSessionService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:delete")
     @OperationLog
     @Operation(summary = "删除会话")
     @DeleteMapping("/{id}")
@@ -67,6 +72,7 @@ public class ChatController {
         chatSessionService.delete(id);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:message-page")
     @Operation(summary = "游标分页查询会话消息历史")
     @GetMapping("/{id}/messages")
     public ChatMessagePage messages(
@@ -78,6 +84,7 @@ public class ChatController {
         return chatMessageService.listBySession(id, before, limit);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:chat")
     @Operation(summary = "流式对话（SSE）")
     @PostMapping(value = "/{id}/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(
@@ -88,12 +95,14 @@ public class ChatController {
         return chatService.streamChat(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:active-run")
     @Operation(summary = "查询会话当前活跃Run")
     @GetMapping("/{id}/runs/active")
     public ChatRun activeRun(@Parameter(description = "会话ID", required = true) @PathVariable String id) {
         return chatService.activeRun(id).orElse(null);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:run-get")
     @Operation(summary = "查询对话Run详情")
     @GetMapping("/{id}/runs/{runId}")
     public ChatRun run(
@@ -102,6 +111,7 @@ public class ChatController {
         return chatService.getRun(id, runId);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:run-events")
     @Operation(summary = "续看对话Run事件(SSE)")
     @GetMapping(value = "/{id}/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(
@@ -112,6 +122,7 @@ public class ChatController {
         return chatService.resume(id, runId);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:run-confirm")
     @Operation(summary = "确认指定Run的工具调用(HITL, SSE)")
     @PostMapping(value = "/{id}/runs/{runId}/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter confirmRun(
@@ -123,6 +134,7 @@ public class ChatController {
         return chatService.confirm(id, runId, dto);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:run-input-submit")
     @Operation(summary = "提交指定Run的挂起工具输入(HITL, SSE)")
     @PostMapping(value = "/{id}/runs/{runId}/input", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter submitInputRun(
@@ -134,6 +146,7 @@ public class ChatController {
         return chatService.submitInput(id, runId, dto);
     }
 
+    @SaCheckPermission(value = "ai:chat-session:run-stop")
     @OperationLog
     @Operation(summary = "停止指定对话Run")
     @PostMapping("/{id}/runs/{runId}/stop")

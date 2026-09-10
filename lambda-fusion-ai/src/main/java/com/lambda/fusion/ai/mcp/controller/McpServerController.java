@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.mcp.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.mcp.model.CreateMcpServer;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "MCP 服务管理")
 @RestController
 @RequestMapping("/v1/ai/mcp-servers")
@@ -31,18 +30,21 @@ public class McpServerController {
 
     private final McpServerService mcpServerService;
 
+    @SaCheckPermission(value = "ai:mcp-server:page")
     @Operation(summary = "分页查询 MCP 服务")
     @GetMapping("/page")
     public Page<McpServerEntity> page(@Valid McpServerPage query) {
         return mcpServerService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:mcp-server:get")
     @Operation(summary = "查询 MCP 服务详情")
     @GetMapping("/{id}")
     public McpServerEntity get(@Parameter(description = "服务ID", required = true) @PathVariable String id) {
         return mcpServerService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:mcp-server:add")
     @OperationLog
     @Operation(summary = "新增 MCP 服务")
     @PostMapping
@@ -50,6 +52,7 @@ public class McpServerController {
         return mcpServerService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:mcp-server:update")
     @OperationLog
     @Operation(summary = "更新 MCP 服务")
     @PutMapping("/{id}")
@@ -59,6 +62,7 @@ public class McpServerController {
         mcpServerService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:mcp-server:delete")
     @OperationLog
     @Operation(summary = "删除 MCP 服务")
     @DeleteMapping("/{id}")
@@ -66,6 +70,7 @@ public class McpServerController {
         mcpServerService.delete(id);
     }
 
+    @SaCheckPermission(value = "ai:mcp-server:test")
     @Operation(summary = "测试 MCP 服务连通性，返回发现的工具数量")
     @PostMapping("/{id}/test")
     public int test(@Parameter(description = "服务ID", required = true) @PathVariable String id) {

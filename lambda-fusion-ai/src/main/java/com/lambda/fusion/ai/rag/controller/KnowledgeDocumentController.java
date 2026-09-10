@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.rag.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.rag.model.KnowledgeDocumentPage;
@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "知识库文档管理")
 @RestController
 @RequestMapping("/v1/ai/knowledge-bases/{kbId}/documents")
@@ -36,6 +35,7 @@ public class KnowledgeDocumentController {
 
     private final KnowledgeDocumentService knowledgeDocumentService;
 
+    @SaCheckPermission(value = "ai:knowledge-document:page")
     @Operation(summary = "分页查询知识库文档")
     @GetMapping("/page")
     public Page<KnowledgeDocumentEntity> page(
@@ -45,6 +45,7 @@ public class KnowledgeDocumentController {
         return knowledgeDocumentService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-document:upload")
     @OperationLog
     @Operation(summary = "上传文档(异步解析切块入库, 立即返回 PENDING 行)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -57,6 +58,7 @@ public class KnowledgeDocumentController {
         return knowledgeDocumentService.upload(kbId, file, chunkStrategy);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-document:delete")
     @OperationLog
     @Operation(summary = "删除文档(同步删除派生索引与原文件)")
     @DeleteMapping("/{documentId}")
@@ -66,6 +68,7 @@ public class KnowledgeDocumentController {
         knowledgeDocumentService.delete(kbId, documentId);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-document:reingest")
     @OperationLog
     @Operation(summary = "重新解析切块入库(复用原文件并异步替换派生索引)")
     @PostMapping("/{documentId}/reingest")
@@ -77,6 +80,7 @@ public class KnowledgeDocumentController {
         return knowledgeDocumentService.reingest(kbId, documentId, chunkStrategy);
     }
 
+    @SaCheckPermission(value = "ai:knowledge-document:download")
     @Operation(summary = "下载文档原文件")
     @GetMapping("/{documentId}/download")
     public void download(

@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.chat.controller;
 
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewPolicy;
@@ -43,6 +44,7 @@ public class ChatAttachmentController {
     private final ChatAttachmentPreviewTokenService chatAttachmentPreviewTokenService;
     private final AiProperties aiProperties;
 
+    @SaCheckPermission(value = "ai:chat-attachment:upload")
     @OperationLog
     @Operation(summary = "上传对话附件(图片/文档)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -52,12 +54,14 @@ public class ChatAttachmentController {
         return chatAttachmentService.toView(chatAttachmentService.upload(sessionId, file));
     }
 
+    @SaCheckPermission(value = "ai:chat-attachment:get")
     @Operation(summary = "查询当前用户的对话附件")
     @GetMapping("/{id}")
     public ChatAttachmentView detail(@Parameter(description = "附件ID", required = true) @PathVariable String id) {
         return chatAttachmentService.toView(chatAttachmentService.loadOwned(id));
     }
 
+    @SaCheckPermission(value = "ai:chat-attachment:delete")
     @OperationLog
     @Operation(summary = "删除未发送附件")
     @DeleteMapping("/{id}")
@@ -65,6 +69,7 @@ public class ChatAttachmentController {
         chatAttachmentService.delete(id);
     }
 
+    @SaCheckPermission(value = "ai:chat-attachment:download")
     @Operation(summary = "下载/预览附件原文件")
     @GetMapping("/{id}/download")
     public void download(

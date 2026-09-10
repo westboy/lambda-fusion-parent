@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.apps.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.AiConstants.AppType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -25,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "应用 Workspace 管理")
 @RestController
 @RequestMapping("/v1/ai/apps/{appId}/workspace")
@@ -36,6 +35,7 @@ public class AppsWorkspaceController {
     private final WorkspaceFileService workspaceFileService;
     private final WorkspaceAuditService workspaceAuditService;
 
+    @SaCheckPermission(value = "ai:app-workspace:list")
     @Operation(summary = "列出 workspace 文件")
     @GetMapping("/files")
     public List<WorkspaceFileEntry> list(
@@ -50,6 +50,7 @@ public class AppsWorkspaceController {
         }
     }
 
+    @SaCheckPermission(value = "ai:app-workspace:read")
     @Operation(summary = "读取 workspace 文件")
     @GetMapping("/file")
     public String read(
@@ -65,6 +66,7 @@ public class AppsWorkspaceController {
         }
     }
 
+    @SaCheckPermission(value = "ai:app-workspace:write")
     @OperationLog
     @Operation(summary = "写入 workspace 文件")
     @PutMapping("/file")
@@ -88,6 +90,7 @@ public class AppsWorkspaceController {
         }
     }
 
+    @SaCheckPermission(value = "ai:app-workspace:audit-list")
     @Operation(summary = "查询 workspace 自演化审计记录")
     @GetMapping("/audit")
     public List<WorkspaceAuditEntity> audit(

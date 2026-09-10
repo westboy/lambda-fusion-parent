@@ -1,6 +1,6 @@
 package com.lambda.fusion.ai.llm.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.llm.model.CreateLlmProvider;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@SaCheckRole("ROLE_DEV")
 @Tag(name = "LLM 提供方管理")
 @RestController
 @RequestMapping("/v1/ai/llm-providers")
@@ -31,18 +30,21 @@ public class LlmProviderController {
 
     private final LlmProviderService llmProviderService;
 
+    @SaCheckPermission(value = "ai:llm-provider:page")
     @Operation(summary = "分页查询 LLM 提供方")
     @GetMapping("/page")
     public Page<LlmProviderEntity> page(@Valid LlmProviderPageQuery query) {
         return llmProviderService.page(query);
     }
 
+    @SaCheckPermission(value = "ai:llm-provider:get")
     @Operation(summary = "查询 LLM 提供方详情")
     @GetMapping("/{id}")
     public LlmProviderEntity get(@Parameter(description = "提供方ID", required = true) @PathVariable String id) {
         return llmProviderService.get(id);
     }
 
+    @SaCheckPermission(value = "ai:llm-provider:add")
     @OperationLog
     @Operation(summary = "新增 LLM 提供方")
     @PostMapping
@@ -50,6 +52,7 @@ public class LlmProviderController {
         return llmProviderService.create(dto);
     }
 
+    @SaCheckPermission(value = "ai:llm-provider:update")
     @OperationLog
     @Operation(summary = "更新 LLM 提供方")
     @PutMapping("/{id}")
@@ -59,6 +62,7 @@ public class LlmProviderController {
         llmProviderService.update(id, dto);
     }
 
+    @SaCheckPermission(value = "ai:llm-provider:delete")
     @OperationLog
     @Operation(summary = "删除 LLM 提供方")
     @DeleteMapping("/{id}")
