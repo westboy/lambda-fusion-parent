@@ -13,6 +13,7 @@ import com.lambda.fusion.message.dispatch.resolver.MessageContactResolver;
 import com.lambda.fusion.message.dispatch.resolver.MessageRecipientResolver;
 import com.lambda.fusion.message.dispatch.resolver.impl.RemoteContactResolver;
 import com.lambda.fusion.message.dispatch.resolver.impl.RemoteScopeRecipientResolver;
+import com.lambda.fusion.message.dispatch.resolver.impl.ThirdIdContactResolver;
 import com.lambda.fusion.message.dispatch.service.MessageDeliveryService;
 import com.lambda.fusion.message.template.service.MessageTemplateService;
 import org.apache.dubbo.config.ReferenceConfig;
@@ -104,6 +105,17 @@ public class MessageConfigure {
         @Bean
         public MessageContactResolver emailContactResolver(ObjectProvider<RemoteUserService> remoteUserService) {
             return new RemoteContactResolver("email", remoteUserService);
+        }
+
+        @Bean
+        public MessageContactResolver wxMaThirdIdContactResolver(ObjectProvider<RemoteUserService> remoteUserService) {
+            return new ThirdIdContactResolver("wxMa", remoteUserService);
+        }
+
+        @Bean
+        public MessageContactResolver wxOpenThirdIdContactResolver(
+                ObjectProvider<RemoteUserService> remoteUserService) {
+            return new ThirdIdContactResolver("wxOpen", remoteUserService);
         }
 
         @Bean

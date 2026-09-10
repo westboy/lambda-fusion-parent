@@ -4,11 +4,15 @@ import com.lambda.fusion.authority.api.RemoteUser;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.authority.organization.model.SimpleOrganization;
 import com.lambda.fusion.authority.role.model.SimpleRole;
+import com.lambda.fusion.authority.user.model.ThirdPartBinding;
 import com.lambda.fusion.authority.user.model.User;
 import com.lambda.fusion.authority.user.service.UserService;
+import com.lambda.fusion.authority.user.service.UserThirdPartService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -27,6 +31,7 @@ import org.springframework.stereotype.Component;
 public class RemoteUserServiceAdapter implements RemoteUserService {
 
     private final UserService userService;
+    private final UserThirdPartService userThirdPartService;
 
     @Override
     public RemoteUser getByUsername(String username) {
@@ -40,7 +45,7 @@ public class RemoteUserServiceAdapter implements RemoteUserService {
         return toRemoteUser(user);
     }
 
-    private static RemoteUser toRemoteUser(User user) {
+    private RemoteUser toRemoteUser(User user) {
         RemoteUser remote = new RemoteUser();
         remote.setUsername(user.getUsername());
         remote.setNickname(user.getNickname());
@@ -63,6 +68,18 @@ public class RemoteUserServiceAdapter implements RemoteUserService {
                 ? Collections.emptyList()
                 : authorities.stream().map(SimpleRole::getAuthority).toList();
         remote.setRoles(roles);
+        remote.setThirdPartIds(resolveThirdPartIds(user.getUsername()));
         return remote;
+    }
+
+    /** 汇总用户三方账号标识（thirdType → 三方账号ID），供消息等渠道按需取用 */
+    private Map<String, String> resolveThirdPartIds(String username) {
+        List<ThirdPartBinding> bindings = userThirdPartService.listByUsername(username);
+        if (bindings == null || bindings.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return bindings.stream()
+                .filter(b -> b.getLoginType() != null && b.getOpenId() != null)
+                .collect(Collectors.toMap(ThirdPartBinding::getLoginType, ThirdPartBinding::getOpenId, (a, b) -> a));
     }
 }

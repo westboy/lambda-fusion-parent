@@ -4,6 +4,7 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -57,6 +58,17 @@ public class RemoteUser implements Serializable {
 
     /** 账户过期时间。 */
     private Date expiredTime;
+
+    /** 三方账号标识映射（key=三方类型 thirdType，value=三方账号ID），用于消息等渠道按需获取。 */
+    private Map<String, String> thirdPartIds;
+
+    public Map<String, String> getThirdPartIds() {
+        return thirdPartIds == null ? null : Map.copyOf(thirdPartIds);
+    }
+
+    public void setThirdPartIds(Map<String, String> thirdPartIds) {
+        this.thirdPartIds = thirdPartIds == null ? null : Map.copyOf(thirdPartIds);
+    }
 
     public List<String> getRoles() {
         return roles == null ? null : List.copyOf(roles);
