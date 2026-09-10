@@ -770,7 +770,7 @@
 
 
     <!-- ==================== 用户初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710000010" author="westboy">
+    <changeSet id="lambda-authority-202607100000100" author="westboy">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_users"/>
             <sqlCheck expectedResult="0">
