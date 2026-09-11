@@ -7,7 +7,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lambda.cloud.core.annotation.AutoConverter;
 import com.lambda.cloud.core.annotation.FieldMapping;
-import com.lambda.fusion.core.FusionConstants;
 import com.lambda.fusion.core.convert.FusionConvertFunctions;
 import com.lambda.fusion.core.entity.BaseEntity;
 import com.lambda.fusion.datasource.DatasourceConstants;
@@ -22,13 +21,11 @@ import lombok.Setter;
  * id               varchar(32)  not null primary key comment '资源ID',
  * datasource_name     varchar(128) not null comment '数据源名称（展示用）',
  * db_type          varchar(32)  not null comment 'mysql pg oracle',
- * usage_type       varchar(32)  not null comment '用途：BUSINESS SYSTEM TENANT',
  * jdbc_url         varchar(256) not null,
  * username         varchar(128) null,
  * password         varchar(512) null,
  * node_role        varchar(32)  default 'PRIMARY' comment 'PRIMARY 主库, REPLICA 从库',
  * status           tinyint      default 1 comment '0下线 1在线',
- * tags             json         null comment '资源标签（如 {"env":"prod","region":"sg","cost":"premium"}）',
  * extra_config     json         null comment '扩展配置',
  * created_by       varchar(32),
  * created_at       datetime,
@@ -56,10 +53,6 @@ public class DataSourceEntity extends BaseEntity {
     @Schema(description = "数据库类型")
     private String dbType;
 
-    @TableField("usage_type")
-    @Schema(description = "用途（DATABASE_USAGE_TYPE 字典值）")
-    private FusionConstants.DatabaseUsageType usageType;
-
     @TableField("jdbc_url")
     @Schema(description = "连接地址")
     private String jdbcUrl;
@@ -81,10 +74,6 @@ public class DataSourceEntity extends BaseEntity {
     @TableField("status")
     @Schema(description = "状态")
     private DatasourceConstants.DatasourceStatus status;
-
-    @TableField("tags")
-    @Schema(description = "资源标签")
-    private String tags;
 
     @TableField("extra_config")
     @Schema(description = "扩展配置")

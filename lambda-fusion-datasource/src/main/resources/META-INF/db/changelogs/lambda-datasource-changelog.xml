@@ -85,4 +85,13 @@
         <dropTable tableName="la_tenant_datasource"/>
     </changeSet>
 
+    <!-- 移除未使用的 datasource_key（原租户绑定遗留，必填无默认值导致新增报错）与 tags（无消费方） -->
+    <changeSet id="lambda-datasource-202609110001" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_datasources"/>
+        </preConditions>
+        <dropColumn tableName="la_datasources" columnName="DATASOURCE_KEY"/>
+        <dropColumn tableName="la_datasources" columnName="TAGS"/>
+    </changeSet>
+
 </databaseChangeLog>

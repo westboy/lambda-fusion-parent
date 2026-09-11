@@ -1,7 +1,6 @@
 package com.lambda.fusion.core;
 
 import com.baomidou.mybatisplus.annotation.EnumValue;
-import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.lambda.fusion.core.annotation.DictMapper;
 import com.lambda.fusion.core.dict.DictEnum;
@@ -260,31 +259,6 @@ public interface FusionConstants {
      * 前端租户表示
      */
     String TENANT_ID_HEADER = "X-Tenant-Id";
-
-    // ========== 租户相关信息 ==========
-    @Getter
-    @DictMapper(dictName = "DATABASE_USAGE_TYPE", dictUsage = 0, dictDesc = "数据库用途")
-    @AllArgsConstructor
-    enum DatabaseUsageType implements DictEnum<Integer> {
-        AI(1, "AI库"),
-        BUSINESS(3, "业务库");
-
-        @EnumValue
-        @JsonValue
-        private final Integer code;
-
-        private final String label;
-
-        @JsonCreator
-        public static DatabaseUsageType fromValue(Integer val) {
-            for (DatabaseUsageType usageType : values()) {
-                if (usageType.code.equals(val)) {
-                    return usageType;
-                }
-            }
-            throw new IllegalArgumentException("Invalid DatabaseUsageType: " + val);
-        }
-    }
 
     @Getter
     @DictMapper(dictName = "ACTIVE_STATUS", dictUsage = 0, dictDesc = "启停状态")
