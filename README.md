@@ -223,11 +223,17 @@ mvn -pl lambda-fusion-ai test -Dtest=AgentGraphTest#shouldRoute
 
 ---
 
+### ⛳ 反馈
+
+- 微信 `capf4xj`
+
+<img src="assets/img.png" alt="capf4xj" width="180"/>
+
 ## 📖 生态依赖
 
 - **[lambda-cloud-parent](https://gitee.com/westboy/lambda-cloud-parent)** — 核心基座，封装底层自动化配置与基础工具类
 - **[lambda-cloud-project-parent](https://gitee.com/westboy/lambda-cloud-project-parent)** — 统管项目依赖版本与 Maven 构建标准
-- **[lambda-fusion-web](https://gitee.com/westboy/lambda-fusion-web)** — 基于 Vben Admin 构建的现代化前端界面
+- **[lambda-fusion-web](https://gitee.com/westboy/lambda-fusion-web)** — 基于 Vben Admin 构建的配套前端界面
 
 ## 📚 相关资源
 
