@@ -37,12 +37,14 @@ Lambda Fusion 是一套「企业级基础能力 + AI 智能平台」的全栈微
 | 能力 | 说明                                                               |
 |------|------------------------------------------------------------------|
 | 🔐 **权限体系** | 基于 Sa-Token 的完整 RBAC：用户、角色、组织、资源（菜单/按钮/API）统一管理，客户端应用鉴权、SSO 单点登录 |
-| 🏠 **多租户** | 轻量 tenant_id 字段级隔离，、天然复用 RBAC 能力                                 |
+| 🏠 **多租户** | 轻量 tenant_id 字段级隔离，天然复用 RBAC 能力                                 |
 | 🛡️ **细粒度授权** | server / client 双端 API 权限元数据统一注册与校验，叠加数据权限授权树，实现接口级 + 数据行级双重鉴权   |
 | ⚙️ **动态配置** | 数据库配置源统一托管，支持本地热更新与 Nacos 配置中心同步发布，配置变更免重启生效                     |
 | 📚 **数据字典** | 静态枚举与动态字典双模式，枚举类扫描自动注册入库，字典翻译开箱即用                                |
 | 🗄️ **动态数据源** | server / client 多数据源统一注册与管理，基于 Dubbo 的服务间数据源分发，多库接入对业务透明         |
 | 📤 **附件管理** | 统一封装七牛云 / S3 兼容对象存储，文件上传、访问控制等能力开箱即用                             |
+| 📨 **消息中心** | 站内信、通知公告、消息模板、多渠道投递（站内/邮件/短信/群机器人），支持 SSE 推送与 Dubbo 跨服务发送 |
+| 📝 **操作日志** | `@OperationLog` 注解采集 + 异步落库 + 多存储后端（内置 MySQL），分布式部署经 Dubbo 统一落库与查询 |
 
 ## 🤖 AI应用开发能力
 
@@ -53,20 +55,24 @@ Lambda Fusion 是一套「企业级基础能力 + AI 智能平台」的全栈微
 | 形态 | 说明 |
 |------|------|
 | 💬 **CHAT 型** | 轻量对话应用，SSE 流式输出，开箱即用 |
-| 🕹️ **AGENTIC 型** | 具备工具调用与自主规划能力的智能体应用 |
+| 🕹️ **AGENTIC 型** | 对齐 AgentScope harness 完整能力：workspace / 技能 / 子代理 / 记忆 / 沙箱；`selfEvolve` 进一步开启文件工具与自演化 |
 
 ### 🧰 核心能力
 
 | 能力              | 说明 |
 |-------------------|------|
-| ♻️ **自演化**     | 应用在运行过程中持续自我优化演进 |
-| 🖥️ **多沙箱后端** | 代码与工具执行环境隔离，支持多种沙箱实现按需切换 |
+| ♻️ **自演化**     | 应用在运行过程中持续自我优化演进，每轮对话后审计 workspace 变更 |
+| 🖥️ **多沙箱后端** | 代码与工具执行环境隔离，支持 HOST / Docker / K8s / E2B / Daytona / AgentRun 按需切换 |
 | 📚 **知识库 RAG** | 支持 Lucene / OceanBase 全文、内存 / pgvector / OceanBase 向量及 RRF 混合召回；FULL_TEXT 模式无需嵌入模型，应用侧提供 `GENERIC` / `AGENTIC` / `BOTH` 三种注入模式 |
-| 🧠 **LLM 管理**   | 大模型统一接入与集中管理，模型能力即插即用 |
+| 🧠 **LLM 管理**   | 大模型统一接入与集中管理（CHAT / EMBEDDING / 图像 / 视频 / 语音），API Key 加密存储 |
 | 🧩 **子代理**     | DB 驱动的子代理体系，定义持久化、运行可编排 |
-| 🛠️ **技能市场**   | 技能注册、沉淀与复用，Agent 能力可插拔扩展 |
+| 🛠️ **技能市场**   | 技能注册、沉淀与复用（MYSQL / POSTGRES / GIT / NACOS 仓库源 + 技能包导入），Agent 能力可插拔扩展 |
 | 🔌 **MCP 接入**   | 原生支持 Model Context Protocol，接入开放的 MCP 工具生态 |
 | 📨 **通道网关**   | 钉钉 / 飞书 / 企业微信通道适配，智能体能力直达 IM 工作场景 |
+| ⏰ **定时任务**   | Quartz 集群调度的无头 Agent 定时执行，执行记录留存并站内信通知创建人 |
+| 📎 **聊天附件**   | 图片 / 文档上传与签名预览，大文档按需读取，workspace 产物一键发布为附件 |
+| 🤝 **人机协同**   | HITL：敏感工具执行前人工确认、Agent 挂起式向用户提问 |
+| 🔗 **应用发布**   | publishCode 独立 URL 分发智能应用，匿名资料页 + 登录访问校验 |
 
 ## 🏗️ 项目架构
 
@@ -80,11 +86,15 @@ lambda-fusion-parent/
 ├── 🔐 lambda-fusion-authority-api/        # 权限 API（Dubbo 远程认证 + Sa-Token 适配）
 ├── 🔐 lambda-fusion-authority/            # 权限管理（用户、角色、组织、资源、租户、客户端）
 ├── 🛡️ lambda-fusion-permission/           # 权限控制（聚合模块）
-│   ├── lambda-fusion-permission-api/          # API 权限元数据（client/server）
-│   └── lambda-fusion-permission-datascope/    # 数据权限授权树
+│   ├── 🛡️lambda-fusion-permission-api/          # API 权限元数据（client/server）
+│   └── 🛡️lambda-fusion-permission-datascope/    # 数据权限授权树
 ├── ⚙️ lambda-fusion-config/               # 配置管理（dbconfig + 热更新 + Nacos 发布）
 ├── 📚 lambda-fusion-dictionary/           # 数据字典（静态/动态字典、枚举扫描）
 ├── 🗄️ lambda-fusion-datasource/           # 动态数据源管理（server/client、Dubbo 分发）
+├── 📨 lambda-fusion-message-api/          # 消息 API（Dubbo 远程发消息契约）
+├── 📨 lambda-fusion-message/              # 消息中心（站内信/公告/模板/多渠道投递）
+├── 📝 lambda-fusion-logger-api/           # 操作日志 API（Dubbo 远程落库契约）
+├── 📝 lambda-fusion-logger/               # 操作日志（@OperationLog 采集 + 异步落库）
 ├── 📤 lambda-fusion-oss/                  # 附件管理（七牛/S3）
 └── 🚀 lambda-fusion-startup/              # 可运行演示应用（端口 20005）
 ```
@@ -135,15 +145,13 @@ lambda-fusion-parent/
 
 ## 🚦 快速开始
 
-> **想直接运行演示应用？** 查看 📖 [快速启动指南](docs/quick-start/quick-start.md) —— 使用 `lambda-fusion-startup`，只需配置环境变量即可启动，含配套前端联调说明。
->
-> **数据库用 OceanBase？** 查看 📖 [OceanBase 快速启动指南](docs/quick-start/quick-start-ob.md) —— 一台 OB（MySQL 模式）兼任主库与 AI 向量检索，无需安装 MySQL / PostgreSQL。
+> **想直接运行演示应用？** 查看 📖 [快速启动指南](docs/quick-start/quick-start.md) —— 使用 `lambda-fusion-startup`，只需配置环境变量即可启动，含配套 **[前端(lambda-fusion-web)](https://gitee.com/westboy/lambda-fusion-web)** 联调说明。
 
 ### 环境要求
 
 - JDK 21+
 - Maven 3.8+
-- MySQL 8.0+（或 OceanBase 4.3.5+ MySQL 模式，二选一；使用 OB 后无需再安装 MySQL 与 PostgreSQL）
+- MySQL 8.0+（或 OceanBase 4.3.5+ MySQL 模式）
 - PostgreSQL 12+（可选，仅 pgvector 向量检索需要）
 - Redis 6.0+
 
@@ -213,7 +221,7 @@ mvn -pl lambda-fusion-authority -am clean install
 # 仅编译（同时触发 Spotless 检查 + SpotBugs 检查，见「代码风格与静态检查」）
 mvn -pl lambda-fusion-config compile
 
-# 运行某模块的全部测试（目前仅 lambda-fusion-ai 有测试）
+# 运行某模块的全部测试（目前 lambda-fusion-ai、lambda-fusion-logger 有测试）
 mvn -pl lambda-fusion-ai test
 
 # 运行单个测试类 / 单个方法

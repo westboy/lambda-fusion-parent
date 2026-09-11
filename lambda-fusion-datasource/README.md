@@ -39,22 +39,51 @@
 
 - 自动装配入口：`DatasourceAutoConfiguration`，由 `AutoConfiguration.imports` 注册。
 - 配置类 `DatasourceConfigure` 按 `lambda.fusion.datasource.mode` 条件装配。
-- **server** 模式装配：`RemoteDataSourceService`（Dubbo 服务）、`ServerDataSourceInitializer`
+- **server** 模式装配：`RemoteDataSourceApi`（Dubbo 服务，需 classpath 存在 Dubbo）、`ServerDataSourceInitializer`
 - **client** 模式装配：`ClientDataSourceInitializer`（远程拉取 + 订阅）、`ClientDataSourceChangeListener`（增量消费）
 
 ---
 
-## 4. 数据模型
+## 4. 管理端 API（`/datasource`）
 
-### 4.1 全局数据源 `la_datasources`
+角色要求：`ROLE_ADMIN` / `ROLE_SYSTEM` / `ROLE_DEV`（任一即可）；写操作均记录操作日志。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/page` | 分页查询（按名称、数据库类型、状态过滤） |
+| GET | `/list` | 查询全部数据源列表 |
+| GET | `/{id}` | 查询数据源详情 |
+| POST | `/` | 新增数据源 |
+| PUT | `/{id}` | 更新数据源 |
+| DELETE | `/{id}` | 删除数据源 |
+| GET | `/{id}/test` | 测试数据源连接 |
+| PUT | `/{id}/enable` | 启用（status=1 并注册到运行时连接池） |
+| PUT | `/{id}/disable` | 禁用（status=0 并从运行时连接池移除） |
+
+---
+
+## 5. 数据模型
+
+### 5.1 全局数据源 `la_datasources`
+
 实体：`DataSourceEntity`
 
 | 字段 | 说明 |
 |------|------|
-| `id` | 数据源唯一标识 |
-| `usage_type` | `FusionConstants.DatabaseUsageType`，字典 `DATABASE_USAGE_TYPE`（1=AI, 3=BUSINESS） |
-| `status` | `DatasourceConstants.DatasourceStatus`，字典 `DATASOURCE_STATUS`（1=在线, 0=下线） |
-| `jdbc_url/username/password` | 标准 JDBC 连接信息 |
+| `id` | 数据源唯一标识（ASSIGN_ID） |
+| `datasource_name` | 数据源名称（展示用，必填） |
+| `db_type` | 数据库类型：mysql / pg / oracle（必填） |
+| `jdbc_url` / `username` / `password` | 标准 JDBC 连接信息 |
+| `node_role` | 节点角色：`PRIMARY` 主库（默认）/ `REPLICA` 从库 |
+| `status` | `DatasourceConstants.DatasourceStatus`（1=在线, 0=下线），字典 `DATASOURCE_STATUS` |
+| `extra_config` | 扩展配置（JSON），供后续自定义扩展 |
+
+- **密码安全**：`password` 经 `mapEncodePassword` 加密存储，响应体 `@Hidden`/`@JsonIgnore` 不回显。
+- 历史字段 `datasource_key`、`tags`、`usage_type` 已删除（无消费方/租户绑定遗留）；用途分类如需可改用字典扩展。
+
+### 5.2 已删除的表
+
+`la_tenant_datasource`（租户数据源绑定表）已通过 changeSet 删除，模块不再涉及租户级数据源绑定。
 
 ---
 
@@ -78,9 +107,7 @@ ClientDataSourceChangeListener -> 同步至本地 DynamicDataSourceService
 
 ---
 
----
-
-## 9. 编程式数据源切换 (`DataSourceSwitcher`)
+## 7. 编程式数据源切换 (`DataSourceSwitcher`)
 
 底层封装 `baomidou` 的 `DynamicDataSourceContextHolder`，支持 `try-with-resources` 自动恢复。用于多数据源/多库类型等通用场景（与租户隔离解耦）。
 
@@ -93,9 +120,9 @@ try (DataSourceSwitcher switcher = DataSourceSwitcher.switchTo("ai-postgres")) {
 
 ---
 
-## 10. 接入说明
+## 8. 接入说明
 
-### 10.1 引入依赖
+### 8.1 引入依赖
 
 ```xml
 <dependency>
@@ -105,7 +132,7 @@ try (DataSourceSwitcher switcher = DataSourceSwitcher.switchTo("ai-postgres")) {
 </dependency>
 ```
 
-### 10.2 server 模式
+### 8.2 server 模式
 
 ```yaml
 lambda:
@@ -119,7 +146,7 @@ lambda:
 
 启动后自动从 `la_datasources` 加载在线数据源，通过 `/datasource` API 维护，变更触发 Dubbo 广播。
 
-### 10.3 client 模式
+### 8.3 client 模式
 
 ```yaml
 lambda:
@@ -135,13 +162,13 @@ lambda:
 
 后台异步拉取远端数据源（不可用时指数退避重试），成功后注入本地连接池并监听变更。
 
-### 10.4 注意事项
+### 8.4 注意事项
 
 - **统一管控**：生产环境建议由 `server` 模式管理中心维护数据源，业务服务配为 `client` 被动订阅。
 
 ---
 
-## 11. 配置全览
+## 9. 配置全览
 
 ```yaml
 lambda:
@@ -157,6 +184,3 @@ lambda:
         multiplier: 2.0
         max-delay: 60000
 ```
-
----
-
