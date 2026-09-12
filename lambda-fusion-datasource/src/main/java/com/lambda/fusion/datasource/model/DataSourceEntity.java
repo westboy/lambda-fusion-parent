@@ -61,7 +61,7 @@ public class DataSourceEntity extends BaseEntity {
     @Schema(description = "用户名")
     private String username;
 
-    @FieldMapping(target = "password", qualifiedByName = "mapEncodePassword")
+    @FieldMapping(target = "password", qualifiedByName = "mapDecodePassword")
     @Hidden
     @JsonIgnore
     @TableField("password")

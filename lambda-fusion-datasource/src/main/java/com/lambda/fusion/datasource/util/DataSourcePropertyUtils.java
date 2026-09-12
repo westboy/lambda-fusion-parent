@@ -1,8 +1,8 @@
 package com.lambda.fusion.datasource.util;
 
-import cn.hutool.core.codec.Base64;
 import cn.hutool.db.dialect.DriverUtil;
 import com.lambda.cloud.datasource.property.DataSourceProperty;
+import com.lambda.fusion.core.convert.FusionConvertFunctions;
 import com.lambda.fusion.datasource.model.DataSourceEntity;
 import com.lambda.fusion.datasource.model.DynamicDataSourceProperty;
 import com.lambda.fusion.datasource.model.RemoteDataSource;
@@ -15,7 +15,7 @@ public class DataSourcePropertyUtils {
         property.setId(entity.getId());
         property.setUrl(entity.getJdbcUrl());
         property.setUsername(entity.getUsername());
-        property.setPassword(entity.getPassword());
+        property.setPassword(FusionConvertFunctions.mapDecodePassword(entity.getPassword()));
         String driver = DriverUtil.identifyDriver(entity.getJdbcUrl());
         property.setDriverClassName(driver);
         return property;
@@ -27,9 +27,7 @@ public class DataSourcePropertyUtils {
         property.setId(remoteDataSource.getId());
         property.setUrl(remoteDataSource.getJdbcUrl());
         property.setUsername(remoteDataSource.getUsername());
-        if (remoteDataSource.getPassword() != null) {
-            property.setPassword(Base64.decodeStr(remoteDataSource.getPassword()));
-        }
+        property.setPassword(FusionConvertFunctions.mapDecodePassword(remoteDataSource.getPassword()));
         String driver = DriverUtil.identifyDriver(remoteDataSource.getJdbcUrl());
         property.setDriverClassName(driver);
         return property;

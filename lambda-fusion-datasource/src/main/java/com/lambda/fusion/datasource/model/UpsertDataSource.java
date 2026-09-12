@@ -1,7 +1,9 @@
 package com.lambda.fusion.datasource.model;
 
 import com.lambda.cloud.core.annotation.AutoConverter;
+import com.lambda.cloud.core.annotation.FieldMapping;
 import com.lambda.cloud.core.shared.BaseDTO;
+import com.lambda.fusion.core.convert.FusionConvertFunctions;
 import com.lambda.fusion.datasource.DatasourceConstants;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -10,7 +12,7 @@ import lombok.Setter;
 
 @Setter
 @Getter
-@AutoConverter(target = DataSourceEntity.class)
+@AutoConverter(target = DataSourceEntity.class, uses = FusionConvertFunctions.class)
 @Schema(description = "新增/更新动态数据源")
 public class UpsertDataSource extends BaseDTO<DataSourceEntity> {
 
@@ -32,6 +34,7 @@ public class UpsertDataSource extends BaseDTO<DataSourceEntity> {
     @Schema(description = "用户名")
     private String username;
 
+    @FieldMapping(target = "password", qualifiedByName = "mapEncodePassword")
     @Schema(description = "密码")
     private String password;
 
