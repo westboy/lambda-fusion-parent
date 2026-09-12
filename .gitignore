@@ -71,3 +71,4 @@ evn
 /certs/
 /lambda-fusion-startup/certs/
 *.pem
+/lambda-fusion-robot/**
