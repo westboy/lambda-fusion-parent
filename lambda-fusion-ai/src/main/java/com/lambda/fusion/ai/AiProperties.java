@@ -739,6 +739,7 @@ public class AiProperties {
             @NestedConfigurationProperty
             private PgVector pgVector = new PgVector();
 
+            @NestedConfigurationProperty
             private OceanBase oceanBase = new OceanBase();
         }
 
