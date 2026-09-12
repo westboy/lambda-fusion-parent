@@ -72,6 +72,11 @@ lambda:
       - id: default
         type: AES
         secret-key: ${CRYPTO_AES_SECRET_KEY:ZGV2LW9ubHktMzJieXRlLWtleS1wbGFjZWhvbGRlciE=}
+      #### 登录凭据传输加密 RSA 密钥对，必须经环境变量注入（见 .env.example 生成命令），不配 dev 占位 ####
+      - id: login
+        type: RSA
+        public-key: ${CRYPTO_LOGIN_PUBLIC_KEY}
+        private-key: ${CRYPTO_LOGIN_PRIVATE_KEY}
   #### 单机 Lucene 全文索引；多实例部署应关闭并改用共享检索服务 ####
   lucene:
     enabled: ${AI_LUCENE_ENABLED:true}
@@ -210,7 +215,7 @@ lambda:
       # 匿名放行：开放接口、WebSocket、附件签名预览/下载直链、发布应用公开名片。
       # 注意：框架 SaInterceptor 以 isAnnotation(false) 构建（不识别 @SaIgnore），
       # 匿名路径必须经此 ignored 列表放行；仅放行 profile 名片，access 仍需登录鉴权。
-      ignored: /open/**,/ws/**,/v1/ai/chat/attachments/*/preview,/v1/ai/chat/attachments/*/file,/v1/ai/public/apps/*/profile
+      ignored: /open/**,/ws/**,/v1/ai/chat/attachments/*/preview,/v1/ai/chat/attachments/*/file,/v1/ai/public/apps/*/profile,/auth/public-key
       check-same-token: false
       max-login-count: 5
       is-concurrent: true
@@ -220,6 +225,9 @@ lambda:
     form:
       enabled: true
       login-processing-url: /auth/login
+      credentials-encrypt:
+        enabled: true
+        key-id: login
       captcha-trigger:
         enabled: true
         failure-trigger-times: 2
