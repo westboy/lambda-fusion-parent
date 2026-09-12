@@ -66,6 +66,12 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 ################################# Lambda 配置 #################################
 lambda:
+  #### 加解密组件：AES 密钥 Base64 编码，生产必须经 CRYPTO_AES_SECRET_KEY 注入（openssl rand -base64 32） ####
+  crypto:
+    keys:
+      - id: default
+        type: AES
+        secret-key: ${CRYPTO_AES_SECRET_KEY:ZGV2LW9ubHktMzJieXRlLWtleS1wbGFjZWhvbGRlciEh}
   #### 单机 Lucene 全文索引；多实例部署应关闭并改用共享检索服务 ####
   lucene:
     enabled: ${AI_LUCENE_ENABLED:true}
@@ -115,8 +121,6 @@ lambda:
       schedule:
         enabled: ${AI_SCHEDULE_ENABLED:false}
         datasource: ${AI_SCHEDULE_DATASOURCE:master}
-      security:
-        encryption-key: ${AI_ENCRYPTION_KEY:dev-only-please-change-in-production-32chars}
       #### 独立普通 Agent 工具；不关联应用媒体模型或 Skill ####
       tools:
         qwen-image:
