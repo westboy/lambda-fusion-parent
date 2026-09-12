@@ -202,12 +202,15 @@ lambda:
   lucene:
     enabled: true                                # LUCENE 全文检索所需；本地单机索引
     directory: ${user.home}/.agentscope/fusion/rag/lucene
+  crypto:
+    keys:                                        # API Key/渠道凭证加密；Base64 的 32 字节 AES 密钥，生产必配 CRYPTO_AES_SECRET_KEY
+      - id: default
+        type: AES
+        secret-key: ${CRYPTO_AES_SECRET_KEY}
   fusion:
     ai:
       runtime:
         default-max-iters: 10
-      security:
-        encryption-key: ${AI_ENCRYPTION_KEY}      # AES 密钥，生产必配
       audience:
         b-roles: [ROLE_OPERATOR]                    # B 端角色名（下游自定义）
         c-roles: [ROLE_CONSUMER]                    # C 端角色名
@@ -305,7 +308,7 @@ lambda:
 
 | 项目 | 说明 |
 | --- | --- |
-| `security.encryption-key` | 未配置时启动告警，加密 API Key 时抛异常 |
+| `lambda.crypto.keys` | API Key 落库加密密钥（lambda-cloud-starter-crypto）；未配置时加解密抛异常 |
 | `audience.{b,c}-roles` | B/C 端角色名列表，用于 app 可见性过滤（下游自定义角色名） |
 | `gateway.enabled` | 是否启用 HarnessGateway（默认 true）；关闭后无轮次串行锁与外部通道能力 |
 | `cluster.invalidation-broadcast` | 多实例下配置变更经 Dubbo broadcast 失效各节点 Agent 缓存（默认 true） |
