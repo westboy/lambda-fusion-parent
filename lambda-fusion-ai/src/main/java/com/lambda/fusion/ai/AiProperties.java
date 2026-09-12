@@ -31,10 +31,6 @@ public class AiProperties {
     @NestedConfigurationProperty
     private Runtime runtime = new Runtime();
 
-    /** LLM API Key 加密参数。 */
-    @NestedConfigurationProperty
-    private Security security = new Security();
-
     /** WORKSPACE 应用的工作区参数。 */
     @NestedConfigurationProperty
     private Workspace workspace = new Workspace();
@@ -315,13 +311,6 @@ public class AiProperties {
                 NEVER
             }
         }
-    }
-
-    @Data
-    public static class Security {
-
-        /** LLM API Key 的 AES 加密密钥。未配置时，涉及 API Key 的加解密操作会失败。 */
-        private String encryptionKey;
     }
 
     @Data

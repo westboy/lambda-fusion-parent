@@ -70,7 +70,7 @@ public enum AiErrorCode implements ErrorCode {
 
     LLM_EMBEDDING_DIMENSIONS_INVALID(30416, "嵌入模型默认向量维度配置无效"),
 
-    LLM_ENCRYPTION_KEY_NOT_CONFIGURED(30421, "未配置API Key加密密钥(lambda.fusion.ai.security.encryption-key)"),
+    LLM_ENCRYPTION_KEY_NOT_CONFIGURED(30421, "未配置API Key加密密钥(lambda.crypto.keys)"),
 
     LLM_API_KEY_DECRYPT_FAILED(30422, "API Key解密失败"),
 

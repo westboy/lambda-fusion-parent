@@ -45,6 +45,10 @@
         </dependency>
         <dependency>
             <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-crypto</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-cloud-starter-logger</artifactId>
         </dependency>
         <dependency>

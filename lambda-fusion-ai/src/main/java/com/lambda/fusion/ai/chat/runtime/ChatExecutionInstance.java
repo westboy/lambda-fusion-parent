@@ -27,13 +27,12 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.message.Msg;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
-import reactor.core.Disposable;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.*;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import reactor.core.Disposable;
 
 /**
  * 单个对话运行的执行实例：持有 Agent 事件流、维护执行快照并提交运行终态。
@@ -156,7 +155,8 @@ public final class ChatExecutionInstance {
     }
 
     @NonNull
-    private ConfirmTransition getConfirmTransition(Integer sourcePhaseNo, ChatRunSnapshot snapshot, Msg confirmMessage) {
+    private ConfirmTransition getConfirmTransition(
+            Integer sourcePhaseNo, ChatRunSnapshot snapshot, Msg confirmMessage) {
         ConfirmTransition transition = runService.advanceConfirmation(run, session, sourcePhaseNo, snapshot);
         syncRun(transition.run());
         if (!transition.resumed()) {
