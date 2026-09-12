@@ -66,3 +66,8 @@ evn
 /**/lombok.config
 /**/**/lombok.config
 /.idea/sqldialects.xml
+
+# 本地 RSA 私钥/证书（openssl 生成，不入库）
+/certs/
+/lambda-fusion-startup/certs/
+*.pem
