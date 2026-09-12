@@ -1,5 +1,6 @@
 package com.lambda.fusion.authority.authentication.controller;
 
+import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.crypto.PemUtil;
 import com.lambda.autoconfig.SecurityProperties;
 import com.lambda.cloud.crypto.key.KeyProvider;
@@ -25,6 +26,7 @@ public class PublicKeyController {
     private final KeyProvider keyProvider;
     private final SecurityProperties securityProperties;
 
+    @SaIgnore
     @GetMapping("/public-key")
     @Operation(summary = "获取登录凭据加密公钥", description = "前端登录前取公钥，用 RSA-OAEP(SHA-256) 加密 username/password")
     public PublicKeyInfo getPublicKey() {
