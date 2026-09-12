@@ -71,7 +71,7 @@ lambda:
     keys:
       - id: default
         type: AES
-        secret-key: ${CRYPTO_AES_SECRET_KEY:ZGV2LW9ubHktMzJieXRlLWtleS1wbGFjZWhvbGRlciEh}
+        secret-key: ${CRYPTO_AES_SECRET_KEY:ZGV2LW9ubHktMzJieXRlLWtleS1wbGFjZWhvbGRlciE=}
   #### 单机 Lucene 全文索引；多实例部署应关闭并改用共享检索服务 ####
   lucene:
     enabled: ${AI_LUCENE_ENABLED:true}
