@@ -78,7 +78,7 @@
 | `status` | `DatasourceConstants.DatasourceStatus`（1=在线, 0=下线），字典 `DATASOURCE_STATUS` |
 | `extra_config` | 扩展配置（JSON），供后续自定义扩展 |
 
-- **密码安全**：`password` 经 `mapEncodePassword` 加密存储，响应体 `@Hidden`/`@JsonIgnore` 不回显。
+- **密码安全**：`password` 落库 AES-GCM 加密（Base64 编码，密钥经 `lambda.crypto.keys` 配置），Dubbo 传输同协议，响应体 `@Hidden`/`@JsonIgnore` 不回显。
 - 历史字段 `datasource_key`、`tags`、`usage_type` 已删除（无消费方/租户绑定遗留）；用途分类如需可改用字典扩展。
 
 ### 5.2 已删除的表
