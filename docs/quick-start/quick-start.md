@@ -19,20 +19,6 @@
 
 > 基座 `lambda-cloud-parent`、`lambda-cloud-project-parent` 需先安装到本地仓库或私服，再构建本仓库。
 
-> **首次构建 `lambda-cloud-parent` 的自举说明：** 如果本地仓库中从未成功安装过
-> `lambda-cloud-core` 和 `lambda-cloud-processor`，直接执行全量构建可能会提示找不到
-> `com.lambda.cloud:lambda-cloud-processor`。这是因为基座父 POM 已将该模块配置为注解处理器，
-> 而处理器本身又依赖 `lambda-cloud-core`。此时可按以下顺序完成一次自举：
->
-> 1. 在 `lambda-cloud-parent/pom.xml` 的 `maven-compiler-plugin` →
->    `annotationProcessorPaths` 中，临时注释 `lambda-cloud-processor` 对应的 `<path>`。
-> 2. 在 `lambda-cloud-parent` 根目录执行
->    `mvn -pl lambda-cloud-processor -am clean install`，先将 `lambda-cloud-core` 和
->    `lambda-cloud-processor` 安装到本地仓库。
-> 3. 恢复刚才注释的 `<path>`，再执行 `mvn clean install` 完成基座的全量构建。
->
-> 该操作通常只在本地仓库没有上述 SNAPSHOT 的首次构建时需要；不要提交临时的 POM 改动。
-
 ---
 
 ## 二、启动步骤
@@ -143,6 +129,5 @@ pnpm dev        # 启动 web-tdesign 应用
 ## 五、常见问题
 
 - **构建报 `lambda-cloud-parent` 找不到**：先按根目录 [README](../../README.md) 把基座安装到本地仓库（`mvn clean install`）。
-- **基座首次构建报 `lambda-cloud-processor` 找不到**：按「环境准备」中的首次构建自举说明，临时禁用该注解处理器，先安装 `lambda-cloud-core` 和 `lambda-cloud-processor`，恢复 POM 后再全量构建。
 - **启动报数据源连接失败**：检查 `.evn` 中 MySQL / PostgreSQL / OceanBase / Redis 地址与账号是否与本机一致，确认服务已启动。
 - **构建需 JDK 21**：执行 `mvn -v` 确认当前 JDK，若不是 21 请先切换。
