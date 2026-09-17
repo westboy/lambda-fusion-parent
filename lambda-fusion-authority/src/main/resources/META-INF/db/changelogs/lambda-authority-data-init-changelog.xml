@@ -158,7 +158,7 @@
 
 
     <!-- ==================== 资源初始化 ==================== -->
-    <changeSet id="lambda-authority-2026031200291020" author="westboy">
+    <changeSet id="lambda-authority-20260312002910201" author="westboy">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_resources"/>
             <sqlCheck expectedResult="0">
@@ -236,7 +236,7 @@
                     null, 0, null, 'carbon:document-configuration', 0,
                     'jw1MUnwu', 1, null, '', null, 0, null, null, 9),
                    ('ORvXmJpF', 'jw1MUnwu', '系统日志', '/system/logs/', 1, 1, null, 0, null, 'carbon:catalog-publish',
-                    1, 'jw1MUnwu', 0, null, null, null, 0, null, null, 8),
+                    0, 'jw1MUnwu', 0, null, null, null, 0, null, null, 8),
                    ('PjHaWJx2', 'HbkspYqi', '查看菜单权限', 'user_menu_view', 2147483647, 3, null, 0, '', '', 0,
                     'jw1MUnwu-HbkspYqi', 0, null, null, null, 0, null, null, 4),
                    ('qfyqs8ON', 'SBctwOO4', '创建根组织', 'org_top_add', 2147483647, 3, null, 0, null, null, 0,
@@ -430,300 +430,6 @@
                    ('westboy', 'VxFZl4Zf', null);
             ]]></sql>
     </changeSet>
-
-
-    <!-- ==================== 系统配置初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100003" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_configs"/>
-            <sqlCheck expectedResult="0">
-                SELECT COUNT(1)
-                FROM la_configs
-            </sqlCheck>
-        </preConditions>
-        <sql><![CDATA[
-            insert into la_configs (PROPERTY_ID, PROPERTY_KEY, PROPERTY_VALUE, PROPERTY_NAME, PROPERTY_TYPE,
-                                    PROPERTY_DESC, APPLICATION, UPDATE_TIME)
-            values ('2030899765638164482', 'lambda.sms.aliyun.enabled', '1', '阿里云短信开关', 1,
-                    '是否启用阿里云短信网关', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2033822552740712449', 'lambda.sms.accessKeyId', '5555555', '阿里云短信Key', 3, 'accessKeySecret',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034079356309590017', 'lambda.sms.aliyun.accessKeySecret', '55555550000000000', '阿里云短信Secret',
-                    3, '阿里云短信Secret', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034079746249838593', 'lambda.api-docs.enabled', '1', 'API文档开关', 1, 'api-docs',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034080266746187778', 'lambda.api-docs.title', 'lambda-fusion-admin', 'API文档标题', 3, '',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034084795080364033', 'lambda.security.verify.dev-mode', '0', '验证码开发模式', 1,
-                    'lambda.security.verify.dev-mode', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034085098336931841', 'lambda.security.verify.url', '/auth/jcaptcha', '验证码地址', 3, null,
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034085373881733122', 'lambda.security.sa-token.ignored', '/open/**,/ws/**',
-                    '匿名访问路径[忽略鉴权]', 3, null, 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034085488889548801', 'lambda.security.sa-token.check-same-token', '0', '是否开启服务鉴权', 1,
-                    'lambda.security.sa-token.check-same-token', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034085648617033729', 'lambda.security.sa-token.max-login-count', '5', '同一账号最大登录数量', 4,
-                    'lambda.security.sa-token.max-login-count', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034085986212368386', 'lambda.security.sa-token.is-concurrent', '0', '是否允许账号同时登录', 1,
-                    'lambda.security.sa-token.is-concurrent', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034086370859405313', 'xss-protected.enabled', '0', '是否开启XSS防护', 1, 'XSS 防护的总开关',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034086505752416257', 'xss-protected.trusted', '/test/**', 'XSS防护信任路径', 3, 'XSS受信任路径',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034089210642288641', 'lambda.security.form.captcha-trigger.enabled', '1',
-                    '启用登录验证码触发机制', 1, '验证码触发机制', 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034089405484486658', 'lambda.security.form.captcha-trigger.failure-trigger-times', '4',
-                    '账号登录验证码触发次数', 4, 'lambda.security.form.captcha-trigger.failure-trigger-times',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2034089602864238593', 'lambda.security.form.lock-strategy.failure-max-times', '5',
-                    '账号登录错误锁定次数', 4, null, 'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2036390130247913473', 'lambda.application.name', 'lambda-fusion-admin', '系统名称', 3, '系统名称',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31'),
-                   ('2036390357931511810', 'lambda.fusion.config.application.homePath', '/', '系统首页', 3, '系统首页',
-                    'lambda-fusion-admin', '2026-03-27 18:43:31');
-            ]]></sql>
-    </changeSet>
-
-
-    <!-- ==================== 配置选项初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100004" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_config_options"/>
-            <sqlCheck expectedResult="0">
-                SELECT COUNT(1)
-                FROM la_config_options
-            </sqlCheck>
-        </preConditions>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357213151576526849"/>
-            <column name="PROPERTY_ID" value="1357213151547166722"/>
-            <column name="OPTION_NAME" value="哈希"/>
-            <column name="OPTION_VALUE" value="hash"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357213151584915458"/>
-            <column name="PROPERTY_ID" value="1357213151547166722"/>
-            <column name="OPTION_NAME" value="历史"/>
-            <column name="OPTION_VALUE" value="history"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357217417452130306"/>
-            <column name="PROPERTY_ID" value="1357217417452130305"/>
-            <column name="OPTION_NAME" value="垂直布局"/>
-            <column name="OPTION_VALUE" value="vertical"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357217417464713217"/>
-            <column name="PROPERTY_ID" value="1357217417452130305"/>
-            <column name="OPTION_NAME" value="水平布局"/>
-            <column name="OPTION_VALUE" value="horizontal"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357218018546225154"/>
-            <column name="PROPERTY_ID" value="1357218018546225153"/>
-            <column name="OPTION_NAME" value="默认主题"/>
-            <column name="OPTION_VALUE" value="default"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357218018554613762"/>
-            <column name="PROPERTY_ID" value="1357218018546225153"/>
-            <column name="OPTION_NAME" value="夜色主题"/>
-            <column name="OPTION_VALUE" value="night"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357219587496939522"/>
-            <column name="PROPERTY_ID" value="1357219587488550913"/>
-            <column name="OPTION_NAME" value="配色方案1"/>
-            <column name="OPTION_VALUE" value="#F1F4F5"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357219587505328130"/>
-            <column name="PROPERTY_ID" value="1357219587488550913"/>
-            <column name="OPTION_NAME" value="配色方案2"/>
-            <column name="OPTION_VALUE" value="#FFFFFF"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-        <insert tableName="la_config_options">
-            <column name="OPTION_ID" value="1357219587513716738"/>
-            <column name="PROPERTY_ID" value="1357219587488550913"/>
-            <column name="OPTION_NAME" value="配色方案3"/>
-            <column name="OPTION_VALUE" value="#FFF8E1"/>
-            <column name="OPTION_DESC" value=""/>
-            <column name="APPLICATION" value="public"/>
-        </insert>
-    </changeSet>
-
-
-    <!-- ==================== 配置页面布局初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100005" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_settings_layout"/>
-            <sqlCheck expectedResult="0">
-                SELECT COUNT(1)
-                FROM la_settings_layout
-            </sqlCheck>
-        </preConditions>
-        <sql><![CDATA[
-            insert into la_settings_layout (LAYOUT_ID, APPLICATION, LAYOUT_JSON, LAYOUT_VERSION, UPDATED_AT)
-            values ('2032012617628860417', 'lambda-fusion-admin',
-                    '{"version":1,"application":"lambda-fusion-admin","tabs":[{"id":"tab_1773799000562","title":"系统安全配置","items":[{"configId":"2034085373881733122","orderNo":null},{"configId":"2034089210642288641","orderNo":null},{"configId":"2034089405484486658","orderNo":null},{"configId":"2034089602864238593","orderNo":null},{"configId":"2034085488889548801","orderNo":null},{"configId":"2034085986212368386","orderNo":null},{"configId":"2034085648617033729","orderNo":null},{"configId":"2034086370859405313","orderNo":null},{"configId":"2034086505752416257","orderNo":null}]},{"id":"tab_1773799269217","title":"阿里云短信配置","items":[{"configId":"2030899765638164482","orderNo":null},{"configId":"2033822552740712449","orderNo":null},{"configId":"2034079356309590017","orderNo":null}]},{"id":"tab_1773799283835","title":"API接口文档","items":[{"configId":"2034079746249838593","orderNo":null},{"configId":"2034080266746187778","orderNo":null}]},{"id":"tab_1774349315477","title":"应用设置","items":[{"configId":"2036390130247913473","orderNo":null},{"configId":"2036390357931511810","orderNo":null}]}]}',
-                    1, '2026-03-24 18:49:05');
-            ]]></sql>
-    </changeSet>
-
-
-    <!-- ==================== 字典类型初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100006" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_dict_type"/>
-            <sqlCheck expectedResult="0">
-                SELECT COUNT(1)
-                FROM la_dict_type
-            </sqlCheck>
-        </preConditions>
-        <insert tableName="la_dict_type">
-            <column name="id" value="2015795037228474368"/>
-            <column name="parent_id" value="0"/>
-            <column name="dict_type" value="SYS_BIZ_DICT"/>
-            <column name="dict_name" value="系统字典"/>
-            <column name="data_type" value="0"/>
-            <column name="data_type_value"/>
-            <column name="notes"/>
-            <column name="sort" valueNumeric="3"/>
-            <column name="created_at" value="2026-01-26 22:32:43"/>
-            <column name="updated_at" value="2026-01-27 12:07:41"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by" value="13303820660"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="dict_usage" valueNumeric="0"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="PARENT_KEYS"/>
-        </insert>
-        <insert tableName="la_dict_type">
-            <column name="id" value="2016822604289114112"/>
-            <column name="parent_id" value="0"/>
-            <column name="dict_type" value="SEX"/>
-            <column name="dict_name" value="性别"/>
-            <column name="data_type" value="0"/>
-            <column name="data_type_value"/>
-            <column name="notes"/>
-            <column name="sort" valueNumeric="1"/>
-            <column name="created_at" value="2026-01-29 18:35:57"/>
-            <column name="updated_at" value="2026-03-06 12:50:07"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by" value="westboy"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="dict_usage" valueNumeric="1"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="PARENT_KEYS"/>
-        </insert>
-        <insert tableName="la_dict_type">
-            <column name="id" value="2036323330111361024"/>
-            <column name="parent_id" value="2015795037228474368"/>
-            <column name="dict_type" value="DATA_SCOPE_TYPE"/>
-            <column name="dict_name" value="数据权限类别"/>
-            <column name="data_type" value="0"/>
-            <column name="data_type_value"/>
-            <column name="notes"/>
-            <column name="sort" valueNumeric="0"/>
-            <column name="created_at" value="2026-03-24 14:04:50"/>
-            <column name="updated_at" value="2026-03-24 14:05:54"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by" value="13303820660"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="dict_usage" valueNumeric="0"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="PARENT_KEYS" value="2015795037228474368"/>
-        </insert>
-    </changeSet>
-
-
-    <!-- ==================== 字典信息初始化 ==================== -->
-    <changeSet id="lambda-authority-20260710100007" author="westboy">
-        <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_dict_info"/>
-            <sqlCheck expectedResult="0">
-                SELECT COUNT(1)
-                FROM la_dict_info
-            </sqlCheck>
-        </preConditions>
-        <insert tableName="la_dict_info">
-            <column name="id" value="2016822669904805890"/>
-            <column name="REMARKS"/>
-            <column name="parent_keys"/>
-            <column name="sort_no" value="0"/>
-            <column name="created_at" value="2026-01-29 18:36:10"/>
-            <column name="updated_at" value="2026-03-09 14:50:43"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by" value="13303820660"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="enable_state" valueNumeric="1"/>
-            <column name="dict_type" value="SEX"/>
-            <column name="field_type" value="1"/>
-            <column name="field_name" value="男"/>
-            <column name="select_able" valueNumeric="1"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="parent_id"/>
-            <column name="tenant_id"/>
-            <column name="extra"/>
-        </insert>
-        <insert tableName="la_dict_info">
-            <column name="id" value="2016822703383740417"/>
-            <column name="REMARKS"/>
-            <column name="parent_keys"/>
-            <column name="sort_no" value="1"/>
-            <column name="created_at" value="2026-01-29 18:36:18"/>
-            <column name="updated_at" value="2026-03-31 16:51:17"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by" value="13303820661"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="enable_state" valueNumeric="1"/>
-            <column name="dict_type" value="SEX"/>
-            <column name="field_type" value="2"/>
-            <column name="field_name" value="女"/>
-            <column name="select_able" valueNumeric="1"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="parent_id"/>
-            <column name="tenant_id"/>
-            <column name="extra"/>
-        </insert>
-        <insert tableName="la_dict_info">
-            <column name="id" value="2036323887186235393"/>
-            <column name="REMARKS"/>
-            <column name="parent_keys"/>
-            <column name="sort_no" value="0"/>
-            <column name="created_at" value="2026-03-24 14:07:02"/>
-            <column name="updated_at"/>
-            <column name="created_by" value="13303820660"/>
-            <column name="updated_by"/>
-            <column name="del_flag" valueNumeric="0"/>
-            <column name="enable_state" valueNumeric="1"/>
-            <column name="dict_type" value="DATA_SCOPE_TYPE"/>
-            <column name="field_type" value="0"/>
-            <column name="field_name" value="组织机构"/>
-            <column name="select_able" valueNumeric="1"/>
-            <column name="level" valueNumeric="1"/>
-            <column name="parent_id"/>
-            <column name="tenant_id"/>
-            <column name="extra"/>
-        </insert>
-    </changeSet>
-
 
     <!-- ==================== 组织机构初始化 ==================== -->
     <changeSet id="lambda-authority-20260710100008" author="westboy">
@@ -952,26 +658,86 @@
             ]]></sql>
     </changeSet>
 
-    <!-- ==================== 密码策略系统配置 ==================== -->
-    <changeSet id="lambda-authority-20260904100001" author="xiongmao">
+    <!-- ========== AI 工作台菜单（顶级独立节点，原前端静态路由落库） ========== -->
+    <changeSet id="lambda-authority-2026091000010" author="zx">
         <preConditions onFail="MARK_RAN">
-            <tableExists tableName="la_configs"/>
+            <tableExists tableName="la_resources"/>
             <sqlCheck expectedResult="0">
                 SELECT COUNT(1)
-                FROM la_configs
-                WHERE PROPERTY_KEY = 'lambda.fusion.authorize.password-strategy.first-login-change-password'
+                FROM la_resources
+                WHERE RES_PATH = '/ai'
             </sqlCheck>
         </preConditions>
         <sql><![CDATA[
-            insert into la_configs (PROPERTY_ID, PROPERTY_KEY, PROPERTY_VALUE, PROPERTY_NAME, PROPERTY_TYPE,
-                                    PROPERTY_DESC, APPLICATION, UPDATE_TIME)
-            values ('2036090410000000001',
-                    'lambda.fusion.authorize.password-strategy.first-login-change-password',
-                    '1', '新用户首次登录强制修改密码', 1,
-                    '新增用户首次登录时是否强制修改密码；关闭后首次登录直接使用创建时设置的密码',
-                    'public', now());
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('AiTop0001', null, 'AI 工作台', '/ai', 0, 1, null, 0, null, 'lucide:brain', 0, null, 0, null, null,
+                    null, 1, null, null, 200),
+                   ('AiApp0001', 'AiTop0001', '智能管理', '/ai/apps/', 1, 1, null, 0, null, 'lucide:bot', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 1),
+                   ('AiChat001', 'AiTop0001', '对话体验', '/ai/chat/', 1, 1, null, 0, null, 'lucide:message-square', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 2),
+                   ('AiLlm0001', 'AiTop0001', '模型管理', '/ai/llm/', 1, 1, null, 0, null, 'lucide:cpu', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 3),
+                   ('AiKnow001', 'AiTop0001', '知识库', '/ai/knowledge/', 1, 1, null, 0, null, 'lucide:database', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 4),
+                   ('AiSubA001', 'AiTop0001', '专家代理', '/ai/sub-agents/', 1, 1, null, 0, null, 'lucide:network', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 5),
+                   ('AiTask001', 'AiTop0001', '定时任务', '/ai/scheduled-tasks/', 1, 1, null, 0, null, 'lucide:clock', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 6),
+                   ('AiMcp0001', 'AiTop0001', 'MCP服务', '/ai/mcp/', 1, 1, null, 0, null, 'lucide:plug', 0, 'AiTop0001',
+                    0, null, null, null, 0, null, null, 7),
+                   ('AiSkill01', 'AiTop0001', '技能市场', '/ai/skills/', 1, 1, null, 0, null, 'lucide:sparkles', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 8),
+                   ('AiChan001', 'AiTop0001', '渠道配置', '/ai/channels/', 1, 1, null, 0, null, 'lucide:radio', 0,
+                    'AiTop0001', 0, null, null, null, 0, null, null, 9);
             ]]></sql>
     </changeSet>
 
+    <!-- ========== AI 工作台菜单角色授权（非 DEV 用户按 la_role_resources 过滤菜单） ========== -->
+    <changeSet id="lambda-additional-20260917000002" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_role_resources"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1)
+                FROM la_role_resources
+                WHERE RESOURCE_ID = 'AiTop0001'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'AiTop0001', null),
+                   ('ROLE_SYSTEM', 'AiTop0001', null),
+                   ('ROLE_DEV', 'AiTop0001', null),
+                   ('ROLE_ADMIN', 'AiApp0001', null),
+                   ('ROLE_SYSTEM', 'AiApp0001', null),
+                   ('ROLE_DEV', 'AiApp0001', null),
+                   ('ROLE_ADMIN', 'AiChat001', null),
+                   ('ROLE_SYSTEM', 'AiChat001', null),
+                   ('ROLE_DEV', 'AiChat001', null),
+                   ('ROLE_ADMIN', 'AiLlm0001', null),
+                   ('ROLE_SYSTEM', 'AiLlm0001', null),
+                   ('ROLE_DEV', 'AiLlm0001', null),
+                   ('ROLE_ADMIN', 'AiKnow001', null),
+                   ('ROLE_SYSTEM', 'AiKnow001', null),
+                   ('ROLE_DEV', 'AiKnow001', null),
+                   ('ROLE_ADMIN', 'AiSubA001', null),
+                   ('ROLE_SYSTEM', 'AiSubA001', null),
+                   ('ROLE_DEV', 'AiSubA001', null),
+                   ('ROLE_ADMIN', 'AiTask001', null),
+                   ('ROLE_SYSTEM', 'AiTask001', null),
+                   ('ROLE_DEV', 'AiTask001', null),
+                   ('ROLE_ADMIN', 'AiMcp0001', null),
+                   ('ROLE_SYSTEM', 'AiMcp0001', null),
+                   ('ROLE_DEV', 'AiMcp0001', null),
+                   ('ROLE_ADMIN', 'AiSkill01', null),
+                   ('ROLE_SYSTEM', 'AiSkill01', null),
+                   ('ROLE_DEV', 'AiSkill01', null),
+                   ('ROLE_ADMIN', 'AiChan001', null),
+                   ('ROLE_SYSTEM', 'AiChan001', null),
+                   ('ROLE_DEV', 'AiChan001', null);
+            ]]></sql>
+    </changeSet>
 
 </databaseChangeLog>
