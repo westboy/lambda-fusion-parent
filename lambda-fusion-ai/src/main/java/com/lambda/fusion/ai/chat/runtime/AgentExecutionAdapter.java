@@ -95,15 +95,15 @@ public final class AgentExecutionAdapter {
      * 此处等待根结束事件后再取消上游，既保留可恢复的挂起状态，又避免记忆模型阻塞待交互快照落库。
      * 普通最终回答和子 Agent 事件不受影响。
      *
-     * <p>注意 AgentScope 2.0.1 不发出 {@code REQUIRE_EXTERNAL_EXECUTION} 事件，外部工具挂起以
+     * <p>注意当前依赖的 AgentScope 版本不发出 {@code REQUIRE_EXTERNAL_EXECUTION} 事件，外部工具挂起以
      * 根 {@code AgentResultEvent}（{@code GenerateReason.TOOL_SUSPENDED}）的形式出现，判定逻辑见
-     * {@link AgentEventMapper#isInteractionBoundary}。
+     * {@link AgentEventMapper#isInteractionBoundary}（只认根 Agent 事件，子 Agent 的确认/挂起不截流）。
      */
     private Flux<AgentEvent> endAtHitlPhaseBoundary(Flux<AgentEvent> source) {
         return Flux.defer(() -> {
             AtomicBoolean awaitingInteraction = new AtomicBoolean();
             return source.doOnNext(event -> {
-                        if (AgentEventMapper.isRootInteractionBoundary(event)) {
+                        if (AgentEventMapper.isInteractionBoundary(event)) {
                             awaitingInteraction.set(true);
                         }
                     })

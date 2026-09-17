@@ -89,7 +89,10 @@ Agent、不伪造接管。部署层应对会话/Run 使用粘性路由；前端�
 
 ### 4.3 HITL
 
-AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源：
+AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源，但只有**根 Agent**（`source == null`）的
+确认/挂起事件才构成运行级待交互边界。子 Agent 的同类事件会原样冒泡进父流，但其 ASKING 状态
+保存在子 Agent 自己的状态会话中，三方校验（快照、用户决策、根 Agent 状态）永远读不到；
+若据此进入待交互，运行将停在永远无法确认的状态。映射层与边界判定统一按根事件过滤。
 
 1. 映射器输出标准 `RUN_FINISHED` interrupt；
 2. 快照投影器从同一事件生成 `pendingTools`；

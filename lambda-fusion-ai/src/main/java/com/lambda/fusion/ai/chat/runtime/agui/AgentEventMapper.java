@@ -83,37 +83,32 @@ public final class AgentEventMapper {
     }
 
     /**
-     * 判断事件是否为人机交互边界信号。
+     * 判断事件是否为运行级人机交互边界信号。
      *
-     * <p>AgentScope 2.0.1 不会发出 {@code REQUIRE_EXTERNAL_EXECUTION} 事件：外部工具挂起以
+     * <p>只有根 Agent（{@code source == null}）的确认/挂起才把运行推进待交互：子 Agent 的
+     * {@code REQUIRE_USER_CONFIRM} 等事件会原样冒泡进父流，但其 ASKING 状态保存在子 Agent
+     * 自己的状态会话中，运行级的「快照、用户决策、根 Agent 状态」三方校验永远读不到它们——
+     * 若据此进入待交互，运行将停在永远无法确认的状态，只能等待超时或显式停止。
+     *
+     * <p>当前依赖的 AgentScope 版本不发出 {@code REQUIRE_EXTERNAL_EXECUTION} 事件：外部工具挂起以
      * 根 {@code AgentResultEvent}（{@code GenerateReason.TOOL_SUSPENDED}）的形式出现在事件流中，
      * 随后紧跟根 {@code AGENT_END}。此处统一判定两类信号，供运行实例与执行适配器复用。
      *
      * @param event 待判定的事件
-     * @return 是否为待交互边界信号
+     * @return 是否为运行级待交互边界信号
      */
     public static boolean isInteractionBoundary(AgentEvent event) {
+        if (event.getSource() != null) {
+            // 子 Agent 的确认/挂起不代表整个运行进入待交互。
+            return false;
+        }
         if (event.getType() == AgentEventType.REQUIRE_USER_CONFIRM
                 || event.getType() == AgentEventType.REQUIRE_EXTERNAL_EXECUTION) {
             return true;
         }
         return event instanceof AgentResultEvent result
-                && result.getSource() == null
                 && result.getResult() != null
                 && result.getResult().getGenerateReason() == GenerateReason.TOOL_SUSPENDED;
-    }
-
-    /**
-     * 判断事件是否为根级人机交互边界信号。
-     *
-     * <p>子 Agent 的确认或挂起事件不代表整个运行进入待交互，执行适配器据此只对根信号
-     * 裁剪源流；运行实例沿用 {@link #isInteractionBoundary} 的既有语义。
-     *
-     * @param event 待判定的事件
-     * @return 是否为根级待交互边界信号
-     */
-    public static boolean isRootInteractionBoundary(AgentEvent event) {
-        return event.getSource() == null && isInteractionBoundary(event);
     }
 
     /** 关闭本阶段已打开的文本/推理事件。 */
@@ -221,7 +216,8 @@ public final class AgentEventMapper {
     }
 
     private void mapRequireUserConfirm(AgentEvent event, List<AguiEvent> out) {
-        if (!(event instanceof RequireUserConfirmEvent confirm)) {
+        // 子 Agent 的确认不下发运行级 RunFinished，判定见 isInteractionBoundary。
+        if (event.getSource() != null || !(event instanceof RequireUserConfirmEvent confirm)) {
             return;
         }
         closeActiveMessage(out);
@@ -229,7 +225,7 @@ public final class AgentEventMapper {
     }
 
     private void mapRequireExternalExecution(AgentEvent event, List<AguiEvent> out) {
-        if (!(event instanceof RequireExternalExecutionEvent external)) {
+        if (event.getSource() != null || !(event instanceof RequireExternalExecutionEvent external)) {
             return;
         }
         closeActiveMessage(out);

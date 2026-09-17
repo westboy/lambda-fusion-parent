@@ -3,6 +3,8 @@ package com.lambda.fusion.ai.chat.runtime.agui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
@@ -11,7 +13,9 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.util.JsonUtils;
@@ -20,6 +24,28 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class AgentEventMapperTest {
+
+    @Test
+    void shouldTreatOnlyRootConfirmAsInteractionBoundary() {
+        AgentEventMapper mapper = new AgentEventMapper("thread-1", "run-1", true);
+        AgentEvent childConfirm = new RequireUserConfirmEvent("child-reply", List.of(askingBlock("child-call")))
+                .withSource("root/worker");
+        AgentEvent rootConfirm = new RequireUserConfirmEvent("reply-1", List.of(askingBlock("call-1")));
+
+        // 子 Agent 的确认冒泡进父流时不构成运行级待交互边界，也不映射 RunFinished 中断事件。
+        assertThat(AgentEventMapper.isInteractionBoundary(childConfirm)).isFalse();
+        assertThat(mapper.map(childConfirm)).isEmpty();
+
+        assertThat(AgentEventMapper.isInteractionBoundary(rootConfirm)).isTrue();
+        assertThat(mapper.map(rootConfirm))
+                .singleElement()
+                .isInstanceOfSatisfying(AguiEvent.RunFinished.class, finished -> assertThat(finished.outcome())
+                        .isInstanceOfSatisfying(
+                                AguiEvent.RunFinishedInterruptOutcome.class, outcome -> assertThat(outcome.interrupts())
+                                        .singleElement()
+                                        .satisfies(interrupt -> assertThat(interrupt.toolCallId())
+                                                .isEqualTo("call-1"))));
+    }
 
     @Test
     void shouldKeepPlainTextToolResultBackwardCompatible() {
@@ -105,5 +131,13 @@ class AgentEventMapperTest {
                 .containsEntry("media_type", "audio/mpeg")
                 .containsEntry("data", "YXVkaW8=");
         assertThat(content.get(3)).containsEntry("id", "data-1").containsEntry("name", "artifact.bin");
+    }
+
+    private static ToolUseBlock askingBlock(String toolCallId) {
+        return ToolUseBlock.builder()
+                .id(toolCallId)
+                .name("demo_tool")
+                .state(ToolCallState.ASKING)
+                .build();
     }
 }

@@ -29,7 +29,10 @@ import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -102,6 +105,31 @@ class ChatRunInstanceTerminalTest {
 
         verify(runService, never()).finalizeExecution(any(), any());
         assertThat(instance.isRunning()).isTrue();
+    }
+
+    @Test
+    void shouldCompleteNormallyWhenChildAgentConfirmArrives() {
+        // 子 Agent 的确认事件（source != null）不构成运行级待交互：不进入待提交状态，
+        // 根 AGENT_END 到达时 Run 正常终结为 COMPLETED，快照不产生待确认投影。
+        instance = newInstance(run(ChatRunStatus.RUNNING, snapshot("", false, false)));
+        stubTerminalCommit();
+        AgentEvent childConfirm = new RequireUserConfirmEvent(
+                        "child-reply",
+                        List.of(ToolUseBlock.builder()
+                                .id("child-call")
+                                .name("demo_tool")
+                                .state(ToolCallState.ASKING)
+                                .build()))
+                .withSource("root/worker");
+        when(adapter.stream(any(Msg.class)))
+                .thenReturn(Flux.concat(Flux.just(childConfirm, agentEnd(null)), Flux.never()));
+
+        instance.startPhase(
+                Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build());
+
+        ChatRunFinalizationCommand command = captureFinalize();
+        assertThat(command.targetStatus()).isEqualTo(ChatRunStatus.COMPLETED);
+        assertThat(command.snapshot().pendingTools()).isEmpty();
     }
 
     @Test
