@@ -78,6 +78,16 @@ public final class ChatExecutionInstance {
     private int fallbackFinalizeAttempts;
     private volatile long phaseStartedAtMillis = System.currentTimeMillis();
     private boolean checkpointDirty;
+    /**
+     * 最近一次成功写入数据库的快照版本号：检查点以它为 CAS 前置，写入成功后推进；
+     * 待交互提交与阶段推进（confirm）落库后同步刷新。
+     */
+    private long persistedSnapshotVersion;
+    /**
+     * 快照内容代际：每次有增量事件应用进累加器时递增，用于识别检查点写库期间到达的新增量。
+     */
+    private long snapshotGeneration;
+
     private ScheduledFuture<?> checkpointTask;
     private AgentEventMapper eventMapper;
     private boolean awaitingInteraction;
@@ -115,6 +125,7 @@ public final class ChatExecutionInstance {
         this.session = session;
         this.agentExecutionAdapter = agentExecutionAdapter;
         this.accumulator = accumulator;
+        this.persistedSnapshotVersion = run.getSnapshotVersion() == null ? 0L : run.getSnapshotVersion();
         this.chatExecutionFinalizer = new ChatExecutionFinalizer(runService, eventStore, properties);
         this.agentStreamLifecycle = new AgentStreamLifecycle(run.getId(), scheduler, properties);
         this.eventMapper = new AgentEventMapper(
@@ -265,12 +276,14 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 将数据库迁移后的运行状态同步到实例内存对象。
+     * 将数据库迁移后的运行状态同步到实例内存对象（含快照版本围栏）。
      */
     private void syncRun(ChatRunEntity updated) {
         run.setStatus(updated.getStatus());
         run.setPhaseNo(updated.getPhaseNo());
         run.setAguiRunId(updated.getAguiRunId());
+        run.setSnapshotVersion(updated.getSnapshotVersion());
+        persistedSnapshotVersion = updated.getSnapshotVersion() == null ? 0L : updated.getSnapshotVersion();
     }
 
     /**
@@ -399,7 +412,10 @@ public final class ChatExecutionInstance {
             return;
         }
         accumulator.apply(events);
-        checkpointDirty = checkpointDirty || !events.isEmpty();
+        if (!events.isEmpty()) {
+            checkpointDirty = true;
+            snapshotGeneration++;
+        }
         appendAll(events);
         maybeCheckpoint();
     }
@@ -489,21 +505,10 @@ public final class ChatExecutionInstance {
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
         // 先提交待交互快照，再向本地订阅者发布 interrupt，保证事实先于信号。
         List<AguiEvent> events = pendingInteractionEvents;
-        boolean awaiting;
-        try {
-            awaiting = runService.checkpoint(run, snapshot);
-        } catch (RuntimeException awaitFailure) {
-            // 独立事务回滚时 interrupt 尚未发布，运行保持 RUNNING，可由调用方重试。
-            awaitingInteraction = false;
-            pendingInteractionEvents = null;
-            log.error("Run进入待交互失败，保持运行态可重试: runId={}", run.getId(), awaitFailure);
-            throw new AiBusinessException(AiErrorCode.CHAT_RUN_AWAIT_CONFIRM_FAILED, run.getId());
-        }
-        if (!awaiting) {
+        if (!persistAwaitSnapshot(snapshot)) {
             // 终态会拒绝迟到的待交互快照；不存在第二套待交互状态迁移。
             awaitingInteraction = false;
             pendingInteractionEvents = null;
-            adoptExternalTerminalIfRejected("Run待交互快照未写入: ");
             return;
         }
         try {
@@ -517,6 +522,36 @@ public final class ChatExecutionInstance {
         checkpointDirty = false;
         awaitingInteraction = false;
         pendingInteractionEvents = null;
+    }
+
+    /**
+     * 提交待交互快照：版本碰撞（在途检查点与本次提交交错）时按数据库最新版本有限重试；
+     * 运行已被并发提交终态时回读终态并返回 {@code false}。
+     */
+    private boolean persistAwaitSnapshot(ChatRunSnapshot snapshot) {
+        for (int attempt = 1; attempt <= MAX_PROJECTION_FINALIZE_ATTEMPTS; attempt++) {
+            boolean written;
+            try {
+                written = runService.checkpoint(run, snapshot, persistedSnapshotVersion);
+            } catch (RuntimeException awaitFailure) {
+                // 独立事务回滚时 interrupt 尚未发布，运行保持 RUNNING，可由调用方重试。
+                awaitingInteraction = false;
+                pendingInteractionEvents = null;
+                log.error("Run进入待交互失败，保持运行态可重试: runId={}", run.getId(), awaitFailure);
+                throw new AiBusinessException(AiErrorCode.CHAT_RUN_AWAIT_CONFIRM_FAILED, run.getId());
+            }
+            if (written) {
+                persistedSnapshotVersion++;
+                return true;
+            }
+            if (adoptIfExternallyTerminated()) {
+                return false;
+            }
+        }
+        // 版本持续碰撞只在并发写长期存在时可能：保持运行态，由调用方收敛为失败终态。
+        awaitingInteraction = false;
+        pendingInteractionEvents = null;
+        throw new AiBusinessException(AiErrorCode.CHAT_RUN_AWAIT_CONFIRM_FAILED, run.getId());
     }
 
     private void appendAll(List<AguiEvent> events) {
@@ -552,7 +587,7 @@ public final class ChatExecutionInstance {
 
     /**
      * 延迟检查点到期后的写入回调：仍无增量、已终态或待交互时放弃；快照 CAS 写入在实例锁外执行，
-     * 失败时重新调度，依赖实例自驱重试而非全局扫描。
+     * 写入失败或版本碰撞被拒（脏标记保持）时重新调度，依赖实例自驱重试而非全局扫描。
      */
     private void checkpointIfDirty() {
         synchronized (this) {
@@ -565,7 +600,9 @@ public final class ChatExecutionInstance {
             checkpointNow();
         } catch (RuntimeException checkpointFailure) {
             log.warn("Run延迟检查点写入失败，将由实例重试: runId={}", run.getId(), checkpointFailure);
-            synchronized (this) {
+        }
+        synchronized (this) {
+            if (checkpointDirty && !terminal) {
                 scheduleCheckpoint();
             }
         }
@@ -804,37 +841,46 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 立即写入执行检查点并收缩事件缓冲区。抛 {@link IllegalStateException} 表示非终态运行的检查点失败。
-     * 实例锁内仅构建快照，快照 CAS 写入在实例锁外执行（写库期间新到事件会再次置脏并安排后续检查点）。
+     * 立即写入执行检查点。实例锁内构建快照并捕获版本号与代际，快照 CAS 写入在实例锁外执行；
+     * 写库期间新到事件会保留脏标记并安排后续检查点。写入被拒时不抛出：已终态则同步外部终态，
+     * 否则视为快照版本碰撞，刷新版本号后由调用方或后续检查点重写。
      */
     void checkpointNow() {
         ChatRunSnapshot snapshot;
+        long expectedVersion;
+        long generationAtBuild;
         synchronized (this) {
             cancelCheckpointTask();
             snapshot = accumulator.buildSnapshot();
+            expectedVersion = persistedSnapshotVersion;
+            generationAtBuild = snapshotGeneration;
         }
-        if (runService.checkpoint(run, snapshot)) {
+        if (runService.checkpoint(run, snapshot, expectedVersion)) {
             synchronized (this) {
-                checkpointDirty = false;
+                persistedSnapshotVersion = expectedVersion + 1;
+                // 写库期间到达的新事件不在本次快照内，保留脏标记交由后续检查点覆盖。
+                checkpointDirty = checkpointDirty && snapshotGeneration != generationAtBuild;
             }
             return;
         }
         synchronized (this) {
-            adoptExternalTerminalIfRejected("Run快照检查点未写入: ");
+            if (!adoptIfExternallyTerminated()) {
+                log.warn("Run检查点因快照版本碰撞被拒，已刷新版本等待重写: runId={}", run.getId());
+            }
         }
     }
 
     /**
-     * 快照写入被数据库拒绝后的收敛：运行已被并发提交终态时同步本地终态，并在无活动源流时完成排空信号；
-     * 非终态拒绝视为快照未写入的非法状态。
-     *
-     * @param failureMessage 非法状态异常消息前缀
+     * 快照写入被数据库拒绝后的收敛：运行已被并发提交终态时同步本地终态，并在无活动源流时完成排空信号，
+     * 返回 {@code true}；非终态拒绝视为快照版本碰撞，从数据库刷新版本号、保留脏标记等待重写，返回
+     * {@code false}。
      */
-    private void adoptExternalTerminalIfRejected(String failureMessage) {
+    private boolean adoptIfExternallyTerminated() {
         ChatRunEntity current = runService.loadCurrentOrIdentity(run);
         run.setStatus(current.getStatus());
         if (!ChatRunStatus.isTerminal(current.getStatus())) {
-            throw new IllegalStateException(failureMessage + run.getId());
+            persistedSnapshotVersion = current.getSnapshotVersion() == null ? 0L : current.getSnapshotVersion();
+            return false;
         }
         terminal = true;
         checkpointDirty = false;
@@ -842,6 +888,7 @@ public final class ChatExecutionInstance {
             drainedSignal.complete(null);
             localPhaseDrainedSignal.complete(null);
         }
+        return true;
     }
 
     /**

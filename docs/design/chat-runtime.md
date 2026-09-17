@@ -61,7 +61,9 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 3. 薄适配器把 `AgentEvent` 映射成 AgentScope 官方 `AguiEvent`。
 4. 同一批 `AguiEvent` 同时送往前端和运行中快照投影器；禁止再维护一套独立的
    `AgentEvent -> SnapshotDelta` 解释逻辑。
-5. 快照按时间间隔写入数据库。事件数量与数据库快照之间没有持久化水位协议。
+5. 快照按时间间隔写入数据库。事件数量与数据库快照之间没有持久化水位协议；快照写入携带
+   `snapshot_version` 版本 CAS，迟到的在途检查点不会覆盖更新的快照（待交互提交、下一阶段
+   初始快照），被拒后按最新版本重写。
 
 ### 4.2 浏览器断开与恢复
 
@@ -102,8 +104,9 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源，但只有**根 Agen
 5. 根据 `phaseNo`、快照工具 ID 与 AgentScope 当前 ASKING 工具三方校验；
 6. 校验成功后进入下一 phase，ChatRun 持久化状态仍为 `RUNNING`。
 
-这里需要“事实先于信号”，但不需要 Redis Stream、分布式序号或 fencing。单实例锁内先提交运行中
-快照，再追加本地 interrupt 事件即可。
+这里需要“事实先于信号”，但不需要 Redis Stream 或分布式序号。单实例锁内先提交运行中
+快照，再追加本地 interrupt 事件即可；待交互提交与周期检查点共享 `snapshot_version` 版本
+CAS，二者在途交错时以版本重试收敛，不引入第二套待交互状态迁移。
 
 ### 4.4 终结
 

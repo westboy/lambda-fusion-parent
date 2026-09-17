@@ -102,6 +102,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         run.setStatus(ChatRunStatus.RUNNING.name());
         run.setPhaseNo(1);
         run.setAguiRunId(newAguiRunId());
+        run.setSnapshotVersion(0L);
         run.setStartedAt(now);
         runMapper.insert(run);
 
@@ -216,6 +217,8 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         int targetPhase = run.getPhaseNo() + 1;
         String targetAguiRunId = newAguiRunId();
         ChatRunSnapshot nextSnapshot = snapshot.beginPhase(targetAguiRunId, targetPhase);
+        // 行锁内推进快照版本号，迟到的旧版本检查点无法覆盖下一阶段快照。
+        long nextSnapshotVersion = (run.getSnapshotVersion() == null ? 0L : run.getSnapshotVersion()) + 1;
         // 阶段号是确认幂等键；同事务清除待确认 UI 投影，避免重连读到旧阶段中断。
         LocalDateTime now = LocalDateTime.now();
         int changed = runMapper.update(
@@ -227,6 +230,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .set(ChatRunEntity::getPhaseNo, targetPhase)
                         .set(ChatRunEntity::getAguiRunId, targetAguiRunId)
                         .set(ChatRunEntity::getSnapshotJson, ChatRunSnapshotCodec.encode(nextSnapshot))
+                        .set(ChatRunEntity::getSnapshotVersion, nextSnapshotVersion)
                         .set(ChatRunEntity::getUpdatedAt, now));
         if (changed != 1) {
             throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, run.getId());
@@ -236,26 +240,31 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         run.setPhaseNo(targetPhase);
         run.setAguiRunId(targetAguiRunId);
         run.setSnapshotJson(ChatRunSnapshotCodec.encode(nextSnapshot));
+        run.setSnapshotVersion(nextSnapshotVersion);
         return new ConfirmTransition(run, session, true);
     }
 
     /**
-     * 在独立事务中以 {@code status=RUNNING} 为前置条件 CAS 写入运行中 UI 快照。
+     * 在独立事务中以 {@code status=RUNNING, snapshotVersion=expectedSnapshotVersion} 为前置条件
+     * CAS 写入运行中 UI 快照；版本围栏拒绝迟到的检查点覆盖更新的快照（待交互提交、下一阶段初始快照）。
      *
      * @param run 运行实体
      * @param snapshot 执行快照
-     * @return 是否写入成功；终态记录拒绝迟到的快照写入时返回 {@code false}
+     * @param expectedSnapshotVersion 快照构建时的持久化版本号
+     * @return 是否写入成功；终态记录或版本碰撞拒绝写入时返回 {@code false}
      */
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
-    public boolean checkpoint(ChatRunEntity run, ChatRunSnapshot snapshot) {
+    public boolean checkpoint(ChatRunEntity run, ChatRunSnapshot snapshot, long expectedSnapshotVersion) {
         LocalDateTime now = LocalDateTime.now();
         return runMapper.update(
                         null,
                         new LambdaUpdateWrapper<ChatRunEntity>()
                                 .eq(ChatRunEntity::getId, run.getId())
                                 .eq(ChatRunEntity::getStatus, ChatRunStatus.RUNNING.name())
+                                .eq(ChatRunEntity::getSnapshotVersion, expectedSnapshotVersion)
                                 .set(ChatRunEntity::getSnapshotJson, ChatRunSnapshotCodec.encode(snapshot))
+                                .set(ChatRunEntity::getSnapshotVersion, expectedSnapshotVersion + 1)
                                 .set(ChatRunEntity::getUpdatedAt, now))
                 == 1;
     }

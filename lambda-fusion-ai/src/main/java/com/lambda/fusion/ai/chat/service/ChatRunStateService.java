@@ -19,7 +19,16 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
  */
 public interface ChatRunStateService {
 
-    boolean checkpoint(ChatRunEntity run, ChatRunSnapshot snapshot);
+    /**
+     * 以 {@code status=RUNNING} 与快照版本号为前置条件 CAS 写入运行中 UI 快照。
+     * 版本围栏保证迟到的检查点不会覆盖更新的快照（待交互提交、下一阶段初始快照）。
+     *
+     * @param run 运行实体
+     * @param snapshot 执行快照
+     * @param expectedSnapshotVersion 快照构建时的持久化版本号
+     * @return 是否写入成功；终态记录或版本碰撞拒绝写入时返回 {@code false}
+     */
+    boolean checkpoint(ChatRunEntity run, ChatRunSnapshot snapshot, long expectedSnapshotVersion);
 
     /**
      * 在独立事务内推进确认：复核会话归属、做阶段幂等守卫与状态校验，以 {@code (status=RUNNING, phaseNo)}

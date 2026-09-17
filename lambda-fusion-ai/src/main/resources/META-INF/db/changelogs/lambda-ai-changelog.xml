@@ -998,4 +998,17 @@
         </addColumn>
     </changeSet>
 
+    <!-- ========== ai_chat_run 加快照版本围栏列 ========== -->
+    <changeSet id="lambda-ai-2026091700010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_chat_run" columnName="snapshot_version"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_chat_run">
+            <column name="snapshot_version" type="bigint" defaultValueNumeric="0"
+                    remarks="快照版本围栏:每次快照写入+1,检查点按版本CAS,迟到的快照写入被拒绝"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

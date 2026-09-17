@@ -2,6 +2,7 @@ package com.lambda.fusion.ai.chat.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -78,7 +79,8 @@ class ChatRunInstanceTerminalTest {
         ChatRunEntity run = run(ChatRunStatus.RUNNING, snapshot("", false, false));
         instance = newInstance(run);
         stubTerminalCommit();
-        when(runService.checkpoint(eq(run), any(ChatRunSnapshot.class))).thenReturn(true);
+        when(runService.checkpoint(eq(run), any(ChatRunSnapshot.class), anyLong()))
+                .thenReturn(true);
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
         when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
 

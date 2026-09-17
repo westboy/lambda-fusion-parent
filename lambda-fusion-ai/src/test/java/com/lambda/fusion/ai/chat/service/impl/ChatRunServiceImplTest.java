@@ -185,14 +185,23 @@ class ChatRunServiceImplTest {
         ChatRunEntity run = run(ChatRunStatus.RUNNING);
         when(runMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
 
-        assertThat(service.checkpoint(run, snapshot("partial"))).isTrue();
+        assertThat(service.checkpoint(run, snapshot("partial"), 0L)).isTrue();
 
         ArgumentCaptor<LambdaUpdateWrapper<ChatRunEntity>> updateCaptor =
                 ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
         verify(runMapper).update(isNull(), updateCaptor.capture());
         LambdaUpdateWrapper<ChatRunEntity> update = updateCaptor.getValue();
-        assertThat(update.getSqlSegment()).contains("status");
-        assertThat(update.getParamNameValuePairs().values()).contains(ChatRunStatus.RUNNING.name());
+        assertThat(update.getSqlSegment()).contains("status").contains("snapshot_version");
+        // CAS 前置携带期望版本号，写入时推进到下一版本。
+        assertThat(update.getParamNameValuePairs().values()).contains(ChatRunStatus.RUNNING.name(), 0L, 1L);
+    }
+
+    @Test
+    void shouldRejectCheckpointWhenSnapshotVersionCollides() {
+        ChatRunEntity run = run(ChatRunStatus.RUNNING);
+        when(runMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+
+        assertThat(service.checkpoint(run, snapshot("partial"), 3L)).isFalse();
     }
 
     @Test
@@ -211,6 +220,8 @@ class ChatRunServiceImplTest {
         assertThat(transition.resumed()).isTrue();
         assertThat(transition.run().getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         assertThat(transition.run().getPhaseNo()).isEqualTo(3);
+        // 行锁内推进快照版本号，迟到的旧版本检查点无法覆盖下一阶段快照。
+        assertThat(transition.run().getSnapshotVersion()).isEqualTo(1L);
         assertThat(com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec.decode(
                                 transition.run().getSnapshotJson())
                         .pendingTools())

@@ -127,7 +127,7 @@ class ChatRunInstanceDrainTest {
         instance = newInstance(run(ChatRunStatus.RUNNING));
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
         when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
-        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong()))
                 .thenReturn(true);
 
         instance.startPhase(userMsg());
@@ -141,7 +141,7 @@ class ChatRunInstanceDrainTest {
                 .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
                         .isEqualTo(AiErrorCode.CHAT_RUN_STATE_CONFLICT.getCode()));
         verify(runService, never()).advanceConfirmation(any(), any(), org.mockito.ArgumentMatchers.anyInt(), any());
-        verify(runService, never()).checkpoint(any(), any());
+        verify(runService, never()).checkpoint(any(), any(), anyLong());
 
         // 整个 AgentScope/Harness 源流排空后才提交待确认事实并发布中断事件。
         source.tryEmitComplete();
@@ -150,7 +150,7 @@ class ChatRunInstanceDrainTest {
         assertThat(instance.bootstrap().phaseClosed()).isTrue();
         assertThat(instance.drainedSignal().toCompletableFuture()).isNotDone();
         assertThat(instance.localPhaseDrainedSignal().toCompletableFuture()).isDone();
-        verify(runService).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class));
+        verify(runService).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong());
         verify(workspaceAuditRecorder).recordChanges(eq(instance.session()), anyLong());
     }
 
@@ -159,7 +159,7 @@ class ChatRunInstanceDrainTest {
         instance = newInstance(run(ChatRunStatus.RUNNING));
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
         when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
-        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong()))
                 .thenReturn(true);
         doThrow(new IllegalStateException("local buffer unavailable"))
                 .when(eventStore)
@@ -184,13 +184,38 @@ class ChatRunInstanceDrainTest {
         instance = newInstance(run(ChatRunStatus.RUNNING), properties);
         Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
         when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
-        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class)))
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong()))
                 .thenReturn(true);
 
         instance.startPhase(userMsg());
         source.tryEmitNext(new TextBlockDeltaEvent("reply-1", "block-1", "partial"));
 
-        verify(runService, timeout(2_500)).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class));
+        verify(runService, timeout(2_500)).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong());
+    }
+
+    @Test
+    void shouldRetryAwaitSnapshotWhenSnapshotVersionCollides() {
+        instance = newInstance(run(ChatRunStatus.RUNNING));
+        Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
+        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        // 在途检查点先落地导致版本碰撞：实例按数据库最新版本重试，待确认事实仍正常落库。
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), eq(0L)))
+                .thenReturn(false);
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), eq(4L)))
+                .thenReturn(true);
+        ChatRunEntity persisted = run(ChatRunStatus.RUNNING);
+        persisted.setSnapshotVersion(4L);
+        when(runService.loadCurrentOrIdentity(instance.run())).thenReturn(persisted);
+
+        instance.startPhase(userMsg());
+        source.tryEmitNext(requireConfirm("call-1"));
+        source.tryEmitNext(agentEnd());
+        source.tryEmitComplete();
+
+        assertThat(instance.bootstrap().phaseClosed()).isTrue();
+        assertThat(instance.localPhaseDrainedSignal().toCompletableFuture()).isDone();
+        verify(runService).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), eq(0L));
+        verify(runService).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), eq(4L));
     }
 
     @Test

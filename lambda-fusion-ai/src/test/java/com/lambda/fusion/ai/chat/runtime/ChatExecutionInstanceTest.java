@@ -166,7 +166,7 @@ class ChatExecutionInstanceTest {
     @Test
     void shouldCheckpointOutsideInstanceMonitor() {
         AtomicBoolean monitorHeldDuringCheckpoint = new AtomicBoolean(true);
-        when(runService.checkpoint(eq(run), any())).thenAnswer(invocation -> {
+        when(runService.checkpoint(eq(run), any(), anyLong())).thenAnswer(invocation -> {
             monitorHeldDuringCheckpoint.set(Thread.holdsLock(instance));
             return true;
         });
@@ -174,12 +174,12 @@ class ChatExecutionInstanceTest {
         instance.checkpointNow();
 
         assertThat(monitorHeldDuringCheckpoint).isFalse();
-        verify(runService).checkpoint(eq(run), any());
+        verify(runService).checkpoint(eq(run), any(), eq(0L));
     }
 
     @Test
     void shouldAdoptExternalTerminalWhenCheckpointRejected() {
-        when(runService.checkpoint(eq(run), any())).thenReturn(false);
+        when(runService.checkpoint(eq(run), any(), anyLong())).thenReturn(false);
         ChatRunEntity persisted = new ChatRunEntity();
         persisted.setId("run-1");
         persisted.setStatus(ChatRunStatus.STOPPED.name());
@@ -191,13 +191,32 @@ class ChatExecutionInstanceTest {
     }
 
     @Test
+    void shouldRefreshVersionAndRetryWhenCheckpointCollides() {
+        // 版本碰撞：第一次写入被拒（非终态），实例刷新版本后按新版本重写成功。
+        ChatRunEntity persisted = new ChatRunEntity();
+        persisted.setId("run-1");
+        persisted.setStatus(ChatRunStatus.RUNNING.name());
+        persisted.setSnapshotVersion(5L);
+        when(runService.checkpoint(eq(run), any(), eq(0L))).thenReturn(false);
+        when(runService.checkpoint(eq(run), any(), eq(5L))).thenReturn(true);
+        when(runService.loadCurrentOrIdentity(run)).thenReturn(persisted);
+
+        instance.checkpointNow();
+        instance.checkpointNow();
+
+        assertThat(run.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
+        verify(runService).checkpoint(eq(run), any(), eq(0L));
+        verify(runService).checkpoint(eq(run), any(), eq(5L));
+    }
+
+    @Test
     void shouldRequestStopWithoutPreStopCheckpointWhenNoActiveSource() {
         when(runService.finalizeExecution(any(), any())).thenReturn(committed(ChatRunStatus.STOPPED.name()));
 
         boolean interruptRequired = instance.requestStop();
 
         assertThat(interruptRequired).isFalse();
-        verify(runService, never()).checkpoint(any(), any());
+        verify(runService, never()).checkpoint(any(), any(), anyLong());
         assertThat(run.getStatus()).isEqualTo(ChatRunStatus.STOPPED.name());
         assertThat(run.getFinishReason()).isNull();
     }

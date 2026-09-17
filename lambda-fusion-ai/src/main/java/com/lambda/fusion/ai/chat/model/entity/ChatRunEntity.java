@@ -50,6 +50,10 @@ public class ChatRunEntity extends BaseEntity {
     @TableField("snapshot_json")
     private String snapshotJson;
 
+    /** 快照版本围栏：每次快照写入 +1，检查点按版本 CAS，迟到的写入被拒绝。 */
+    @TableField("snapshot_version")
+    private Long snapshotVersion;
+
     @TableField("error_code")
     private String errorCode;
 
