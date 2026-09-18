@@ -3,15 +3,18 @@ package com.lambda.fusion.ai.chat.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lambda.cloud.logger.annotation.OperationLog;
+import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatRun;
 import com.lambda.fusion.ai.chat.model.ChatSessionPage;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
 import com.lambda.fusion.ai.chat.model.CreateSession;
+import com.lambda.fusion.ai.chat.model.RunContext;
 import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.SubmitToolInput;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
+import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,7 +22,9 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.util.concurrent.Callable;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.WebAsyncTask;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Tag(name = "对话会话")
@@ -41,6 +47,9 @@ public class ChatController {
     private final ChatSessionService chatSessionService;
     private final ChatMessageService chatMessageService;
     private final ChatService chatService;
+    private final ChatRunService chatRunService;
+    private final AiProperties properties;
+    private final AsyncTaskExecutor chatWebAsyncExecutor;
 
     @SaCheckPermission(value = "ai:chat-session:page")
     @Operation(summary = "分页查询当前用户的会话")
@@ -124,35 +133,49 @@ public class ChatController {
     @SaCheckPermission(value = "ai:chat-session:run-confirm")
     @Operation(summary = "确认指定Run的工具调用(HITL, SSE)")
     @PostMapping(value = "/{id}/runs/{runId}/confirm", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter confirmRun(
+    public WebAsyncTask<SseEmitter> confirmRun(
             @Parameter(description = "会话ID", required = true) @PathVariable String id,
             @Parameter(description = "Run ID", required = true) @PathVariable String runId,
             @RequestBody @Valid ConfirmToolCall dto,
             HttpServletResponse response) {
         prepareSseResponse(response);
-        return chatService.confirm(id, runId, dto);
+        // 归属装载依赖 Sa-Token 请求上下文（ThreadLocal），必须留在请求线程；
+        // 确认重活（Agent 状态读取、CAS 推进、阶段启动）在共享虚拟线程执行器上异步执行。
+        RunContext context = chatRunService.loadOwned(id, runId);
+        return newWebAsyncTask(() -> chatService.confirmLoaded(context, dto));
     }
 
     @SaCheckPermission(value = "ai:chat-session:run-input-submit")
     @Operation(summary = "提交指定Run的挂起工具输入(HITL, SSE)")
     @PostMapping(value = "/{id}/runs/{runId}/input", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter submitInputRun(
+    public WebAsyncTask<SseEmitter> submitInputRun(
             @Parameter(description = "会话ID", required = true) @PathVariable String id,
             @Parameter(description = "Run ID", required = true) @PathVariable String runId,
             @RequestBody @Valid SubmitToolInput dto,
             HttpServletResponse response) {
         prepareSseResponse(response);
-        return chatService.submitInput(id, runId, dto);
+        RunContext context = chatRunService.loadOwned(id, runId);
+        return newWebAsyncTask(() -> chatService.submitInputLoaded(context, dto));
     }
 
     @SaCheckPermission(value = "ai:chat-session:run-stop")
     @OperationLog(module = "AI", value = "停止指定对话Run")
     @Operation(summary = "停止指定对话Run")
     @PostMapping("/{id}/runs/{runId}/stop")
-    public void stop(
+    public WebAsyncTask<Void> stop(
             @Parameter(description = "会话ID", required = true) @PathVariable String id,
             @Parameter(description = "Run ID", required = true) @PathVariable String runId) {
-        chatService.stop(id, runId);
+        RunContext context = chatRunService.loadOwned(id, runId);
+        return newWebAsyncTask(() -> {
+            chatService.stopLoaded(context);
+            return null;
+        });
+    }
+
+    /** 包装异步任务：超时与 SSE 连接预算一致（callable 只做编排，实际很快）。 */
+    private <T> WebAsyncTask<T> newWebAsyncTask(Callable<T> action) {
+        return new WebAsyncTask<>(
+                properties.getChat().getRun().getConnectionTimeoutSeconds() * 1000, chatWebAsyncExecutor, action);
     }
 
     private static void prepareSseResponse(HttpServletResponse response) {

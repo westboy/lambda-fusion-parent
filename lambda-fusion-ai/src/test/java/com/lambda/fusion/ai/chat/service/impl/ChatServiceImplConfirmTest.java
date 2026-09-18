@@ -68,11 +68,10 @@ class ChatServiceImplConfirmTest {
         ChatSessionEntity session = session();
         ConfirmToolCall command = command(2, List.of(decision("call_1", true)));
 
-        when(runService.loadOwned("session-1", "run-1")).thenReturn(new RunContext(run, session));
         when(chatExecutionService.confirm(run, session, command))
                 .thenThrow(new IllegalStateException("context unavailable"));
 
-        assertThatThrownBy(() -> chatService.confirm("session-1", "run-1", command))
+        assertThatThrownBy(() -> chatService.confirmLoaded(new RunContext(run, session), command))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("context unavailable");
     }
@@ -84,12 +83,11 @@ class ChatServiceImplConfirmTest {
         ConfirmToolCall command = command(2, List.of(decision("call_1", true)));
         ChatRunEntity transitioned = run(ChatRunStatus.RUNNING, 3);
 
-        when(runService.loadOwned("session-1", "run-1")).thenReturn(new RunContext(run, session));
         when(chatExecutionService.confirm(run, session, command))
                 .thenReturn(new ConfirmTransition(transitioned, session, true));
         when(chatExecutionService.bootstrap(any(), any())).thenReturn(new AguiBootstrapModel(0L, List.of(), true));
 
-        SseEmitter emitter = chatService.confirm("session-1", "run-1", command);
+        SseEmitter emitter = chatService.confirmLoaded(new RunContext(run, session), command);
 
         assertThat(emitter).isNotNull();
         verify(chatExecutionService).bootstrap(transitioned, session);
@@ -102,13 +100,12 @@ class ChatServiceImplConfirmTest {
         ConfirmToolCall command = command(2, List.of(decision("call_1", true)));
         ChatRunEntity transitioned = run(ChatRunStatus.RUNNING, 3);
 
-        when(runService.loadOwned("session-1", "run-1")).thenReturn(new RunContext(run, session));
         when(chatExecutionService.confirm(run, session, command))
                 .thenReturn(new ConfirmTransition(transitioned, session, false));
         when(chatExecutionService.bootstrap(any(), any())).thenReturn(new AguiBootstrapModel(0L, List.of(), false));
         when(eventStore.subscribe(any(), anyLong(), any(), any())).thenReturn(mock());
 
-        SseEmitter emitter = chatService.confirm("session-1", "run-1", command);
+        SseEmitter emitter = chatService.confirmLoaded(new RunContext(run, session), command);
 
         assertThat(emitter).isNotNull();
         verify(chatExecutionService).bootstrap(transitioned, session);

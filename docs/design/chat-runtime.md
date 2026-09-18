@@ -108,6 +108,11 @@ AgentScope `REQUIRE_USER_CONFIRM` 是确认事实的来源，但只有**根 Agen
 快照，再追加本地 interrupt 事件即可；待交互提交与周期检查点共享 `snapshot_version` 版本
 CAS，二者在途交错时以版本重试收敛，不引入第二套待交互状态迁移。
 
+`/confirm`、`/input`、`/stop` 的编排拆为两段：归属装载（含 Sa-Token 归属校验）在请求线程完成
+（Sa-Token 上下文是请求线程 ThreadLocal，不随线程传播）；确认/停止重活（Agent 状态读取、
+CAS 推进、阶段启动与事件订阅）经 `WebAsyncTask` 在共享虚拟线程执行器上执行，不占用
+Tomcat 工作线程。
+
 ### 4.4 终结
 
 终结事务负责：

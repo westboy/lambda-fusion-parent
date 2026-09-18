@@ -85,6 +85,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,6 +108,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.core.task.support.TaskExecutorAdapter;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 
@@ -189,6 +193,25 @@ public class AiConfigure {
             ChatRunReconciler reconciler = new ChatRunReconciler(runMapper, sessionMapper, instanceFactory, properties);
             reconciler.start();
             return reconciler;
+        }
+    }
+
+    /**
+     * 对话 Web 异步执行器：confirm/input/stop 的业务重活（Agent 状态读取、CAS 推进、阶段启动）
+     * 在虚拟线程上执行，不占用 Tomcat 工作线程。归属装载（Sa-Token 请求上下文）仍由
+     * Controller 在请求线程完成——Sa-Token 上下文不随线程传播，故不能整体异步化。
+     */
+    @Configuration
+    public static class ChatWebAsyncConfiguration {
+
+        @Bean(destroyMethod = "shutdownNow")
+        public ExecutorService chatWebAsyncExecutorService() {
+            return Executors.newVirtualThreadPerTaskExecutor();
+        }
+
+        @Bean
+        public AsyncTaskExecutor chatWebAsyncExecutor(ExecutorService chatWebAsyncExecutorService) {
+            return new TaskExecutorAdapter(chatWebAsyncExecutorService);
         }
     }
 

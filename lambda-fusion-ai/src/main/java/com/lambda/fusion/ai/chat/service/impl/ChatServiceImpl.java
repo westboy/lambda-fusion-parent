@@ -79,22 +79,19 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public SseEmitter confirm(String sessionId, String runId, ConfirmToolCall command) {
-        RunContext context = chatRunService.loadOwned(sessionId, runId);
+    public SseEmitter confirmLoaded(RunContext context, ConfirmToolCall command) {
         ConfirmTransition transition = chatExecutionService.confirm(context.run(), context.session(), command);
         return openRunEventStream(transition.run(), transition.session());
     }
 
     @Override
-    public SseEmitter submitInput(String sessionId, String runId, SubmitToolInput command) {
-        RunContext context = chatRunService.loadOwned(sessionId, runId);
+    public SseEmitter submitInputLoaded(RunContext context, SubmitToolInput command) {
         ConfirmTransition transition = chatExecutionService.submitInput(context.run(), context.session(), command);
         return openRunEventStream(transition.run(), transition.session());
     }
 
     @Override
-    public void stop(String sessionId, String runId) {
-        RunContext context = chatRunService.loadOwned(sessionId, runId);
+    public void stopLoaded(RunContext context) {
         chatExecutionService.stop(context.run(), context.session());
     }
 
