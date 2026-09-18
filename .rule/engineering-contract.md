@@ -19,6 +19,20 @@
 
 - 父 POM 与 BOM 均为 `2026.1.1-SNAPSHOT`，构建本仓库前必须先把基础框架安装到本地仓库：在 `lambda-cloud-parent` 目录执行 `mvn clean install`（或 `-N`），否则 SNAPSHOT 解析失败。
 
+### 1.4 关键三方框架升级兼容性清单（MUST）
+
+`lambda-fusion-ai` 的执行语义建立在 AgentScope（`io.agentscope:*`）的行为假设之上（历史教训：框架小版本
+行为漂移曾导致子 Agent HITL 事件被误判为运行级待交互）。升级 AgentScope 版本（含小版本）前，必须逐项
+验证并在 PR 描述中确认：
+
+1. **事件序列契约**：根/子 Agent 的 `AGENT_START`/`AGENT_END`/`AGENT_RESULT` 顺序、`source` 标记语义
+   （`source == null` 为根 Agent）；
+2. **HITL 状态语义**：`ASKING`、`TOOL_SUSPENDED`（`GenerateReason`）、`REQUIRE_USER_CONFIRM` /
+   `REQUIRE_EXTERNAL_EXECUTION` 的发出时机与持久化时点（先持久化挂起状态、再发结束事件）；
+3. **挂起/恢复协议**：`getAgentState`/`saveAgentState` 的会话键语义、工具结果补写的 ID 匹配与不重复约束；
+4. **防腐层核对**：升级后 `mvn -pl lambda-fusion-ai test` 必须全量通过，并人工核对
+   `AgentExecutionAdapter`、`AgentEventMapper` 中引用框架行为的注释是否仍然成立，失效注释随升级 PR 一并更新。
+
 ## 2. 框架能力复用契约（禁止重复实现）
 
 ### 2.1 `lambda-fusion-core` 能力复用（MUST）

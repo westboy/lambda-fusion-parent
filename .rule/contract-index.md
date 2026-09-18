@@ -4,7 +4,7 @@
 
 ## A. 条款索引（按主题）
 
-- 依赖/版本治理：工程契约 §1（SNAPSHOT 前置 §1.3）
+- 依赖/版本治理：工程契约 §1（SNAPSHOT 前置 §1.3 / 关键三方框架升级清单 §1.4）
 - 框架能力复用（禁止重复实现）：工程契约 §2
 - 模块自动配置（三件套 / 前缀 / 条件装配）：工程契约 §3（前缀表 §3.2）
 - 模块边界与可选依赖（优雅降级）：工程契约 §4
@@ -28,7 +28,7 @@
 
 ## B. 关键词索引（用于检索）
 
-- 禁止硬编码版本 / parent POM / BOM / `lambda-cloud-starter-dependencies` / `lambda-fusion-bom` / SNAPSHOT 前置 install
+- 禁止硬编码版本 / parent POM / BOM / `lambda-cloud-starter-dependencies` / `lambda-fusion-bom` / SNAPSHOT 前置 install / AgentScope 升级兼容性清单（事件序列、HITL 状态、挂起恢复、防腐层核对）
 - `PageQuery<T>` / `PageView` / `AbstractCrudService<E,V,M>` / `ConverterResolver` / MapStruct / 禁止手写转换 / 禁止自定义分页模型
 - `TreeBuilder` / `TreeNodeUtils` / `TreeDataFilter`
 - `AuthUtils` / `UserDetails` / 禁止重复解析 Sa-Token 上下文
