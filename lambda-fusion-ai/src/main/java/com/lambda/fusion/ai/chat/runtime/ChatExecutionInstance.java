@@ -952,7 +952,10 @@ public final class ChatExecutionInstance {
             }
         }
         finalizeStopped();
-        return interruptRequired;
+        synchronized (this) {
+            // 终态提交后复检源流：覆盖两阶段检查之间 confirm 新起的阶段源流，避免其无中断空跑。
+            return interruptRequired || isRunning();
+        }
     }
 
     /**
