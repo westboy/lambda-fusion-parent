@@ -63,6 +63,7 @@ class ChatExecutionInstanceTest {
                 mock(ChatRunEventStore.class),
                 new AiProperties(),
                 scheduler,
+                (Runnable task) -> task.run(),
                 mock(WorkspaceAuditRecorder.class),
                 run,
                 session(),

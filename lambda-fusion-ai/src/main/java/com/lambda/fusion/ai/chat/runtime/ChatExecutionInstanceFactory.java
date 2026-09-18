@@ -10,6 +10,9 @@ import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.harness.agent.HarnessAgent;
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -33,6 +36,11 @@ public class ChatExecutionInstanceFactory {
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
     private final ObjectProvider<FusionSubagentGateway> subagentGatewayProvider;
     private final AiProperties properties;
+    /**
+     * 共享阻塞工作执行器（虚拟线程）：承载执行实例的 DB 提交、工作区审计等阻塞 I/O，
+     * 使定时调度器回归纯计时职责。
+     */
+    private final ExecutorService blockingExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     /**
      * 构造带 Agent 的完整执行实例。
@@ -89,11 +97,18 @@ public class ChatExecutionInstanceFactory {
                 eventStore,
                 properties,
                 scheduler,
+                blockingExecutor,
                 workspaceAuditRecorder,
                 run,
                 session,
                 agentExecution,
                 chatExecutionSnapshotBuilder);
+    }
+
+    /** 关机时关闭共享阻塞执行器。 */
+    @PreDestroy
+    public void shutdown() {
+        blockingExecutor.shutdownNow();
     }
 
     /**

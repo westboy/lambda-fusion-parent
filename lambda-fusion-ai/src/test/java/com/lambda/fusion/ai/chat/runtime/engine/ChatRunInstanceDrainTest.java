@@ -46,6 +46,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -252,6 +253,46 @@ class ChatRunInstanceDrainTest {
     }
 
     @Test
+    void shouldOffloadCheckpointDbIoFromSchedulerThread() {
+        AiProperties properties = new AiProperties();
+        properties.getChat().getRun().setSnapshotIntervalSeconds(1);
+        // 命名调度线程用于识别；阻塞执行器为真实虚拟线程执行器。
+        ScheduledExecutorService namedScheduler =
+                Executors.newSingleThreadScheduledExecutor(task -> new Thread(task, "test-chat-scheduler"));
+        AtomicReference<String> checkpointThread = new AtomicReference<>();
+        try {
+            ChatRunEntity run = run(ChatRunStatus.RUNNING);
+            when(runService.checkpoint(eq(run), any(ChatRunSnapshot.class), anyLong()))
+                    .thenAnswer(invocation -> {
+                        checkpointThread.set(Thread.currentThread().getName());
+                        return true;
+                    });
+            instance = new ChatExecutionInstance(
+                    runService,
+                    eventStore,
+                    properties,
+                    namedScheduler,
+                    Executors.newVirtualThreadPerTaskExecutor(),
+                    workspaceAuditRecorder,
+                    run,
+                    session(),
+                    adapter,
+                    new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+            Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
+            when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+
+            instance.startPhase(userMsg());
+            source.tryEmitNext(new TextBlockDeltaEvent("reply-1", "block-1", "partial"));
+
+            verify(runService, timeout(2_500)).checkpoint(eq(run), any(ChatRunSnapshot.class), anyLong());
+            // 检查点 DB 写入不在调度线程上执行。
+            assertThat(checkpointThread.get()).isNotEqualTo("test-chat-scheduler");
+        } finally {
+            namedScheduler.shutdownNow();
+        }
+    }
+
+    @Test
     void shouldInterruptAndDisposeSourceAfterInteractionTimeout() throws Exception {
         AiProperties properties = new AiProperties();
         properties.getChat().getRun().setMaxRunDurationSeconds(0);
@@ -324,6 +365,7 @@ class ChatRunInstanceDrainTest {
                 eventStore,
                 properties,
                 scheduler,
+                (Runnable task) -> task.run(),
                 workspaceAuditRecorder,
                 run,
                 session(),

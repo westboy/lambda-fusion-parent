@@ -56,6 +56,12 @@ public final class ChatExecutionInstance {
     private final ChatRunEventStore eventStore;
     private final AiProperties properties;
     private final ScheduledExecutorService scheduler;
+    /**
+     * 共享阻塞工作执行器：调度器到点后的 DB 提交、工作区审计等阻塞 I/O 全部卸载到这里，
+     * 调度线程只负责计时。
+     */
+    private final Executor blockingExecutor;
+
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
     private final CompletableFuture<Void> drainedSignal = new CompletableFuture<>();
     private final CompletableFuture<Void> localPhaseDrainedSignal = new CompletableFuture<>();
@@ -99,7 +105,8 @@ public final class ChatExecutionInstance {
      * @param runService             运行状态服务
      * @param eventStore             运行事件存储
      * @param properties             AI 模块配置
-     * @param scheduler              定时任务执行器
+     * @param scheduler              定时任务执行器（只承载计时）
+     * @param blockingExecutor       阻塞工作执行器（DB 提交、工作区审计）
      * @param workspaceAuditRecorder 工作区审计记录器
      * @param run                    运行实体
      * @param session                会话实体
@@ -111,6 +118,7 @@ public final class ChatExecutionInstance {
             ChatRunEventStore eventStore,
             AiProperties properties,
             ScheduledExecutorService scheduler,
+            Executor blockingExecutor,
             WorkspaceAuditRecorder workspaceAuditRecorder,
             ChatRunEntity run,
             ChatSessionEntity session,
@@ -120,6 +128,7 @@ public final class ChatExecutionInstance {
         this.eventStore = eventStore;
         this.properties = properties;
         this.scheduler = scheduler;
+        this.blockingExecutor = blockingExecutor;
         this.workspaceAuditRecorder = workspaceAuditRecorder;
         this.run = run;
         this.session = session;
@@ -323,7 +332,7 @@ public final class ChatExecutionInstance {
         sourceActive = true;
         agentStreamLifecycle.clear();
         phaseStartedAtMillis = System.currentTimeMillis();
-        agentStreamLifecycle.scheduleInteractionTimeout(() -> runInTenant(this::onInteractionTimeout));
+        agentStreamLifecycle.scheduleInteractionTimeout(() -> executeOffloaded(this::onInteractionTimeout));
         Disposable next;
         try {
             next = agentExecutionAdapter.stream(message)
@@ -584,16 +593,29 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 由实例自身安排一次延迟检查点，不依赖全局扫描。
+     * 由实例自身安排一次延迟检查点，不依赖全局扫描。DB 写入卸载到共享阻塞执行器，调度线程只负责计时。
      */
     private void scheduleCheckpoint() {
         if (checkpointTask != null || scheduler.isShutdown()) {
             return;
         }
         checkpointTask = scheduler.schedule(
-                () -> runInTenant(this::checkpointIfDirty),
+                () -> executeOffloaded(this::checkpointIfDirty),
                 properties.getChat().getRun().getSnapshotIntervalSeconds(),
                 TimeUnit.SECONDS);
+    }
+
+    /**
+     * 把阻塞工作（DB 提交、工作区审计）卸载到共享执行器：避免少数调度线程被阻塞 I/O 占满，
+     * 延迟所有 Run 的超时与检查点任务。执行器已关闭（关机路径）时降级为当前线程执行。
+     */
+    private void executeOffloaded(Runnable task) {
+        Runnable wrapped = () -> runInTenant(task);
+        try {
+            blockingExecutor.execute(wrapped);
+        } catch (RuntimeException rejected) {
+            wrapped.run();
+        }
     }
 
     /**
@@ -741,7 +763,7 @@ public final class ChatExecutionInstance {
         }
         log.warn("对话Run完整终结失败，将有限重试: runId={}, attempt={}", run.getId(), attempt, finalizeFailure);
         scheduler.schedule(
-                () -> runInTenant(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
+                () -> executeOffloaded(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
                 attempt,
                 TimeUnit.SECONDS);
     }
@@ -805,7 +827,7 @@ public final class ChatExecutionInstance {
                 log.warn("对话Run最小失败终结失败，将重试: runId={}, attempt={}", run.getId(), attempt, fallbackFailure);
             }
             scheduler.schedule(
-                    () -> runInTenant(() -> finalizeFailureWithoutProjection(projectionFailure)),
+                    () -> executeOffloaded(() -> finalizeFailureWithoutProjection(projectionFailure)),
                     Math.min(attempt, 30),
                     TimeUnit.SECONDS);
         }

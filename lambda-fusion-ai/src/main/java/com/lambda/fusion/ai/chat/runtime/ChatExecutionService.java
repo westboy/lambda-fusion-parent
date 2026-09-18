@@ -338,10 +338,20 @@ public class ChatExecutionService {
         } catch (RuntimeException interruptFailure) {
             log.warn("协作式停止Run失败，将等待宽限期后强制停止: runId={}", run.getId(), interruptFailure);
         } finally {
+            // 宽限期强制停止含终态 DB 提交，卸载到执行器，调度线程只计时。
             scheduler.schedule(
-                    () -> execution.runInTenant(execution::forceStopIfRunning),
+                    () -> executeOffloaded(() -> execution.runInTenant(execution::forceStopIfRunning)),
                     properties.getChat().getRun().getStopGraceSeconds(),
                     TimeUnit.SECONDS);
+        }
+    }
+
+    /** 把阻塞工作卸载到后台执行器；执行器已关闭（关机路径）时降级为当前线程执行。 */
+    private void executeOffloaded(Runnable task) {
+        try {
+            executionExecutor.execute(task);
+        } catch (RuntimeException rejected) {
+            task.run();
         }
     }
 

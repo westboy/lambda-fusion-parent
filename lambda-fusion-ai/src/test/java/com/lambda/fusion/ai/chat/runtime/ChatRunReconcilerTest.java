@@ -198,6 +198,7 @@ class ChatRunReconcilerTest {
                 eventStore,
                 properties,
                 instanceScheduler,
+                (Runnable task) -> task.run(),
                 workspaceAuditRecorder,
                 run,
                 session,
