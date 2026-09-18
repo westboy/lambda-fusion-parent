@@ -35,10 +35,14 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.HarnessAgent;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -246,6 +250,54 @@ class ChatRunCoordinatorConfirmTest {
         verify(delegate, never()).getAgentState(any(), any());
         verify(runService, never()).advanceConfirmation(any(), any(), anyInt(), any());
         verify(agent, never()).streamEvents(any(Msg.class), any());
+    }
+
+    /** 相位交接时旧阶段句柄永不排空：等待必须有界，超时按状态冲突快速失败而不是挂住请求线程。 */
+    @Test
+    void shouldFailFastWhenOldPhaseNeverDrainsDuringHandover() {
+        AiProperties properties = new AiProperties();
+        properties.getChat().getRun().setStopGraceSeconds(1);
+        ChatExecutionInstanceFactory mockFactory = mock(ChatExecutionInstanceFactory.class);
+        ChatExecutionService fastCoordinator = new ChatExecutionService(
+                runService,
+                eventStore,
+                mock(ChatMessageService.class),
+                mock(ChatAttachmentService.class),
+                mock(com.lambda.fusion.ai.chat.attachment.ChatAttachmentMessageBuilder.class),
+                mock(AppService.class),
+                mockFactory,
+                properties);
+        try {
+            ChatSessionEntity session = session();
+            ChatRunEntity oldRun = awaitingRun(1);
+            ChatExecutionInstance oldExecution = mock(ChatExecutionInstance.class);
+            when(oldExecution.run()).thenReturn(oldRun);
+            when(oldExecution.localPhaseDrainedSignal()).thenReturn(new CompletableFuture<>());
+            ChatExecutionInstance candidate = mock(ChatExecutionInstance.class);
+            when(candidate.run()).thenReturn(awaitingRun(2));
+            when(mockFactory.createAgentBacked(any(), any(), any())).thenReturn(oldExecution, candidate);
+            // 旧阶段句柄注册完成后才放行 confirm，保证交接确定性。
+            CountDownLatch oldPhaseRegistered = new CountDownLatch(1);
+            when(runService.loadCurrentOrIdentity(oldRun)).thenAnswer(invocation -> {
+                oldPhaseRegistered.countDown();
+                return oldRun;
+            });
+            fastCoordinator.start(oldRun, session);
+            assertThat(oldPhaseRegistered.await(3, TimeUnit.SECONDS)).isTrue();
+
+            long startedNanos = System.nanoTime();
+            assertThatThrownBy(() -> fastCoordinator.confirm(
+                            awaitingRun(2), session, command(2, List.of(decision("call_1", true)))))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
+                            .isEqualTo(AiErrorCode.CHAT_RUN_STATE_CONFLICT.getCode()));
+            assertThat(Duration.ofNanos(System.nanoTime() - startedNanos)).isLessThan(Duration.ofSeconds(10));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        } finally {
+            fastCoordinator.shutdown();
+        }
     }
 
     /** 回归：旧消息残留的 ASKING 不计入当前确认批次，三方校验以最后一条助手消息为准。 */

@@ -35,10 +35,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -407,8 +409,8 @@ public class ChatExecutionService {
     }
 
     /**
-     * 跟踪当前 JVM 的阶段句柄。较旧阶段必须先排空；同一或更新阶段已存在时复用其协调结果。
-     * 这里只协调本地资源，不判断 Run 是否有效，也不参与跨节点赢家裁决。
+     * 跟踪当前 JVM 的阶段句柄。较旧阶段必须先排空（等待有界，超时按状态冲突处理，客户端可重试）；
+     * 同一或更新阶段已存在时复用其协调结果。这里只协调本地资源，不判断 Run 是否有效，也不参与跨节点赢家裁决。
      */
     private LocalPhaseSelection trackLocalPhase(
             ChatExecutionInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
@@ -421,15 +423,29 @@ public class ChatExecutionService {
                 return new LocalPhaseSelection(candidate, true);
             }
             if (existing.activePhaseNo() < activePhaseNo) {
-                existing.execution()
-                        .localPhaseDrainedSignal()
-                        .toCompletableFuture()
-                        .join();
+                awaitOldPhaseDrained(execution, existing);
                 releaseLocalPhase(existing);
                 continue;
             }
             permit.close();
             return new LocalPhaseSelection(existing, false);
+        }
+    }
+
+    /** 等待旧阶段排空，带超时上限；超时或中断按状态冲突抛出，避免请求线程被卡死的旧源流无限拖住。 */
+    private void awaitOldPhaseDrained(ChatExecutionInstance candidate, LocalPhaseHandle existing) {
+        try {
+            existing.execution()
+                    .localPhaseDrainedSignal()
+                    .toCompletableFuture()
+                    .get(properties.getChat().getRun().getStopGraceSeconds(), TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AiBusinessException(
+                    AiErrorCode.CHAT_RUN_STATE_CONFLICT, candidate.run().getId());
+        } catch (ExecutionException | TimeoutException expired) {
+            throw new AiBusinessException(
+                    AiErrorCode.CHAT_RUN_STATE_CONFLICT, candidate.run().getId());
         }
     }
 
