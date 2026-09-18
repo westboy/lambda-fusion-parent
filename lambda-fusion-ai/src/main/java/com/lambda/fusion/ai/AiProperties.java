@@ -168,6 +168,46 @@ public class AiProperties {
 
             /** 是否向前端推送 Agent 推理过程(ThinkingBlock)事件。 */
             private boolean enableReasoning = true;
+
+            /** Run 对账参数：孤儿运行与 HITL 等待超时的周期收敛。 */
+            @Valid
+            private Reconcile reconcile = new Reconcile();
+
+            /** 孤儿判定阈值必须大于最大执行时长，否则活跃但长时间无事件的运行会被误收敛。 */
+            @AssertTrue(
+                    message =
+                            "lambda.fusion.ai.chat.run.reconcile.orphan-timeout-seconds 必须大于 max-run-duration-seconds")
+            public boolean isOrphanTimeoutAfterMaxRunDuration() {
+                return reconcile.getOrphanTimeoutSeconds() > maxRunDurationSeconds;
+            }
+
+            /** Run 对账参数。 */
+            @Data
+            public static class Reconcile {
+
+                /** 是否启用 Run 对账。 */
+                private boolean enabled = true;
+
+                /** 对账间隔，单位秒。 */
+                @Min(10)
+                private long intervalSeconds = 60;
+
+                /** 单轮最多收敛的 Run 数。 */
+                @Min(1)
+                @Max(500)
+                private int batchSize = 50;
+
+                /**
+                 * 孤儿运行判定阈值，单位秒：无待交互投影且快照超过该时长未刷新（活跃运行由周期
+                 * 检查点持续刷新 updated_at，且交互超时会先自我终结，故该阈值须大于最大执行时长）。
+                 */
+                @Min(60)
+                private long orphanTimeoutSeconds = 3600;
+
+                /** HITL 待交互（待确认/待输入）最长等待时长，超时自动终结，单位秒。 */
+                @Min(60)
+                private long awaitInteractionTimeoutSeconds = 86_400;
+            }
         }
 
         /**

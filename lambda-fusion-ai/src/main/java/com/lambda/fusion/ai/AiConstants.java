@@ -703,7 +703,8 @@ public interface AiConstants {
         START_FAILED,
         STATE_CONFLICT,
         AWAIT_CONFIRM_FAILED,
-        INTERRUPTED
+        INTERRUPTED,
+        AWAIT_TIMEOUT
     }
 
     /** 工具调用状态，持久化字面量为小写 code。 */

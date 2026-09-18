@@ -12,6 +12,10 @@ import com.lambda.fusion.ai.AiConstants.WorkspaceStorageType;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.channel.service.ChannelConfigService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentOrphanCleaner;
+import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
+import com.lambda.fusion.ai.chat.runtime.ChatExecutionInstanceFactory;
+import com.lambda.fusion.ai.chat.runtime.ChatRunReconciler;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
@@ -164,6 +168,27 @@ public class AiConfigure {
             ChatAttachmentOrphanCleaner cleaner = new ChatAttachmentOrphanCleaner(attachmentService, properties);
             cleaner.start();
             return cleaner;
+        }
+    }
+
+    /** Run 对账：孤儿运行与 HITL 等待超时收敛；默认开启，可用 {@code chat.run.reconcile.enabled} 关闭。 */
+    @Configuration
+    @ConditionalOnProperty(
+            prefix = "lambda.fusion.ai.chat.run.reconcile",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    public static class ChatRunReconcileConfiguration {
+
+        @Bean
+        public ChatRunReconciler chatRunReconciler(
+                ChatRunMapper runMapper,
+                ChatSessionMapper sessionMapper,
+                ChatExecutionInstanceFactory instanceFactory,
+                AiProperties properties) {
+            ChatRunReconciler reconciler = new ChatRunReconciler(runMapper, sessionMapper, instanceFactory, properties);
+            reconciler.start();
+            return reconciler;
         }
     }
 
