@@ -234,6 +234,7 @@ mvn -pl lambda-fusion-ai test -Dtest=AgentGraphTest#shouldRoute
 ### ⛳ 反馈
 
 - 微信 `capf4xj`
+- QQ 交流群：`47736663` — [点击加入](https://qm.qq.com/q/EBIJVZBVGE)
 
 <img src="assets/img.png" alt="capf4xj" width="180"/>
 
