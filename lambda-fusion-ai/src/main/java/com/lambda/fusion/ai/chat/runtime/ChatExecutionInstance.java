@@ -65,6 +65,12 @@ public final class ChatExecutionInstance {
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
     private final CompletableFuture<Void> drainedSignal = new CompletableFuture<>();
     private final CompletableFuture<Void> localPhaseDrainedSignal = new CompletableFuture<>();
+    /**
+     * 业务终态提交完成信号：终态 CAS 成功、采纳外部终态或放弃终结时完成，
+     * 供协调器提前释放容量许可——记忆尾部不再占用执行额度。
+     */
+    private final CompletableFuture<Void> terminalCommittedSignal = new CompletableFuture<>();
+
     private final ChatExecutionFinalizer chatExecutionFinalizer;
     private final AgentStreamLifecycle agentStreamLifecycle;
 
@@ -724,10 +730,12 @@ public final class ChatExecutionInstance {
     }
 
     /**
-     * 终态 DB 提交成功后的回锁收尾：清提交标志，并在无活动源流时完成排空信号。
+     * 终态 DB 提交成功后的回锁收尾：清提交标志，完成终态提交信号（供提前释放容量许可），
+     * 并在无活动源流时完成排空信号。
      */
     private synchronized void completeTerminalAfterCommit() {
         finalizeCommitInProgress = false;
+        terminalCommittedSignal.complete(null);
         // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
         // 否则等待 onSourceTerminated 在源流排空后完成它。
         if (isSourceTerminated()) {
@@ -823,6 +831,7 @@ public final class ChatExecutionInstance {
                         permanent,
                         fallbackFailure);
                 terminal = true;
+                terminalCommittedSignal.complete(null);
                 if (isSourceTerminated()) {
                     drainedSignal.complete(null);
                     localPhaseDrainedSignal.complete(null);
@@ -868,6 +877,14 @@ public final class ChatExecutionInstance {
      */
     CompletionStage<Void> localPhaseDrainedSignal() {
         return localPhaseDrainedSignal;
+    }
+
+    /**
+     * 业务终态提交完成信号：终态 CAS 成功、采纳外部终态或放弃终结时完成。
+     * 供协调器提前释放容量许可——记忆尾部不再占用执行额度。
+     */
+    CompletionStage<Void> terminalCommittedSignal() {
+        return terminalCommittedSignal;
     }
 
     /**
@@ -925,6 +942,7 @@ public final class ChatExecutionInstance {
         }
         terminal = true;
         checkpointDirty = false;
+        terminalCommittedSignal.complete(null);
         if (isSourceTerminated()) {
             drainedSignal.complete(null);
             localPhaseDrainedSignal.complete(null);

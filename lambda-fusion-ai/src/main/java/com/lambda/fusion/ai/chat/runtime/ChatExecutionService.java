@@ -420,6 +420,10 @@ public class ChatExecutionService {
                     activeLocalPhases.putIfAbsent(execution.run().getId(), candidate);
             if (existing == null) {
                 execution.localPhaseDrainedSignal().whenComplete((ignored, failure) -> releaseLocalPhase(candidate));
+                // 业务终态提交后即可释放容量许可（记忆尾部不再占用执行额度）；句柄摘除仍等源流排空。
+                execution
+                        .terminalCommittedSignal()
+                        .whenComplete((ignored, failure) -> candidate.permit().close());
                 return new LocalPhaseSelection(candidate, true);
             }
             if (existing.activePhaseNo() < activePhaseNo) {

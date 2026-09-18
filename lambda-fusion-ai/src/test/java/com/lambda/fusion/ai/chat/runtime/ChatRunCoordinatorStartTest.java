@@ -188,6 +188,92 @@ class ChatRunCoordinatorStartTest {
         verify(execution, timeout(3000)).finalizeFailed(any(), anyString());
     }
 
+    /** 回归：业务终态提交后容量许可即释放，不等待记忆尾部排空。 */
+    @Test
+    void shouldReleaseCapacityAtBusinessTerminalBeforeSourceDrains() {
+        ChatRunStateService runService = mock(ChatRunStateService.class);
+        ChatRunEventStore eventStore = mock(ChatRunEventStore.class);
+        ChatMessageService messageService = mock(ChatMessageService.class);
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        ChatAttachmentMessageBuilder attachmentMessageBuilder = mock(ChatAttachmentMessageBuilder.class);
+        AppService appService = mock(AppService.class);
+        AgentFactory agentFactory = mock(AgentFactory.class);
+        HarnessAgent agent = mock(HarnessAgent.class);
+        AiProperties properties = new AiProperties();
+        // 每用户容量收敛为 1：若许可仍被记忆尾部占用，第二个 Run 将被容量拒绝。
+        properties.getChat().getRun().setMaxActiveRunsPerUser(1);
+        ChatExecutionInstanceFactory instanceFactory = new ChatExecutionInstanceFactory(
+                runService,
+                eventStore,
+                agentFactory,
+                mock(WorkspaceAuditRecorder.class),
+                mock(ObjectProvider.class),
+                properties);
+        coordinator = new ChatExecutionService(
+                runService,
+                eventStore,
+                messageService,
+                attachmentService,
+                attachmentMessageBuilder,
+                appService,
+                instanceFactory,
+                properties);
+
+        ChatSessionEntity session = session();
+        ChatSessionEntity secondSession = session();
+        secondSession.setId("session-2");
+        ChatRunEntity first = run("run-1", 1L);
+        ChatRunEntity second = run("run-2", 2L);
+        second.setSessionId(secondSession.getId());
+        ChatMessageEntity userMessage = new ChatMessageEntity();
+        userMessage.setId(1L);
+        userMessage.setContent("日期");
+
+        when(messageService.findByIdAndSession(anyLong(), anyString())).thenReturn(Optional.of(userMessage));
+        when(attachmentService.listByMessageIds(anyList())).thenReturn(List.of());
+        when(appService.loadById(session.getAppId())).thenReturn(new AppEntity());
+        when(attachmentMessageBuilder.buildUserMsg(any(), any(), anyString(), anyList()))
+                .thenReturn(new UserMessage("日期"));
+        when(agentFactory.getOrBuildForChatRun(session.getAppId(), session.getTenantId()))
+                .thenReturn(agent);
+        when(agent.getDelegate()).thenReturn(mock(ReActAgent.class));
+        when(runService.loadCurrentOrIdentity(any(ChatRunEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        Sinks.Many<AgentEvent> firstSource = Sinks.many().unicast().onBackpressureBuffer();
+        Sinks.Many<AgentEvent> secondSource = Sinks.many().unicast().onBackpressureBuffer();
+        when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
+                .thenReturn(firstSource.asFlux(), secondSource.asFlux());
+        when(runService.finalizeExecution(any(ChatRunEntity.class), any(ChatRunFinalizationCommand.class)))
+                .thenAnswer(invocation -> {
+                    ChatRunFinalizationCommand command = invocation.getArgument(1);
+                    return new ChatRunFinalizationResult(
+                            true,
+                            command.targetStatus().name(),
+                            command.finishReason().name(),
+                            null,
+                            null);
+                });
+        when(eventStore.appendTerminalIfAbsent(
+                        anyString(), anyString(), any(AguiEvent.class), anyString(), anyString()))
+                .thenReturn(new ChatRunEvent(1L, "RUN_FINISHED", "{}"));
+
+        coordinator.start(first, session);
+        verify(agent, timeout(1000)).streamEvents(any(Msg.class), any(RuntimeContext.class));
+        // 业务终态提交，但源流保持打开（记忆尾部仍在运行）。
+        assertThat(firstSource.tryEmitNext(new AgentEndEvent("reply-1")).isSuccess())
+                .isTrue();
+        verify(runService, timeout(1000)).finalizeExecution(eq(first), any(ChatRunFinalizationCommand.class));
+        assertThat(first.getStatus()).isEqualTo(ChatRunStatus.COMPLETED.name());
+
+        coordinator.start(second, secondSession);
+
+        // 许可已在业务终态时释放：第二个 Run 正常启动而不是容量拒绝。
+        verify(agent, timeout(1000).times(2)).streamEvents(any(Msg.class), any(RuntimeContext.class));
+        assertThat(second.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
+        assertThat(firstSource.tryEmitComplete()).isEqualTo(Sinks.EmitResult.OK);
+        assertThat(secondSource.tryEmitComplete()).isEqualTo(Sinks.EmitResult.OK);
+    }
+
     private static ChatRunEntity run(String id, long userMessageId) {
         ChatRunEntity run = new ChatRunEntity();
         run.setId(id);
