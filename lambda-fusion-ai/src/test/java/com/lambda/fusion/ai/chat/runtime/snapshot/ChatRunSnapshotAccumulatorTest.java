@@ -59,6 +59,26 @@ class ChatRunSnapshotAccumulatorTest {
                 .containsExactly(new ChatRunSnapshot.ToolCall("tool-1", "dangerous", "", "", "asking"));
     }
 
+    @Test
+    void shouldSanitizeCompletedToolOnceAndKeepStableAcrossRebuilds() {
+        ChatExecutionSnapshotBuilder accumulator = accumulator();
+        String bigResult = "{\"apiKey\":\"sk-live-secret\",\"data\":\"" + "x".repeat(3000) + "\"}";
+
+        accumulator.apply(List.of(
+                new AguiEvent.ToolCallStart("session-1", "phase-1", "tool-1", "search"),
+                new AguiEvent.ToolCallArgs("session-1", "phase-1", "tool-1", "{}"),
+                new AguiEvent.ToolCallResult("session-1", "phase-1", "tool-1", bigResult, "tool", "reply-1")));
+
+        ChatRunSnapshot.ToolCall first = accumulator.buildSnapshot().tools().get(0);
+        // COMPLETE 即脱敏：密钥字段被屏蔽，超长内容被截断。
+        assertThat(first.result()).doesNotContain("sk-live-secret");
+        assertThat(first.result()).contains("快照内容已截断");
+        // 再次构建（含新增事件）结果保持一致，不会重复截断。
+        accumulator.apply(List.of(new AguiEvent.TextMessageContent("session-1", "phase-1", "m-1", "later")));
+        ChatRunSnapshot.ToolCall second = accumulator.buildSnapshot().tools().get(0);
+        assertThat(second).isEqualTo(first);
+    }
+
     private static ChatExecutionSnapshotBuilder accumulator() {
         return new ChatExecutionSnapshotBuilder(ChatRunSnapshot.empty("run-1", "phase-1", 1));
     }

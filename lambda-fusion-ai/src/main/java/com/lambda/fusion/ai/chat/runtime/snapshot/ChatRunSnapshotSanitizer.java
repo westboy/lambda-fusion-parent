@@ -113,7 +113,11 @@ public class ChatRunSnapshotSanitizer {
         return StringUtils.left(redactText(message), 1000);
     }
 
-    private static ChatRunSnapshot.ToolCall sanitizeTool(ChatRunSnapshot.ToolCall tool) {
+    /**
+     * 清理单个工具调用快照（JSON 解析 + 凭据屏蔽 + 截断）。
+     * 对已是终态（COMPLETE）的工具调用结果幂等，可在完成时提前执行。
+     */
+    public static ChatRunSnapshot.ToolCall sanitizeTool(ChatRunSnapshot.ToolCall tool) {
         if (tool == null) {
             return new ChatRunSnapshot.ToolCall("", "", "", "", ChatRunToolStatus.UNKNOWN.getCode());
         }

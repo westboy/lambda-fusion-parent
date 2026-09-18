@@ -3,6 +3,7 @@ package com.lambda.fusion.ai.chat.runtime;
 import com.lambda.fusion.ai.AiConstants.ChatRunToolStatus;
 import com.lambda.fusion.ai.chat.runtime.agui.InterruptFactory;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
+import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotSanitizer;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
@@ -173,11 +174,26 @@ public final class ChatExecutionSnapshotBuilder {
     /** 补写工具调用结果并置为 COMPLETE。 */
     private void setToolResult(String toolCallId, String result) {
         upsertTool(toolCallId, null, null, result, ChatRunToolStatus.COMPLETE.getCode());
+        sanitizeCompletedTool(toolCallId);
     }
 
     /** 仅更新工具调用状态。 */
     private void setToolStatus(String toolCallId, String status) {
         upsertTool(toolCallId, null, null, null, status);
+        if (ChatRunToolStatus.COMPLETE.getCode().equals(status)) {
+            sanitizeCompletedTool(toolCallId);
+        }
+    }
+
+    /**
+     * 工具进入 COMPLETE 终态后内容不再变化：立即脱敏并替换内存投影，之后每次快照构建
+     * 不再重复解析/截断大内容。快照记录的兜底脱敏对已脱敏内容是廉价 no-op。
+     */
+    private void sanitizeCompletedTool(String toolCallId) {
+        ChatRunSnapshot.ToolCall current = tools.get(toolCallId);
+        if (current != null) {
+            tools.put(toolCallId, ChatRunSnapshotSanitizer.sanitizeTool(current));
+        }
     }
 
     /**
