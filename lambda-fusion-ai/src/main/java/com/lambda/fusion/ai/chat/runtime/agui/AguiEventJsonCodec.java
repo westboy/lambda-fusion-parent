@@ -24,15 +24,8 @@ public final class AguiEventJsonCodec {
         return withRunMetadata(json, chatRunId, aguiRunId);
     }
 
-    /** 为已经编码的事件补充业务 Run 与当前 AG-UI phase 标识。 */
+    /** 为已经编码的事件补充业务 Run 与当前 AG-UI phase 标识；已有同名字段时覆盖，不产生重复键。 */
     public static String withRunMetadata(String json, String chatRunId, String aguiRunId) {
-        String trimmed = json.trim();
-        if (trimmed.endsWith("}")) {
-            return trimmed.substring(0, trimmed.length() - 1)
-                    + ",\"runId\":" + JsonUtils.getJsonCodec().toJson(aguiRunId)
-                    + ",\"chatRunId\":" + JsonUtils.getJsonCodec().toJson(chatRunId)
-                    + "}";
-        }
         return enrichJson(json, Map.of("runId", aguiRunId, "chatRunId", chatRunId));
     }
 

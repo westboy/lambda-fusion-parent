@@ -563,7 +563,13 @@ public final class ChatExecutionInstance {
         if (events == null || events.isEmpty()) {
             return;
         }
-        eventStore.appendAll(run.getId(), run.getAguiRunId(), events);
+        try {
+            eventStore.appendAll(run.getId(), run.getAguiRunId(), events);
+        } catch (IllegalStateException oversize) {
+            // 单事件超过本地缓冲容量：丢弃本次实时推送（快照已先行应用，重连后经 bootstrap 补齐），
+            // 不能让一个超大事件把整条 Run 打死。
+            log.warn("Run事件超过本地缓冲容量，已丢弃实时推送: runId={}", run.getId());
+        }
     }
 
     /**

@@ -84,10 +84,10 @@ final class ChatRunEventBuffer {
         if (terminal != null) {
             return terminal;
         }
+        // encodeRunEvent 已保证 runId/chatRunId 元数据齐全，这里只补终态元数据，避免重复 JSON 键。
         String json = AguiEventJsonCodec.withTerminalMetadata(
                 AguiEventJsonCodec.encodeRunEvent(aguiEvent, runId, aguiRunId), chatRunStatus, finishReason);
-        ChatRunEvent appended = new ChatRunEvent(
-                nextCursor, aguiEvent.getType().name(), AguiEventJsonCodec.withRunMetadata(json, runId, aguiRunId));
+        ChatRunEvent appended = new ChatRunEvent(nextCursor, aguiEvent.getType().name(), json);
         commit(List.of(appended), true);
         return appended;
     }
@@ -120,19 +120,29 @@ final class ChatRunEventBuffer {
 
     /**
      * 把事件发布给全部订阅者；实时队列满（消费过慢）的订阅者被注销并回调失败，
-     * 且同一批次内不再向其继续投递。
+     * 已关闭的订阅者一并摘除，且同一批次内不再向二者继续投递。
      *
      * @param appended 刚提交的事件批次
      */
     private void publish(List<ChatRunEvent> appended) {
         List<QueuedEventSubscription> slowSubscribers = new ArrayList<>();
+        List<QueuedEventSubscription> closedSubscribers = new ArrayList<>();
         for (ChatRunEvent event : appended) {
             for (QueuedEventSubscription subscriber : subscribers.values()) {
-                if (!slowSubscribers.contains(subscriber)
-                        && subscriber.offer(event) == QueuedEventSubscription.OfferResult.FULL) {
-                    slowSubscribers.add(subscriber);
+                if (slowSubscribers.contains(subscriber) || closedSubscribers.contains(subscriber)) {
+                    continue;
+                }
+                switch (subscriber.offer(event)) {
+                    case FULL -> slowSubscribers.add(subscriber);
+                    case CLOSED -> closedSubscribers.add(subscriber);
+                    default -> {
+                        // ACCEPTED：正常投递。
+                    }
                 }
             }
+        }
+        for (QueuedEventSubscription subscriber : closedSubscribers) {
+            subscribers.remove(subscriber.id(), subscriber);
         }
         for (QueuedEventSubscription subscriber : slowSubscribers) {
             subscribers.remove(subscriber.id(), subscriber);

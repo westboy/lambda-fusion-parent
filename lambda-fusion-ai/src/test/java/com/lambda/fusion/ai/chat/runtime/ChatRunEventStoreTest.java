@@ -139,6 +139,24 @@ class ChatRunEventStoreTest {
     }
 
     @Test
+    void shouldWriteTerminalEventWithoutDuplicatedMetadataKeys() {
+        store = newStore(64, 64);
+        AguiEvent terminalEvent =
+                new AguiEvent.RunFinished("thread-1", "phase-1", null, new AguiEvent.RunFinishedSuccessOutcome());
+
+        ChatRunEvent appended = store.appendTerminalIfAbsent("run-1", "phase-1", terminalEvent, "COMPLETED", "SUCCESS");
+
+        // runId/chatRunId 已由 encodeRunEvent 写入，终态包装不得重复追加同名字段（重复键属非法 JSON）。
+        assertThat(occurrences(appended.data(), "\"chatRunId\"")).isEqualTo(1);
+        assertThat(occurrences(appended.data(), "\"runId\"")).isEqualTo(1);
+        assertThat(appended.data())
+                .contains("\"chatRunId\":\"run-1\"")
+                .contains("\"runId\":\"phase-1\"")
+                .contains("\"chatRunStatus\":\"COMPLETED\"")
+                .contains("\"finishReason\":\"SUCCESS\"");
+    }
+
+    @Test
     void shouldBoundLocalReplayWindowWithoutDatabaseWatermark() throws Exception {
         store = newStore(2, 64);
         append("a");
@@ -208,6 +226,14 @@ class ChatRunEventStoreTest {
         properties.getChat().getRun().setMaxBytes(65_536);
         properties.getChat().getRun().setSubscriberQueueSize(queueSize);
         return new ChatRunEventStore(properties);
+    }
+
+    private static int occurrences(String text, String token) {
+        int count = 0;
+        for (int at = text.indexOf(token); at >= 0; at = text.indexOf(token, at + token.length())) {
+            count++;
+        }
+        return count;
     }
 
     private static void awaitSize(List<?> values, int expected) throws InterruptedException {

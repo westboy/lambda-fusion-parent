@@ -31,6 +31,7 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -132,6 +133,45 @@ class ChatRunInstanceTerminalTest {
         ChatRunFinalizationCommand command = captureFinalize();
         assertThat(command.targetStatus()).isEqualTo(ChatRunStatus.COMPLETED);
         assertThat(command.snapshot().pendingTools()).isEmpty();
+    }
+
+    @Test
+    void shouldCompleteRunWhenSingleEventExceedsEventBufferCapacity() {
+        // 单事件超过本地缓冲容量：实时推送被丢弃（快照已先行应用，重连后可补齐），Run 不被打死。
+        AiProperties tinyBuffer = new AiProperties();
+        tinyBuffer.getChat().getRun().setMaxBytes(1024);
+        ChatRunEventStore realStore = new ChatRunEventStore(tinyBuffer);
+        ChatRunEntity run = run(ChatRunStatus.RUNNING, snapshot("", false, false));
+        try {
+            instance = new ChatExecutionInstance(
+                    runService,
+                    realStore,
+                    new AiProperties(),
+                    scheduler,
+                    workspaceAuditRecorder,
+                    run,
+                    session(),
+                    adapter,
+                    new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+            stubTerminalCommit();
+            String oversizeDelta = "x".repeat(2048);
+            when(adapter.stream(any(Msg.class)))
+                    .thenReturn(Flux.concat(
+                            Flux.just(new TextBlockDeltaEvent("reply-1", "block-1", oversizeDelta), agentEnd(null)),
+                            Flux.never()));
+
+            instance.startPhase(
+                    Msg.builderForRole(io.agentscope.core.message.MsgRole.USER).build());
+
+            ChatRunFinalizationCommand command = captureFinalize();
+            assertThat(command.targetStatus()).isEqualTo(ChatRunStatus.COMPLETED);
+            // 超大增量的 Start/Content 未进事件窗口（只有终结前的 TextMessageEnd 关闭事件与终态事件），
+            // 但快照完整保留文本。
+            assertThat(command.snapshot().text()).isEqualTo(oversizeDelta);
+            assertThat(realStore.latestCursor("run-1")).isEqualTo(2L);
+        } finally {
+            realStore.shutdown();
+        }
     }
 
     @Test
