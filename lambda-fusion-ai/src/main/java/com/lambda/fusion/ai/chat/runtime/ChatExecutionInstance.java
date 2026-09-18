@@ -178,6 +178,11 @@ public final class ChatExecutionInstance {
             startPhase(confirmMessage);
         } catch (RuntimeException startFailure) {
             finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(startFailure));
+            // transition 持有的是状态服务返回的另一份实体；同步已提交的终态，避免调用方看到滞后的 RUNNING。
+            transition.run().setStatus(run.getStatus());
+            transition.run().setFinishReason(run.getFinishReason());
+            transition.run().setErrorCode(run.getErrorCode());
+            transition.run().setErrorMessage(run.getErrorMessage());
         }
         return transition;
     }

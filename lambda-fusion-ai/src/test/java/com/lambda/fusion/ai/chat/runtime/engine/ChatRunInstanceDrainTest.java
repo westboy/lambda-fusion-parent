@@ -14,11 +14,13 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.ChatRunFailureCode;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationCommand;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
+import com.lambda.fusion.ai.chat.model.ConfirmTransition;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEvent;
@@ -191,6 +193,37 @@ class ChatRunInstanceDrainTest {
         source.tryEmitNext(new TextBlockDeltaEvent("reply-1", "block-1", "partial"));
 
         verify(runService, timeout(2_500)).checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong());
+    }
+
+    @Test
+    void shouldReturnFailedTerminalViewWhenConfirmedPhaseFailsToStart() {
+        instance = newInstance(run(ChatRunStatus.RUNNING));
+        stubTerminalCommit();
+        Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
+        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong()))
+                .thenReturn(true);
+        instance.startPhase(userMsg());
+        source.tryEmitNext(requireConfirm("call-1"));
+        source.tryEmitNext(agentEnd());
+        source.tryEmitComplete();
+        assertThat(instance.bootstrap().phaseClosed()).isTrue();
+
+        // 确认推进成功，但新阶段订阅同步失败：Run 终结为 START_FAILED，返回视图必须同步该终态。
+        ChatRunEntity advanced = run(ChatRunStatus.RUNNING);
+        advanced.setPhaseNo(2);
+        advanced.setAguiRunId("agui-2");
+        advanced.setSnapshotVersion(1L);
+        when(runService.advanceConfirmation(eq(instance.run()), any(), eq(1), any()))
+                .thenReturn(new ConfirmTransition(advanced, instance.session(), true));
+        when(adapter.readAskingToolBlocks()).thenReturn(List.of(askingBlock("call-1")));
+        when(adapter.stream(any(Msg.class))).thenThrow(new IllegalStateException("subscribe failed"));
+
+        ConfirmTransition transition = instance.confirm(command(1));
+
+        assertThat(transition.resumed()).isTrue();
+        assertThat(transition.run().getStatus()).isEqualTo(ChatRunStatus.FAILED.name());
+        assertThat(transition.run().getErrorCode()).isEqualTo(ChatRunFailureCode.START_FAILED.name());
     }
 
     @Test
