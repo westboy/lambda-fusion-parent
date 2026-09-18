@@ -900,8 +900,9 @@ public final class ChatExecutionInstance {
 
     /**
      * 立即写入执行检查点。实例锁内构建快照并捕获版本号与代际，快照 CAS 写入在实例锁外执行；
-     * 写库期间新到事件会保留脏标记并安排后续检查点。写入被拒时不抛出：已终态则同步外部终态，
-     * 否则视为快照版本碰撞，刷新版本号后由调用方或后续检查点重写。
+     * 写库期间新到事件会保留脏标记并安排后续检查点。写入被拒时不抛出：已终态则同步外部终态
+     * （本地源流仍活动时锁外协作式中断并设宽限期强杀），否则视为快照版本碰撞，刷新版本号后
+     * 由调用方或后续检查点重写。
      */
     void checkpointNow() {
         ChatRunSnapshot snapshot;
@@ -921,11 +922,26 @@ public final class ChatExecutionInstance {
             }
             return;
         }
+        boolean interruptAfterAdopt;
         synchronized (this) {
             if (!adoptIfExternallyTerminated()) {
                 log.warn("Run检查点因快照版本碰撞被拒，已刷新版本等待重写: runId={}", run.getId());
+                return;
             }
+            interruptAfterAdopt = agentStreamLifecycle.isRunning();
         }
+        if (!interruptAfterAdopt) {
+            return;
+        }
+        // 运行已被外部终结（其它节点停止或对账收敛）：本地源流若仍在活动，协作式中断并在
+        // 宽限期后强制取消，避免 Agent 在终态后继续执行工具产生副作用。
+        log.info("Run已被外部终结，本地活动源流执行协作式中断: runId={}", run.getId());
+        try {
+            interruptAgent();
+        } catch (RuntimeException interruptFailure) {
+            log.warn("外部终结后的协作式中断失败，等待宽限期后强制取消: runId={}", run.getId(), interruptFailure);
+        }
+        agentStreamLifecycle.scheduleForceDispose(() -> runInTenant(agentStreamLifecycle::forceDispose));
     }
 
     /**

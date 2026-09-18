@@ -311,6 +311,31 @@ class ChatRunInstanceDrainTest {
     }
 
     @Test
+    void shouldInterruptLocalSourceWhenRunIsExternallyTerminated() {
+        // 模拟跨节点停止/对账收敛：本地仍在执行，检查点写入被终态拒绝后，
+        // 本地应同步外部终态并协作式中断活动源流（避免 Agent 在终态后继续执行工具）。
+        AiProperties properties = new AiProperties();
+        properties.getChat().getRun().setSnapshotIntervalSeconds(1);
+        properties.getChat().getRun().setStopGraceSeconds(1);
+        instance = newInstance(run(ChatRunStatus.RUNNING), properties);
+        Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
+        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        when(runService.checkpoint(eq(instance.run()), any(ChatRunSnapshot.class), anyLong()))
+                .thenReturn(false);
+        ChatRunEntity persisted = run(ChatRunStatus.STOPPED);
+        when(runService.loadCurrentOrIdentity(instance.run())).thenReturn(persisted);
+
+        instance.startPhase(userMsg());
+        source.tryEmitNext(new TextBlockDeltaEvent("reply-1", "block-1", "partial"));
+
+        verify(adapter, timeout(2_500)).interrupt();
+        assertThat(instance.run().getStatus()).isEqualTo(ChatRunStatus.STOPPED.name());
+        // 源流被处置后排空信号收敛。
+        source.tryEmitComplete();
+        assertThat(instance.drainedSignal().toCompletableFuture()).succeedsWithin(Duration.ofSeconds(2));
+    }
+
+    @Test
     void shouldRunWorkspaceAuditOffSourceTerminationThread() {
         ChatRunEntity run = run(ChatRunStatus.RUNNING);
         instance = new ChatExecutionInstance(
