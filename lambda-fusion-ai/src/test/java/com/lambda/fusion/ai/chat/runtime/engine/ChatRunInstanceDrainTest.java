@@ -310,6 +310,41 @@ class ChatRunInstanceDrainTest {
         assertThat(instance.drainedSignal().toCompletableFuture()).succeedsWithin(Duration.ofSeconds(2));
     }
 
+    @Test
+    void shouldRunWorkspaceAuditOffSourceTerminationThread() {
+        ChatRunEntity run = run(ChatRunStatus.RUNNING);
+        instance = new ChatExecutionInstance(
+                runService,
+                eventStore,
+                new AiProperties(),
+                scheduler,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                workspaceAuditRecorder,
+                run,
+                session(),
+                adapter,
+                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+        stubTerminalCommit();
+        AtomicReference<String> auditThread = new AtomicReference<>();
+        org.mockito.Mockito.doAnswer(invocation -> {
+                    auditThread.set(Thread.currentThread().getName());
+                    return null;
+                })
+                .when(workspaceAuditRecorder)
+                .recordChanges(any(), anyLong());
+        Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
+        when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
+        String emitThread = Thread.currentThread().getName();
+
+        instance.startPhase(userMsg());
+        source.tryEmitNext(agentEnd());
+        source.tryEmitComplete();
+
+        // 审计含文件扫描复制与 DB 写入，应在共享阻塞执行器上而非流终止线程上执行。
+        assertThat(instance.drainedSignal().toCompletableFuture()).succeedsWithin(Duration.ofSeconds(2));
+        assertThat(auditThread.get()).isNotEqualTo(emitThread);
+    }
+
     private static ToolUseBlock askingBlock(String toolCallId) {
         return ToolUseBlock.builder()
                 .id(toolCallId)

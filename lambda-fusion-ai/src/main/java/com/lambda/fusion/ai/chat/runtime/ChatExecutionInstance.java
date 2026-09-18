@@ -489,12 +489,20 @@ public final class ChatExecutionInstance {
                         ChatRunSnapshotSanitizer.safeMessage(awaitInteractionFailure));
             }
         }
-        runWorkspaceAudit();
-        if (terminal) {
-            // 最终阶段已提交业务终态，源流排空后即可完成实例级排空信号。
-            drainedSignal.complete(null);
+        // 工作区审计含文件扫描复制与 DB 写入，卸载到共享阻塞执行器，不占源流终止线程；
+        // 排空信号仍在审计完成后按原顺序完成。
+        boolean terminalCommitted;
+        synchronized (this) {
+            terminalCommitted = terminal;
         }
-        localPhaseDrainedSignal.complete(null);
+        executeOffloaded(() -> {
+            runWorkspaceAudit();
+            if (terminalCommitted) {
+                // 最终阶段已提交业务终态，源流排空后即可完成实例级排空信号。
+                drainedSignal.complete(null);
+            }
+            localPhaseDrainedSignal.complete(null);
+        });
     }
 
     /**
