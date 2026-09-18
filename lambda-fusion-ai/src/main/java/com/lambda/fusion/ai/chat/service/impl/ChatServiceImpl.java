@@ -20,6 +20,7 @@ import com.lambda.fusion.ai.chat.service.ChatService;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -39,12 +40,17 @@ public class ChatServiceImpl implements ChatService {
     private final ChatExecutionService chatExecutionService;
     private final ChatRunEventStore eventStore;
     private final AiProperties properties;
-    /** SSE 心跳发送器：单线程守护池，仅写注释行，阻塞或失败由 detach 机制摘除任务。 */
+    /** SSE 心跳调度器：单线程守护池，只负责到点触发。 */
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "chat-sse-heartbeat");
         thread.setDaemon(true);
         return thread;
     });
+    /**
+     * SSE 心跳发送执行器：虚拟线程承载实际写盘，慢客户端的阻塞发送不再拖住全部连接的心跳调度；
+     * 同一连接上一次发送未完成时跳过本次，避免堆积。
+     */
+    private final ExecutorService heartbeatSendExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     @Override
     public SseEmitter streamChat(String sessionId, SendMessage message) {
@@ -94,7 +100,7 @@ public class ChatServiceImpl implements ChatService {
 
     private SseEmitter openRunEventStream(ChatRunEntity chatRunEntity, ChatSessionEntity chatSessionEntity) {
         long timeout = properties.getChat().getRun().getConnectionTimeoutSeconds() * 1000;
-        SseEmitter emitter = new SseEmitter(timeout);
+        SseEmitter emitter = newSseEmitter(timeout);
         AtomicBoolean detached = new AtomicBoolean();
         AtomicReference<ChatRunEventSubscription> subscription = new AtomicReference<>();
         AtomicReference<ScheduledFuture<?>> heartbeat = new AtomicReference<>();
@@ -138,24 +144,49 @@ public class ChatServiceImpl implements ChatService {
         return emitter;
     }
 
-    /** 按配置间隔向订阅连接发送 SSE 注释心跳；发送失败仅解除订阅并取消后续心跳，不影响 Run 执行。 */
+    /** 按配置间隔触发心跳发送；实际写盘在虚拟线程上执行，上一次未完成时跳过本次。 */
     private void scheduleHeartbeat(SseEmitter emitter, Runnable detach, AtomicReference<ScheduledFuture<?>> heartbeat) {
         long intervalSeconds = properties.getChat().getRun().getHeartbeatIntervalSeconds();
         if (intervalSeconds <= 0) {
             return;
         }
+        AtomicBoolean sending = new AtomicBoolean();
         ScheduledFuture<?> task = heartbeatExecutor.scheduleWithFixedDelay(
                 () -> {
+                    if (!sending.compareAndSet(false, true)) {
+                        return;
+                    }
                     try {
-                        emitter.send(SseEmitter.event().comment("ping"));
-                    } catch (IOException | IllegalStateException disconnected) {
-                        detach.run();
+                        heartbeatSendExecutor.execute(() -> {
+                            try {
+                                sendHeartbeat(emitter, detach);
+                            } finally {
+                                sending.set(false);
+                            }
+                        });
+                    } catch (RuntimeException rejected) {
+                        // 发送执行器已关闭（停机中）：本连接心跳自然终止。
+                        sending.set(false);
                     }
                 },
                 intervalSeconds,
                 intervalSeconds,
                 TimeUnit.SECONDS);
         heartbeat.set(task);
+    }
+
+    /** 发送单次 SSE 注释心跳；发送失败仅解除订阅并取消后续心跳，不影响 Run 执行。 */
+    private static void sendHeartbeat(SseEmitter emitter, Runnable detach) {
+        try {
+            emitter.send(SseEmitter.event().comment("ping"));
+        } catch (IOException | IllegalStateException disconnected) {
+            detach.run();
+        }
+    }
+
+    /** 创建 SSE 发射器；提取为包级方法便于测试替换。 */
+    SseEmitter newSseEmitter(long timeoutMillis) {
+        return new SseEmitter(timeoutMillis);
     }
 
     /** 取消未执行的心跳任务并清空引用；允许重复调用。 */
@@ -166,10 +197,11 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
-    /** 停机时中断心跳调度线程池；连接断开与终态不再需要心跳。 */
+    /** 停机时中断心跳调度与发送线程池；连接断开与终态不再需要心跳。 */
     @PreDestroy
     public void shutdown() {
         heartbeatExecutor.shutdownNow();
+        heartbeatSendExecutor.shutdownNow();
     }
 
     private static void send(SseEmitter emitter, ChatRunEvent event) {
