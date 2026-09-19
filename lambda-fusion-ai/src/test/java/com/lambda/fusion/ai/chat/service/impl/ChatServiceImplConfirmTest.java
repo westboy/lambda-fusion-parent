@@ -126,6 +126,18 @@ class ChatServiceImplConfirmTest {
         verify(chatExecutionService).bootstrap(run, session);
     }
 
+    @Test
+    void shouldRejectAttachmentsBeyondConfiguredMaxCount() {
+        // maxCount 配置（默认 5）在服务层生效：接口层 @Size(10) 只是硬上限。
+        SendMessage message = message();
+        message.setAttachmentIds(List.of("a1", "a2", "a3", "a4", "a5", "a6"));
+
+        assertThatThrownBy(() -> chatService.streamChat("session-1", message))
+                .isInstanceOf(AiBusinessException.class)
+                .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
+                        .isEqualTo(AiErrorCode.INVALID_PARAMETER.getCode()));
+    }
+
     private static ChatRunEntity run(ChatRunStatus status, int phaseNo) {
         ChatRunEntity run = new ChatRunEntity();
         run.setId("run-1");

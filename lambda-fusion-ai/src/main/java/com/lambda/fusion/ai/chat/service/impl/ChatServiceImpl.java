@@ -17,6 +17,8 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventSubscription;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
 import com.lambda.fusion.ai.chat.service.ChatService;
+import com.lambda.fusion.ai.exception.AiBusinessException;
+import com.lambda.fusion.ai.exception.AiErrorCode;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.Optional;
@@ -55,6 +57,10 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public SseEmitter streamChat(String sessionId, SendMessage message) {
         Assert.isTrue(message.isContentOrAttachmentPresent(), "消息内容与附件不能同时为空");
+        int maxCount = properties.getChat().getAttachment().getMaxCount();
+        if (message.getAttachmentIds() != null && message.getAttachmentIds().size() > maxCount) {
+            throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "每条消息最多允许 " + maxCount + " 个附件");
+        }
         RunContext context = chatRunService.createOrLoad(sessionId, message);
         if (context.created()) {
             chatExecutionService.start(context.run(), context.session());

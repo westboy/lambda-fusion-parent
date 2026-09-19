@@ -85,6 +85,19 @@ class AiPropertiesValidationTest {
     }
 
     @Test
+    void shouldRejectOrphanRetentionShorterThanRunLifecycle() {
+        // 回收保留时长（1h）小于 Run 最长生命周期（1800s + 86400s）：HITL 长等待运行的生成附件会被误回收。
+        AiProperties properties = new AiProperties();
+        properties.getChat().getAttachment().getOrphanCleanup().setRetentionHours(1);
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .contains("chat.orphanRetentionBeyondRunLifecycle");
+        }
+    }
+
+    @Test
     void shouldValidateQwenImageHttpTimeouts() {
         AiProperties properties = new AiProperties();
         properties.getTools().getQwenImage().setConnectTimeoutSeconds(0);

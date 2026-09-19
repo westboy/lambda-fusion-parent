@@ -115,6 +115,19 @@ public class AiProperties {
         @Valid
         private Run run = new Run();
 
+        /**
+         * 孤儿附件回收保留时长必须覆盖 Run 的最长生命周期（最大执行时长 + 待交互等待超时），
+         * 否则 HITL 长等待运行的生成附件可能在终态绑定前被误回收。
+         */
+        @AssertTrue(
+                message =
+                        "lambda.fusion.ai.chat.attachment.orphan-cleanup.retention-hours 必须覆盖 run.max-run-duration-seconds + run.reconcile.await-interaction-timeout-seconds（换算为小时）")
+        public boolean isOrphanRetentionBeyondRunLifecycle() {
+            long runLifecycleSeconds =
+                    run.getMaxRunDurationSeconds() + run.getReconcile().getAwaitInteractionTimeoutSeconds();
+            return attachment.getOrphanCleanup().getRetentionHours() * 3600L > runLifecycleSeconds;
+        }
+
         @Data
         public static class Run {
 
@@ -219,7 +232,7 @@ public class AiProperties {
             /** 单个附件的大小上限，单位 MB。须与 {@code spring.servlet.multipart.max-file-size} 保持一致。 */
             private long maxFileSizeMb = 10;
 
-            /** 每条消息允许上传的附件数。 */
+            /** 每条消息允许上传的附件数（接口层另有 @Size(max=10) 硬上限，配置只能收紧）。 */
             private int maxCount = 5;
 
             /** 每条消息允许完整内联的附件正文总字符预算；单个文档放不下时改由工具按需读取。 */
