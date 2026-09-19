@@ -3,7 +3,6 @@ package com.lambda.fusion.ai.chat.runtime.event;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiEventJsonCodec;
 import io.agentscope.core.agui.event.AguiEvent;
 import java.io.Serial;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -228,9 +227,9 @@ final class ChatRunEventBuffer {
         subscribers.remove(subscriptionId, identity);
     }
 
-    /** 计算事件 JSON 的 UTF-8 字节数，作为窗口容量计量。 */
+    /** 计算事件 JSON 的字节计量（构造时已预算好，直接读字段）。 */
     private static int eventBytes(ChatRunEvent event) {
-        return event.data().getBytes(StandardCharsets.UTF_8).length;
+        return event.byteSize();
     }
 
     /** 订阅者实时队列溢出时用于断开并回调失败的内部异常。 */

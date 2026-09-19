@@ -220,6 +220,8 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         // 行锁内推进快照版本号，迟到的旧版本检查点无法覆盖下一阶段快照。
         long nextSnapshotVersion = (run.getSnapshotVersion() == null ? 0L : run.getSnapshotVersion()) + 1;
         // 阶段号是确认幂等键；同事务清除待确认 UI 投影，避免重连读到旧阶段中断。
+        // 全量编码只做一次，UPDATE 与内存回写复用同一结果。
+        String nextSnapshotJson = ChatRunSnapshotCodec.encode(nextSnapshot);
         LocalDateTime now = LocalDateTime.now();
         int changed = runMapper.update(
                 null,
@@ -229,7 +231,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
                         .eq(ChatRunEntity::getPhaseNo, sourcePhaseNo)
                         .set(ChatRunEntity::getPhaseNo, targetPhase)
                         .set(ChatRunEntity::getAguiRunId, targetAguiRunId)
-                        .set(ChatRunEntity::getSnapshotJson, ChatRunSnapshotCodec.encode(nextSnapshot))
+                        .set(ChatRunEntity::getSnapshotJson, nextSnapshotJson)
                         .set(ChatRunEntity::getSnapshotVersion, nextSnapshotVersion)
                         .set(ChatRunEntity::getUpdatedAt, now));
         if (changed != 1) {
@@ -239,7 +241,7 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
         run.setStatus(ChatRunStatus.RUNNING.name());
         run.setPhaseNo(targetPhase);
         run.setAguiRunId(targetAguiRunId);
-        run.setSnapshotJson(ChatRunSnapshotCodec.encode(nextSnapshot));
+        run.setSnapshotJson(nextSnapshotJson);
         run.setSnapshotVersion(nextSnapshotVersion);
         return new ConfirmTransition(run, session, true);
     }

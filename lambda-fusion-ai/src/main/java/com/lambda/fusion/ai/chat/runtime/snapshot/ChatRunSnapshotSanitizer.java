@@ -22,6 +22,13 @@ public class ChatRunSnapshotSanitizer {
 
     private static final String TRUNCATION_MARKER = "\n…[快照内容已截断，完整内容未持久化]…\n";
 
+    /** 预编译的凭据正则：热路径上每次调用都 replaceAll 会重复编译。 */
+    private static final java.util.regex.Pattern BEARER_PATTERN =
+            java.util.regex.Pattern.compile("(?i)(bearer\\s+)[a-z0-9._~+/=-]+");
+
+    private static final java.util.regex.Pattern SECRET_FIELD_PATTERN = java.util.regex.Pattern.compile(
+            "(?i)(password|secret|token|api[_-]?key|authorization|credential)(\\s*[:=]\\s*)[^,;\\s]+");
+
     /**
      * 清理工具调用快照。
      *
@@ -94,11 +101,10 @@ public class ChatRunSnapshotSanitizer {
      * @return 清理后的文本
      */
     public static String redactText(String value) {
-        return safe(value)
-                .replaceAll("(?i)(bearer\\s+)[a-z0-9._~+/=-]+", "$1***")
-                .replaceAll(
-                        "(?i)(password|secret|token|api[_-]?key|authorization|credential)(\\s*[:=]\\s*)[^,;\\s]+",
-                        "$1$2***");
+        // 顺序与原始实现一致：先屏蔽 Bearer 令牌，再屏蔽键值型凭据字段。
+        return SECRET_FIELD_PATTERN
+                .matcher(BEARER_PATTERN.matcher(safe(value)).replaceAll("$1***"))
+                .replaceAll("$1$2***");
     }
 
     /**

@@ -27,7 +27,9 @@ public final class ChatRunSnapshotAccumulator {
     private String reasoningMessageId;
     private boolean textOpen;
     private boolean reasoningOpen;
-    private final Map<String, ChatRunSnapshot.ToolCall> tools = new LinkedHashMap<>();
+    /** 工具调用的可变中间状态；{@code args} 用 {@link StringBuilder} 原地累积。 */
+    private final Map<String, ToolCallState> tools = new LinkedHashMap<>();
+
     private List<ChatRunSnapshot.ToolCall> pendingTools;
     private List<ChatRunSnapshot.PendingInput> pendingInputs;
     private final java.util.LinkedHashSet<String> generatedAttachmentIds = new java.util.LinkedHashSet<>();
@@ -48,7 +50,7 @@ public final class ChatRunSnapshotAccumulator {
         textOpen = snapshot.textOpen();
         reasoningOpen = snapshot.reasoningOpen();
         for (ChatRunSnapshot.ToolCall tool : snapshot.tools()) {
-            tools.put(tool.toolCallId(), tool);
+            tools.put(tool.toolCallId(), ToolCallState.fromRecord(tool));
         }
         pendingTools = snapshot.pendingTools();
         pendingInputs = snapshot.pendingInputs();
@@ -160,15 +162,11 @@ public final class ChatRunSnapshotAccumulator {
         }
     }
 
-    /** 追加工具调用参数增量：在已有参数尾部拼接 {@code delta}，状态保持 RUNNING。 */
+    /** 追加工具调用参数增量：在已有参数尾部原地拼接 {@code delta}，状态保持 RUNNING。 */
     private void appendToolArgs(String toolCallId, String delta) {
-        ChatRunSnapshot.ToolCall current = findTool(toolCallId);
-        upsertTool(
-                toolCallId,
-                null,
-                (current == null ? "" : current.args()) + safe(delta),
-                null,
-                ChatRunToolStatus.RUNNING.getCode());
+        ToolCallState state = tools.computeIfAbsent(toolCallId, id -> new ToolCallState());
+        state.args.append(safe(delta));
+        state.status = ChatRunToolStatus.RUNNING.getCode();
     }
 
     /** 补写工具调用结果并置为 COMPLETE。 */
@@ -186,14 +184,20 @@ public final class ChatRunSnapshotAccumulator {
     }
 
     /**
-     * 工具进入 COMPLETE 终态后内容不再变化：立即脱敏并替换内存投影，之后每次快照构建
-     * 不再重复解析/截断大内容。快照记录的兜底脱敏对已脱敏内容是廉价 no-op。
+     * 工具进入 COMPLETE 终态后内容不再变化：立即脱敏并把结果写回中间状态，之后每次快照构建
+     * 不再对大内容做完整脱敏（记录构造器的兜底脱敏对 ≤2048 的已脱敏内容开销小）。
      */
     private void sanitizeCompletedTool(String toolCallId) {
-        ChatRunSnapshot.ToolCall current = tools.get(toolCallId);
-        if (current != null) {
-            tools.put(toolCallId, ChatRunSnapshotSanitizer.sanitizeTool(current));
+        ToolCallState current = tools.get(toolCallId);
+        if (current == null) {
+            return;
         }
+        ChatRunSnapshot.ToolCall sanitized = ChatRunSnapshotSanitizer.sanitizeTool(current.toRecord(toolCallId));
+        current.toolCallName = sanitized.toolCallName();
+        current.args.setLength(0);
+        current.args.append(sanitized.args());
+        current.result = sanitized.result();
+        current.status = sanitized.status();
     }
 
     /**
@@ -224,31 +228,31 @@ public final class ChatRunSnapshotAccumulator {
     /** 以 ASKING 状态补写工具调用并返回其快照投影。 */
     private ChatRunSnapshot.ToolCall upsertAskingTool(AguiEvent.Interrupt interrupt) {
         String toolCallId = interrupt.toolCallId() == null ? interrupt.id() : interrupt.toolCallId();
-        ChatRunSnapshot.ToolCall current = findTool(toolCallId);
+        ToolCallState current = findTool(toolCallId);
         Object metadataName =
                 interrupt.metadata() == null ? null : interrupt.metadata().get("toolName");
         String toolName =
-                metadataName == null ? (current == null ? "" : current.toolCallName()) : String.valueOf(metadataName);
+                metadataName == null ? (current == null ? "" : current.toolCallName) : String.valueOf(metadataName);
         upsertTool(toolCallId, toolName, null, null, ChatRunToolStatus.ASKING.getCode());
-        return findTool(toolCallId);
+        return findTool(toolCallId).toRecord(toolCallId);
     }
 
     /** 以 AWAITING_INPUT 状态补写挂起的交互工具调用。 */
     private void upsertAwaitingInputTool(AguiEvent.Interrupt interrupt) {
         String toolCallId = interrupt.toolCallId() == null ? interrupt.id() : interrupt.toolCallId();
-        ChatRunSnapshot.ToolCall current = findTool(toolCallId);
+        ToolCallState current = findTool(toolCallId);
         Object metadataName =
                 interrupt.metadata() == null ? null : interrupt.metadata().get(InterruptFactory.METADATA_TOOL_NAME);
         String toolName =
-                metadataName == null ? (current == null ? "" : current.toolCallName()) : String.valueOf(metadataName);
+                metadataName == null ? (current == null ? "" : current.toolCallName) : String.valueOf(metadataName);
         upsertTool(toolCallId, toolName, null, null, ChatRunToolStatus.AWAITING_INPUT.getCode());
     }
 
     /** 把输入型 Interrupt 转为待输入投影：保留问题、交互类型与恢复值 JSON Schema。 */
     private ChatRunSnapshot.PendingInput toPendingInput(AguiEvent.Interrupt interrupt) {
         String toolCallId = interrupt.toolCallId() == null ? interrupt.id() : interrupt.toolCallId();
-        ChatRunSnapshot.ToolCall current = findTool(toolCallId);
-        String toolName = current == null ? "" : current.toolCallName();
+        ToolCallState current = findTool(toolCallId);
+        String toolName = current == null ? "" : current.toolCallName;
         Object kind =
                 interrupt.metadata() == null ? null : interrupt.metadata().get(InterruptFactory.METADATA_INPUT_KIND);
         return new ChatRunSnapshot.PendingInput(
@@ -277,7 +281,9 @@ public final class ChatRunSnapshotAccumulator {
                 reasoningMessageId,
                 textOpen,
                 reasoningOpen,
-                List.copyOf(tools.values()),
+                tools.entrySet().stream()
+                        .map(entry -> entry.getValue().toRecord(entry.getKey()))
+                        .toList(),
                 pendingTools,
                 pendingInputs,
                 List.copyOf(generatedAttachmentIds));
@@ -288,32 +294,65 @@ public final class ChatRunSnapshotAccumulator {
         return !pendingTools.isEmpty() || !pendingInputs.isEmpty();
     }
 
-    /** 查找工具调用的当前投影；不存在时返回 {@code null}。 */
-    private ChatRunSnapshot.ToolCall findTool(String toolCallId) {
+    /** 查找工具调用的当前状态；不存在时返回 {@code null}。 */
+    private ToolCallState findTool(String toolCallId) {
         return tools.get(toolCallId);
     }
 
     /**
-     * 按 {@code toolCallId} 插入或合并工具调用投影：传入 {@code null} 的字段沿用已有投影值，
-     * 非空字段覆盖；没有已有投影时空字段落到空串（状态除外，仍可能为 {@code null}）。
+     * 按 {@code toolCallId} 插入或合并工具调用状态：传入 {@code null} 的字段保持不变，
+     * 非空字段覆盖；没有已有状态时空字段落到空串（状态除外，仍可能为 {@code null}）。
      *
      * @param toolCallId 工具调用标识
      * @param toolCallName 工具名；{@code null} 表示保持不变
-     * @param args 工具参数（全量）；{@code null} 表示保持不变
+     * @param args 工具参数（全量覆盖，仅供快照恢复路径）；{@code null} 表示保持不变
      * @param result 工具结果；{@code null} 表示保持不变
      * @param status 工具状态码；{@code null} 表示保持不变
      */
     private void upsertTool(String toolCallId, String toolCallName, String args, String result, String status) {
-        ChatRunSnapshot.ToolCall current = tools.get(toolCallId);
-        String nextName = toolCallName == null && current != null ? current.toolCallName() : safe(toolCallName);
-        String nextArgs = args == null && current != null ? current.args() : safe(args);
-        String nextResult = result == null && current != null ? current.result() : safe(result);
-        String nextStatus = status == null && current != null ? current.status() : status;
-        tools.put(toolCallId, new ChatRunSnapshot.ToolCall(toolCallId, nextName, nextArgs, nextResult, nextStatus));
+        ToolCallState current = tools.computeIfAbsent(toolCallId, id -> new ToolCallState());
+        if (toolCallName != null) {
+            current.toolCallName = safe(toolCallName);
+        }
+        if (args != null) {
+            current.args.setLength(0);
+            current.args.append(args);
+        }
+        if (result != null) {
+            current.result = safe(result);
+        }
+        if (status != null) {
+            current.status = status;
+        }
     }
 
     /** 把 {@code null} 规整为空串，避免快照投影携带空值。 */
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 工具调用的可变中间状态：参数用 {@link StringBuilder} 原地累积，避免流式参数事件
+     * 每次到达都做全量字符串拼接（O(n²) 拷贝）；仅在构建快照时物化为不可变记录。
+     */
+    private static final class ToolCallState {
+
+        private String toolCallName;
+        private final StringBuilder args = new StringBuilder();
+        private String result;
+        private String status;
+
+        static ToolCallState fromRecord(ChatRunSnapshot.ToolCall record) {
+            ToolCallState state = new ToolCallState();
+            state.toolCallName = record.toolCallName();
+            state.args.append(safe(record.args()));
+            state.result = record.result();
+            state.status = record.status();
+            return state;
+        }
+
+        ChatRunSnapshot.ToolCall toRecord(String toolCallId) {
+            return new ChatRunSnapshot.ToolCall(toolCallId, toolCallName, args.toString(), result, status);
+        }
     }
 }
