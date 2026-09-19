@@ -174,7 +174,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         // MultipartFile 内容在请求结束后即被清理，先落临时文件再持久化；finally 立即删除
         Path tempFile = null;
         try {
-            tempFile = Files.createTempFile("chat-att-", "." + extension);
+            tempFile = Files.createTempFile(ChatFileSupport.tempDirectory(), "chat-att-", "." + extension);
             file.transferTo(tempFile);
             inNewTransaction(() -> chatAttachmentMapper.insert(entity));
             AiFileStorage storage = storageResolver.resolve(

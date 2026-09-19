@@ -18,7 +18,19 @@ public final class ChatFileSupport {
 
     private static final String DEFAULT_MIME_TYPE = "application/octet-stream";
 
+    /** 平台统一临时目录路径：{java.io.tmpdir}/lambda-fusion；只允许平台自身在此写临时文件。 */
+    public static final Path TEMP_DIRECTORY = Path.of(System.getProperty("java.io.tmpdir"), "lambda-fusion");
+
     private ChatFileSupport() {}
+
+    /** 返回平台统一临时目录，不存在时创建；创建失败按存储错误抛出。 */
+    public static Path tempDirectory() {
+        try {
+            return Files.createDirectories(TEMP_DIRECTORY);
+        } catch (IOException e) {
+            throw new IllegalStateException("创建临时目录失败: " + TEMP_DIRECTORY, e);
+        }
+    }
 
     /**
      * 清洗文件名：统一分隔符、截取最后一段路径并剔除控制字符；不裁剪空白、不判空。

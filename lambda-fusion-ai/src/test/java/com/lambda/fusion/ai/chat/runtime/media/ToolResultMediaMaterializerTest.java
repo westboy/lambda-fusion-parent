@@ -15,6 +15,7 @@ import com.lambda.fusion.ai.chat.attachment.ChatAttachmentBlockFactory;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.chat.support.ChatFileSupport;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.tools.AudioGenerationTool;
@@ -163,6 +164,51 @@ class ToolResultMediaMaterializerTest {
 
     private static ToolResultBlock result(String toolName, ContentBlock block) {
         return ToolResultBlock.builder().name(toolName).output(List.of(block)).build();
+    }
+
+    @Test
+    void shouldAllowLocalFileOnlyUnderPlatformTempDirectory() throws Exception {
+        AiProperties properties = properties();
+        ChatAttachmentService attachmentService = mock(ChatAttachmentService.class);
+        when(attachmentService.storeGenerated(anyString(), any(Path.class), anyString(), anyString()))
+                .thenReturn(attachment("123456", "ok.png", "image/png"));
+        materializer = new ToolResultMediaMaterializer(attachmentService, blockFactory(properties), properties);
+        // 平台专用临时目录内的 file: 来源放行
+        Path allowed = Files.write(ChatFileSupport.tempDirectory().resolve("mat-ok.png"), "png-bytes".getBytes());
+        // 全局临时目录根下的 file: 来源拒绝
+        Path outside = Files.createTempFile("mat-outside-", ".png");
+        try {
+            ToolResultBlock ok = materializer
+                    .materialize(
+                            result(
+                                    ImageGenerationTool.TOOL_NAME,
+                                    ImageBlock.builder()
+                                            .source(new URLSource(
+                                                    allowed.toUri().toString(), "image/png"))
+                                            .build()),
+                            new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"),
+                            "tool-1")
+                    .block(Duration.ofSeconds(5));
+            assertThat(ok.getOutput()).singleElement().isInstanceOf(DataBlock.class);
+            verify(attachmentService).storeGenerated(anyString(), any(Path.class), anyString(), anyString());
+
+            ToolResultBlock outsideResult = result(
+                    ImageGenerationTool.TOOL_NAME,
+                    ImageBlock.builder()
+                            .source(new URLSource(outside.toUri().toString(), "image/png"))
+                            .build());
+            assertThatThrownBy(() -> materializer
+                            .materialize(
+                                    outsideResult,
+                                    new ToolResultMediaMaterializer.Context("run-1", "session-1", "tenant-1"),
+                                    "tool-2")
+                            .block(Duration.ofSeconds(5)))
+                    .isInstanceOfSatisfying(AiBusinessException.class, error -> assertThat(error.getCode())
+                            .isEqualTo(AiErrorCode.TOOL_RESULT_MEDIA_MATERIALIZATION_FAILED.getCode()));
+        } finally {
+            Files.deleteIfExists(allowed);
+            Files.deleteIfExists(outside);
+        }
     }
 
     private static AiProperties properties() {

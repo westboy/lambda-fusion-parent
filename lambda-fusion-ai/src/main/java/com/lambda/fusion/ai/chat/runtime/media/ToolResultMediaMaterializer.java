@@ -170,7 +170,7 @@ public class ToolResultMediaMaterializer {
         if (encoded.startsWith("data:") && separator >= 0) {
             encoded = encoded.substring(separator + 1);
         }
-        Path temp = Files.createTempFile("tool-media-", ".bin");
+        Path temp = Files.createTempFile(ChatFileSupport.tempDirectory(), "tool-media-", ".bin");
         try (InputStream encodedInput = new ByteArrayInputStream(encoded.getBytes(StandardCharsets.ISO_8859_1));
                 InputStream decoded = Base64.getMimeDecoder().wrap(encodedInput);
                 OutputStream output = Files.newOutputStream(temp)) {
@@ -233,7 +233,7 @@ public class ToolResultMediaMaterializer {
         if (entity.getContentLength() >= 0) {
             ensureWithinLimit(entity.getContentLength(), fileName);
         }
-        Path temp = Files.createTempFile("tool-media-", ".bin");
+        Path temp = Files.createTempFile(ChatFileSupport.tempDirectory(), "tool-media-", ".bin");
         try (InputStream input = entity.getContent();
                 OutputStream output = Files.newOutputStream(temp)) {
             copyBounded(input, output, fileName);
@@ -278,8 +278,10 @@ public class ToolResultMediaMaterializer {
         String storageRoot =
                 aiProperties.getRag().getDocumentStorage().getLocal().getRoot();
         Path defaultWorkspace = Path.of(System.getProperty("user.home"), ".agentscope", "fusion");
+        // 本地 file: 来源只认工作区、知识库存储与平台专用临时目录；
+        // 全局 java.io.tmpdir 根目录不再放行（避免读到其它会话在途的临时文件）。
         return List.of(
-                Path.of(System.getProperty("java.io.tmpdir")),
+                ChatFileSupport.TEMP_DIRECTORY,
                 StringUtils.isBlank(workspaceRoot) ? defaultWorkspace : Path.of(workspaceRoot),
                 StringUtils.isBlank(storageRoot) ? defaultWorkspace.resolve("knowledge-files") : Path.of(storageRoot));
     }

@@ -2,6 +2,7 @@ package com.lambda.fusion.ai.chat.attachment;
 
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.chat.support.ChatFileSupport;
 import com.lambda.fusion.ai.runtime.document.DocumentTextExtractor;
 import com.lambda.fusion.ai.storage.AiFileResource;
 import java.io.IOException;
@@ -74,7 +75,7 @@ public class ChatAttachmentTextReader {
             }
         }
         String extension = StringUtils.defaultIfBlank(attachment.getFileType(), "tmp");
-        Path tempFile = Files.createTempFile("chat-doc-", "." + extension);
+        Path tempFile = Files.createTempFile(ChatFileSupport.tempDirectory(), "chat-doc-", "." + extension);
         try {
             try (OutputStream out = Files.newOutputStream(tempFile)) {
                 attachmentService.writeTo(attachment, out);

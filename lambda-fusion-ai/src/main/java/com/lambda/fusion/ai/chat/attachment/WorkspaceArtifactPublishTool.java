@@ -348,7 +348,7 @@ public class WorkspaceArtifactPublishTool {
     }
 
     private static Path writeTemp(String extension, byte[] content) throws IOException {
-        Path temp = Files.createTempFile("workspace-artifact-", "." + extension);
+        Path temp = Files.createTempFile(ChatFileSupport.tempDirectory(), "workspace-artifact-", "." + extension);
         try {
             Files.write(temp, content);
             return temp;
