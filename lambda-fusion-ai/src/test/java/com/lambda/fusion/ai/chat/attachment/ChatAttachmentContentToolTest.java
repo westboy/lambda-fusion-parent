@@ -1,7 +1,11 @@
 package com.lambda.fusion.ai.chat.attachment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,7 +46,7 @@ class ChatAttachmentContentToolTest {
         attachmentService = mock(ChatAttachmentService.class);
         textReader = mock(ChatAttachmentTextReader.class);
         properties = new AiProperties();
-        tool = new ChatAttachmentContentTool(attachmentService, textReader, properties);
+        tool = new ChatAttachmentContentTool(attachmentService, textReader, properties, new ChatAttachmentTextCache());
         filesystem = new LocalFilesystem(tempDir, true, 10, null);
 
         attachment = new ChatAttachmentEntity();
@@ -143,13 +147,49 @@ class ChatAttachmentContentToolTest {
         assertThat(text(result)).contains("无法读取该附件").doesNotContain("different session");
     }
 
+    @Test
+    void shouldServePagedReadsFromStageCacheWithoutRedownload() throws Exception {
+        properties.getChat().getAttachment().setMaxToolReadChars(5);
+        AbstractFilesystem spyFilesystem = spy(new LocalFilesystem(tempDir.resolve("cache"), true, 10, null));
+        when(textReader.readAll(attachment)).thenReturn("0123456789");
+
+        tool.read("att-1", 0, 5, contextWith(spyFilesystem));
+        tool.read("att-1", 5, 5, contextWith(spyFilesystem));
+
+        // 暂存即缓存：两页读取均命中缓存，从未回源下载。
+        verify(spyFilesystem, never()).downloadFiles(any(), anyList());
+        verify(textReader, times(1)).readAll(attachment);
+    }
+
+    @Test
+    void shouldDownloadOnceWhenStageCacheMisses() throws Exception {
+        // 缓存丢失但沙箱文件仍在（如进程重启后）：第一次读取回源一次，随后命中缓存。
+        properties.getChat().getAttachment().setMaxToolReadChars(5);
+        AbstractFilesystem spyFilesystem = spy(new LocalFilesystem(tempDir.resolve("miss"), true, 10, null));
+        RuntimeContext context = contextWith(spyFilesystem);
+        assertThat(spyFilesystem
+                        .write(context, ".chat-attachments/session-1/att-1.txt", "0123456789")
+                        .isSuccess())
+                .isTrue();
+
+        tool.read("att-1", 0, 5, context);
+        tool.read("att-1", 5, 5, context);
+
+        verify(spyFilesystem, times(1)).downloadFiles(any(), anyList());
+        verify(textReader, never()).readAll(attachment);
+    }
+
     private RuntimeContext context() {
+        return contextWith(filesystem);
+    }
+
+    private RuntimeContext contextWith(AbstractFilesystem targetFilesystem) {
         return RuntimeContext.builder()
                 .userId("zhangsan")
                 .sessionId("session-1")
                 .put(RuntimeProperty.KEY_TENANT_ID, "tenant-1")
                 .put(RuntimeProperty.KEY_LF_SESSION_ID, "session-1")
-                .put(AbstractFilesystem.class, filesystem)
+                .put(AbstractFilesystem.class, targetFilesystem)
                 .build();
     }
 

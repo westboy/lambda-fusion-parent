@@ -26,7 +26,8 @@ import org.springframework.stereotype.Component;
 /**
  * 对话附件只读桥接工具。业务层只负责附件 ID 到已授权文件的映射；正文在首次调用时才抽取并上传到
  * AgentScope {@link AbstractFilesystem}，后续搜索和读取均复用当前运行的会话文件系统。非 HOST 后端由
- * Harness 沙箱生命周期托管，HOST 后端使用受限的会话本地文件系统。
+ * Harness 沙箱生命周期托管，HOST 后端使用受限的会话本地文件系统。暂存正文同时写入
+ * {@link ChatAttachmentTextCache}，分页读取命中缓存，未命中才回源下载，避免 N 页读取的 O(N²) 流量。
  *
  * @author Jin
  */
@@ -50,6 +51,7 @@ public class ChatAttachmentContentTool {
     private final ChatAttachmentService attachmentService;
     private final ChatAttachmentTextReader attachmentTextReader;
     private final AiProperties aiProperties;
+    private final ChatAttachmentTextCache textCache;
 
     /** 首次调用时将授权附件暂存到 AgentScope 文件系统，再使用其 grep 能力按关键词定位。 */
     @Tool(
@@ -123,8 +125,10 @@ public class ChatAttachmentContentTool {
         int appliedLength = Math.min(requestedLength, maxReadChars);
         try {
             StagedAttachment staged = stage(attachmentId, context);
-            FileDownloadResponse downloaded = download(staged, context);
-            String text = new String(downloaded.content(), StandardCharsets.UTF_8);
+            // 优先命中暂存缓存；缓存丢失（如进程重启后沙箱文件仍在）才回源下载一次。
+            String text = textCache.getOrLoad(
+                    cacheKey(staged.attachment()),
+                    () -> new String(download(staged, context).content(), StandardCharsets.UTF_8));
             return ToolResultBlock.text(formatReadResult(
                     staged.attachment(), text, normalizedStart, requestedLength, appliedLength, maxReadChars));
         } catch (Exception e) {
@@ -148,7 +152,8 @@ public class ChatAttachmentContentTool {
                 throw new IllegalArgumentException("附件不是可读取文档");
             }
             if (!filesystem.exists(context, path)) {
-                byte[] content = attachmentTextReader.readAll(attachment).getBytes(StandardCharsets.UTF_8);
+                String text = attachmentTextReader.readAll(attachment);
+                byte[] content = text.getBytes(StandardCharsets.UTF_8);
                 List<FileUploadResponse> responses = filesystem.uploadFiles(context, List.of(Map.entry(path, content)));
                 if (responses.size() != 1 || !responses.getFirst().isSuccess()) {
                     String error = responses.isEmpty()
@@ -156,9 +161,15 @@ public class ChatAttachmentContentTool {
                             : responses.getFirst().error();
                     throw new IllegalStateException(error);
                 }
+                // 暂存即缓存：本次运行的后续分页读取不再回源下载。
+                textCache.put(cacheKey(attachment), text);
             }
             return new StagedAttachment(attachment, filesystem, path);
         });
+    }
+
+    private static String cacheKey(ChatAttachmentEntity attachment) {
+        return attachment.getSessionId() + ":" + attachment.getId();
     }
 
     private static FileDownloadResponse download(StagedAttachment staged, RuntimeContext context) {
