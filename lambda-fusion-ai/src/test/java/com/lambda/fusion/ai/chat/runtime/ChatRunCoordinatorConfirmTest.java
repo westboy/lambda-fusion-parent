@@ -300,6 +300,60 @@ class ChatRunCoordinatorConfirmTest {
         }
     }
 
+    /** 复配等待主导者确认结果的等待必须有界：主导者卡死时追随者按状态冲突快速失败。 */
+    @Test
+    void shouldFailFastWhenLeaderResumeNeverCompletes() {
+        AiProperties properties = new AiProperties();
+        properties.getChat().getRun().setStopGraceSeconds(1);
+        ChatExecutionInstanceFactory mockFactory = mock(ChatExecutionInstanceFactory.class);
+        ChatExecutionService fastCoordinator = new ChatExecutionService(
+                runService,
+                eventStore,
+                mock(ChatMessageService.class),
+                mock(ChatAttachmentService.class),
+                mock(com.lambda.fusion.ai.chat.attachment.ChatAttachmentMessageBuilder.class),
+                mock(AppService.class),
+                mockFactory,
+                properties);
+        try {
+            ChatSessionEntity session = session();
+            CountDownLatch leaderConfirmStarted = new CountDownLatch(1);
+            CountDownLatch releaseLeader = new CountDownLatch(1);
+            ChatExecutionInstance leader = mock(ChatExecutionInstance.class);
+            when(leader.run()).thenReturn(awaitingRun(2));
+            when(leader.localPhaseDrainedSignal()).thenReturn(new CompletableFuture<>());
+            when(leader.confirm(any())).thenAnswer(invocation -> {
+                leaderConfirmStarted.countDown();
+                // 主导者迁移永不返回（模拟卡死）。
+                releaseLeader.await(10, TimeUnit.SECONDS);
+                return new ConfirmTransition(awaitingRun(3), session, true);
+            });
+            ChatExecutionInstance followerCandidate = mock(ChatExecutionInstance.class);
+            when(followerCandidate.run()).thenReturn(awaitingRun(2));
+            when(mockFactory.createAgentBacked(any(), any(), any())).thenReturn(leader, followerCandidate);
+
+            CompletableFuture<Void> leaderCall = CompletableFuture.runAsync(() ->
+                    fastCoordinator.confirm(awaitingRun(2), session, command(2, List.of(decision("call_1", true)))));
+            assertThat(leaderConfirmStarted.await(3, TimeUnit.SECONDS)).isTrue();
+
+            long startedNanos = System.nanoTime();
+            assertThatThrownBy(() -> fastCoordinator.confirm(
+                            awaitingRun(2), session, command(2, List.of(decision("call_1", true)))))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(error -> assertThat(((AiBusinessException) error).getCode())
+                            .isEqualTo(AiErrorCode.CHAT_RUN_STATE_CONFLICT.getCode()));
+            assertThat(Duration.ofNanos(System.nanoTime() - startedNanos)).isLessThan(Duration.ofSeconds(10));
+
+            releaseLeader.countDown();
+            leaderCall.join();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        } finally {
+            fastCoordinator.shutdown();
+        }
+    }
+
     /** 回归：旧消息残留的 ASKING 不计入当前确认批次，三方校验以最后一条助手消息为准。 */
     @Test
     void shouldConfirmWhenEarlierMessageHasStaleAskingBlock() {

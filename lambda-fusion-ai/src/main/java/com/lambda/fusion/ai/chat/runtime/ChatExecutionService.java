@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -144,7 +143,15 @@ public class ChatExecutionService {
             return;
         }
 
-        LocalPhaseSelection localPhase = trackLocalPhase(execution, permit, run.getPhaseNo(), false);
+        LocalPhaseSelection localPhase;
+        try {
+            localPhase = trackLocalPhase(execution, permit, run.getPhaseNo(), false);
+        } catch (RuntimeException trackingFailure) {
+            // 相位交接异常（如旧阶段排空的有界等待超时）：释放许可并终结 Run，避免悬挂 RUNNING。
+            permit.close();
+            failStart(run, session, trackingFailure);
+            return;
+        }
         if (!localPhase.created()) {
             return;
         }
@@ -265,20 +272,27 @@ public class ChatExecutionService {
         }
     }
 
-    /** 等待同节点已经登记的同一目标阶段完成数据库迁移，并把当前请求按幂等重放返回。 */
-    private static ConfirmTransition replayAfterLocalResume(LocalPhaseHandle handle, ChatRunEntity fallbackRun) {
+    /** 等待同节点已经登记的同一目标阶段完成数据库迁移，并把当前请求按幂等重放返回；等待有界。 */
+    private ConfirmTransition replayAfterLocalResume(LocalPhaseHandle handle, ChatRunEntity fallbackRun) {
         CompletableFuture<ConfirmTransition> transition = handle.resumeTransition();
         if (transition == null) {
             throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, fallbackRun.getStatus());
         }
         try {
-            ConfirmTransition completed = transition.join();
+            ConfirmTransition completed =
+                    transition.get(properties.getChat().getRun().getStopGraceSeconds(), TimeUnit.SECONDS);
             return new ConfirmTransition(completed.run(), completed.session(), false);
-        } catch (CompletionException failure) {
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, fallbackRun.getStatus());
+        } catch (TimeoutException timeout) {
+            // 主导者迁移卡死：按状态冲突快速失败，客户端可重试。
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, fallbackRun.getStatus());
+        } catch (ExecutionException failure) {
             if (failure.getCause() instanceof RuntimeException runtimeFailure) {
                 throw runtimeFailure;
             }
-            throw failure;
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_STATE_CONFLICT, fallbackRun.getStatus());
         }
     }
 
