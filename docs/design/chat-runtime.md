@@ -233,3 +233,22 @@ Tomcat 工作线程。
 6. 请求落到非执行节点时不会恢复执行或远程停止；恢复有限失败后由前端提示显式放弃重试。
 7. 用户停止后旧节点迟到的最终结果不能覆盖 `STOPPED`。
 8. Agent 在 HITL 边界暂停后重启应用，确认接口仍能校验持久化 ASKING 状态并进入下一 phase。
+
+## 附录 A. 术语与组件地图
+
+代码组件与本文概念一一对应；阅读源码时以本表为索引。
+
+| 组件 | 概念 | 一句话职责 |
+| --- | --- | --- |
+| `ChatRunCoordinator` | 协调器 | Run 的启动/停止/确认/引导编排；本地阶段句柄与容量许可管理 |
+| `ChatRunInstance` | 执行实例 | 单条 Run 的状态机：事件流、快照、检查点、终态提交 |
+| `ChatRunInstanceFactory` | 实例工厂 | 组装带 Agent 的实例或纯终结实例 |
+| `ChatRunFinalizer` | 终结器 | 终态事务提交与本地终态事件发布 |
+| `ChatRunSnapshotAccumulator` | 快照累加器 | 把 AG-UI 事件投影成浏览器可恢复快照 |
+| `ChatRunEventStore` | 事件存储 | 进程内事件窗口与订阅广播（非持久化） |
+| `ChatRunReconciler` | 对账任务 | 孤儿运行与待交互超时的周期收敛（只走终态 CAS） |
+| `ChatRunStateService` | 状态机面 | Run 的持久化状态迁移（checkpoint/advanceConfirmation/finalizeExecution） |
+| `AgentExecutionAdapter` | 执行适配器 | 对接 AgentScope：事件流、中断、待确认工具读取 |
+| `AgentEventMapper` | 事件映射器 | AgentScope 事件 → 官方 AG-UI 事件（只认根 Agent 的 HITL 边界） |
+| `phaseNo` / `aguiRunId` | 阶段 | 一次 HITL 推进产生一个新阶段；`phaseNo` 是确认幂等键 |
+| `snapshot_version` | 快照版本围栏 | 每次快照写入 +1，迟到的检查点/对账终结按版本 CAS 拒绝 |

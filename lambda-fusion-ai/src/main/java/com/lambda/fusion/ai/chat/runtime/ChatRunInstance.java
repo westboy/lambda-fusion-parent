@@ -175,19 +175,19 @@ public final class ChatRunInstance {
      * @throws AiBusinessException 状态/阶段冲突、确认上下文不可用、决策非法或三方工具调用不一致
      */
     public synchronized ConfirmTransition confirm(ConfirmToolCall command) {
-        Integer sourcePhaseNo = interactionSourcePhase(command == null ? null : command.getPhaseNo(), "确认");
+        Integer sourcePhaseNo = resolveSourcePhaseNo(command == null ? null : command.getPhaseNo(), "确认");
         if (sourcePhaseNo == null) {
             return new ConfirmTransition(run, session, false);
         }
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
-        requireInteractionWindow(sourcePhaseNo, snapshot.pendingTools().isEmpty());
+        assertInteractionReady(sourcePhaseNo, snapshot.pendingTools().isEmpty());
 
         Msg confirmMessage = validateAndBuildMessage(command, snapshot.pendingTools());
-        return getConfirmTransition(sourcePhaseNo, snapshot, confirmMessage);
+        return advanceAndStartPhase(sourcePhaseNo, snapshot, confirmMessage);
     }
 
     @NonNull
-    private ConfirmTransition getConfirmTransition(
+    private ConfirmTransition advanceAndStartPhase(
             Integer sourcePhaseNo, ChatRunSnapshot snapshot, Msg confirmMessage) {
         ConfirmTransition transition = runService.advanceConfirmation(run, session, sourcePhaseNo, snapshot);
         syncRun(transition.run());
@@ -216,21 +216,21 @@ public final class ChatRunInstance {
      * @throws AiBusinessException 状态/阶段冲突、挂起上下文不可用、输入非法或三方工具调用不一致
      */
     public synchronized ConfirmTransition submitInput(SubmitToolInput command) {
-        Integer sourcePhaseNo = interactionSourcePhase(command == null ? null : command.getPhaseNo(), "输入");
+        Integer sourcePhaseNo = resolveSourcePhaseNo(command == null ? null : command.getPhaseNo(), "输入");
         if (sourcePhaseNo == null) {
             return new ConfirmTransition(run, session, false);
         }
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
-        requireInteractionWindow(sourcePhaseNo, snapshot.pendingInputs().isEmpty());
+        assertInteractionReady(sourcePhaseNo, snapshot.pendingInputs().isEmpty());
 
         Msg inputMessage = validateAndBuildInputMessage(command, snapshot.pendingInputs());
-        return getConfirmTransition(sourcePhaseNo, snapshot, inputMessage);
+        return advanceAndStartPhase(sourcePhaseNo, snapshot, inputMessage);
     }
 
     /**
      * 校验交互命令的来源阶段：阶段号缺失直接拒绝；来源阶段已被处理时记录幂等重放并返回 {@code null}。
      */
-    private Integer interactionSourcePhase(Integer sourcePhaseNo, String action) {
+    private Integer resolveSourcePhaseNo(Integer sourcePhaseNo, String action) {
         if (sourcePhaseNo == null) {
             throw new AiBusinessException(AiErrorCode.INVALID_PARAMETER, "phaseNo不能为空");
         }
@@ -251,7 +251,7 @@ public final class ChatRunInstance {
      * 旧阶段源流已完整排空。confirm 与 submitInput 共用同一守护，必须在实例锁内调用以保证与事件回调
      * 的状态判定同帧。
      */
-    private void requireInteractionWindow(int sourcePhaseNo, boolean pendingInteractionEmpty) {
+    private void assertInteractionReady(int sourcePhaseNo, boolean pendingInteractionEmpty) {
         if (!Objects.equals(run.getPhaseNo(), sourcePhaseNo)
                 || !ChatRunStatus.RUNNING.name().equals(run.getStatus())
                 || awaitingInteraction
@@ -344,11 +344,11 @@ public final class ChatRunInstance {
         sourceActive = true;
         agentStreamLifecycle.clear();
         phaseStartedAtMillis = System.currentTimeMillis();
-        agentStreamLifecycle.scheduleInteractionTimeout(() -> executeOffloaded(this::onInteractionTimeout));
+        agentStreamLifecycle.scheduleInteractionTimeout(() -> offloadBlocking(this::onInteractionTimeout));
         Disposable next;
         try {
             next = agentExecutionAdapter.stream(message)
-                    .doFinally(signal -> runInTenant(this::onSourceTerminated))
+                    .doFinally(signal -> runInTenant(this::onStreamDrained))
                     .subscribe(
                             event -> runInTenant(() -> onEvent(event)),
                             error -> runInTenant(() -> onError(error)),
@@ -479,7 +479,7 @@ public final class ChatRunInstance {
      * 当前执行阶段收尾后完成 {@code localPhaseDrainedSignal}，供协调器释放本节点句柄与容量；
      * 只有最终业务终态才完成实例 {@code drainedSignal}。后续 HITL 请求从持久化状态构造新的阶段实例。
      */
-    private void onSourceTerminated() {
+    private void onStreamDrained() {
         boolean commitAwait = false;
         synchronized (this) {
             sourceActive = false;
@@ -492,7 +492,7 @@ public final class ChatRunInstance {
             // 待交互提交必须先于用户 confirm 可见（confirm 以 awaitingInteraction 为冲突守卫），
             // 因此提交仍占用实例锁；HITL 边界每阶段仅一次，锁内短事务可接受。
             try {
-                completeAwaitInteraction();
+                commitPendingInteraction();
             } catch (RuntimeException awaitInteractionFailure) {
                 // 源流已经排空，待交互事实仍无法提交时转为失败终态，避免运行永久停留在 RUNNING。
                 log.error("Run进入待交互失败，收敛为失败终态: runId={}", run.getId(), awaitInteractionFailure);
@@ -507,7 +507,7 @@ public final class ChatRunInstance {
         synchronized (this) {
             terminalCommitted = terminal;
         }
-        executeOffloaded(() -> {
+        offloadBlocking(() -> {
             runWorkspaceAudit();
             if (terminalCommitted) {
                 // 最终阶段已提交业务终态，源流排空后即可完成实例级排空信号。
@@ -535,11 +535,11 @@ public final class ChatRunInstance {
         return !sourceActive;
     }
 
-    private synchronized void completeAwaitInteraction() {
+    private synchronized void commitPendingInteraction() {
         ChatRunSnapshot snapshot = accumulator.buildSnapshot();
         // 先提交待交互快照，再向本地订阅者发布 interrupt，保证事实先于信号。
         List<AguiEvent> events = pendingInteractionEvents;
-        if (!persistAwaitSnapshot(snapshot)) {
+        if (!commitPendingSnapshot(snapshot)) {
             // 终态会拒绝迟到的待交互快照；不存在第二套待交互状态迁移。
             awaitingInteraction = false;
             pendingInteractionEvents = null;
@@ -562,7 +562,7 @@ public final class ChatRunInstance {
      * 提交待交互快照：版本碰撞（在途检查点与本次提交交错）时按数据库最新版本有限重试；
      * 运行已被并发提交终态时回读终态并返回 {@code false}。
      */
-    private boolean persistAwaitSnapshot(ChatRunSnapshot snapshot) {
+    private boolean commitPendingSnapshot(ChatRunSnapshot snapshot) {
         for (int attempt = 1; attempt <= MAX_PROJECTION_FINALIZE_ATTEMPTS; attempt++) {
             boolean written;
             try {
@@ -578,7 +578,7 @@ public final class ChatRunInstance {
                 persistedSnapshotVersion++;
                 return true;
             }
-            if (adoptIfExternallyTerminated()) {
+            if (adoptExternalTerminal()) {
                 return false;
             }
         }
@@ -603,7 +603,7 @@ public final class ChatRunInstance {
 
     /**
      * 事件批次写入后判断是否需要安排检查点：无增量、已终态或处于待交互态时跳过。
-     * 待交互态的快照由 {@code completeAwaitInteraction} 统一提交，不走延迟检查点。
+     * 待交互态的快照由 {@code commitPendingInteraction} 统一提交，不走延迟检查点。
      */
     private void maybeCheckpoint() {
         if (!checkpointDirty || terminal || accumulator.hasPendingInteraction()) {
@@ -620,7 +620,7 @@ public final class ChatRunInstance {
             return;
         }
         checkpointTask = scheduler.schedule(
-                () -> executeOffloaded(this::checkpointIfDirty),
+                () -> offloadBlocking(this::checkpointIfDirty),
                 properties.getChat().getRun().getSnapshotIntervalSeconds(),
                 TimeUnit.SECONDS);
     }
@@ -629,7 +629,7 @@ public final class ChatRunInstance {
      * 把阻塞工作（DB 提交、工作区审计）卸载到共享执行器：避免少数调度线程被阻塞 I/O 占满，
      * 延迟所有 Run 的超时与检查点任务。执行器已关闭（关机路径）时降级为当前线程执行。
      */
-    private void executeOffloaded(Runnable task) {
+    private void offloadBlocking(Runnable task) {
         Runnable wrapped = () -> runInTenant(task);
         try {
             blockingExecutor.execute(wrapped);
@@ -716,16 +716,10 @@ public final class ChatRunInstance {
     }
 
     /**
-     * 终态提交的唯一入口：实例锁内完成状态翻转、检查点取消与快照闭合，随后把数据库终态提交
-     * （含消息/附件投影与会话行锁等待）移到实例锁外执行，提交结束后回锁同步排空信号。
+     * 终态提交的唯一入口：锁内翻转状态并闭合快照，数据库提交（含消息/附件投影与会话行锁）在锁外执行。
      *
-     * <p>锁外提交窗口内，{@code confirm}/{@code submitInput} 由 {@code finalizeCommitInProgress}
-     * 拦截为状态冲突；数据库行锁保证终态与并发状态迁移的最终串行。非 COMPLETED 终态会通过适配器
-     * 拒绝未决的工具调用（denyPendingToolCalls）。数据库提交失败交给 {@code handleFinalizeFailure}
-     * 退避重试；成功且无活动源流时立即完成排空信号，否则由 {@code onSourceTerminated} 在源流排空后完成。
-     *
-     * <p>注意：从持有实例锁的调用方（如 confirm 的 startPhase 失败路径）进入时，monitor 可重入导致
-     * 提交实际仍在锁内执行——该路径低频（仅启动失败），可接受。
+     * <p>锁外窗口内 confirm/submitInput 由 {@code finalizeCommitInProgress} 拦截为状态冲突；提交失败交
+     * {@code handleFinalizeFailure} 退避重试；快照版本围栏落败（并发推进）时放弃并复位标志，不重试。
      *
      * @param status       终态状态
      * @param reason       结束原因
@@ -790,7 +784,7 @@ public final class ChatRunInstance {
         finalizeCommitInProgress = false;
         terminalCommittedSignal.complete(null);
         // 业务终态后若无活动源流（如纯终结恢复、源流已先终止、启动同步失败），立即完成排空信号；
-        // 否则等待 onSourceTerminated 在源流排空后完成它。
+        // 否则等待 onStreamDrained 在源流排空后完成它。
         if (isSourceTerminated()) {
             drainedSignal.complete(null);
             localPhaseDrainedSignal.complete(null);
@@ -832,7 +826,7 @@ public final class ChatRunInstance {
         }
         log.warn("对话Run完整终结失败，将有限重试: runId={}, attempt={}", run.getId(), attempt, finalizeFailure);
         scheduler.schedule(
-                () -> executeOffloaded(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
+                () -> offloadBlocking(() -> finalizeTerminal(status, reason, errorCode, errorMessage)),
                 attempt,
                 TimeUnit.SECONDS);
     }
@@ -908,7 +902,7 @@ public final class ChatRunInstance {
                 log.warn("对话Run最小失败终结失败，将重试: runId={}, attempt={}", run.getId(), attempt, fallbackFailure);
             }
             scheduler.schedule(
-                    () -> executeOffloaded(() -> finalizeFailureWithoutProjection(projectionFailure)),
+                    () -> offloadBlocking(() -> finalizeFailureWithoutProjection(projectionFailure)),
                     Math.min(attempt, 30),
                     TimeUnit.SECONDS);
         }
@@ -988,7 +982,7 @@ public final class ChatRunInstance {
         }
         boolean interruptAfterAdopt;
         synchronized (this) {
-            if (!adoptIfExternallyTerminated()) {
+            if (!adoptExternalTerminal()) {
                 log.warn("Run检查点因快照版本碰撞被拒，已刷新版本等待重写: runId={}", run.getId());
                 return;
             }
@@ -1013,7 +1007,7 @@ public final class ChatRunInstance {
      * 返回 {@code true}；非终态拒绝视为快照版本碰撞，从数据库刷新版本号、保留脏标记等待重写，返回
      * {@code false}。
      */
-    private boolean adoptIfExternallyTerminated() {
+    private boolean adoptExternalTerminal() {
         ChatRunEntity current = runService.loadCurrentOrIdentity(run);
         run.setStatus(current.getStatus());
         if (!ChatRunStatus.isTerminal(current.getStatus())) {
@@ -1059,7 +1053,7 @@ public final class ChatRunInstance {
     /**
      * 取消活动事件流并终结运行。dispose 出锁以避免取消回调回流死锁，DB 终态迁移在锁外完成。
      */
-    public void forceStopIfRunning() {
+    public void forceStop() {
         agentStreamLifecycle.forceDispose();
         finalizeStopped();
     }
