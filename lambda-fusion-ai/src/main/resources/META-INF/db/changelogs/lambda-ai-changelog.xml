@@ -1019,7 +1019,7 @@
             </not>
         </preConditions>
         <addColumn tableName="ai_chat_attachment">
-            <column name="source" type="varchar(16)" defaultValueString="uploaded"
+            <column name="source" type="varchar(16)" defaultValue="uploaded"
                     remarks="附件来源(uploaded=用户上传,generated=工具生成);终态绑定只认generated孤儿,隔离伪造引用"/>
         </addColumn>
     </changeSet>
