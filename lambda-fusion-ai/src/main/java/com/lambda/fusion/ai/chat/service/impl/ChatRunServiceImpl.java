@@ -325,7 +325,8 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             if (assistant == null) {
                 attachmentService.discardGenerated(session.getId(), generatedAttachmentIds);
             } else {
-                attachmentService.bindToMessage(session, generatedAttachmentIds, assistant.getId());
+                // 终态绑定容忍缺失/伪造的引用（跳过并告警），不让工具输出里的引用终结整条 Run。
+                attachmentService.bindGeneratedToMessage(session, generatedAttachmentIds, assistant.getId());
             }
         }
         LocalDateTime now = LocalDateTime.now();

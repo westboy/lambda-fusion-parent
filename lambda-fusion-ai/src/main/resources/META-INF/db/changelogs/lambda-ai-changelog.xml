@@ -1011,4 +1011,17 @@
         </addColumn>
     </changeSet>
 
+    <!-- ========== ai_chat_attachment 增附件来源列 ========== -->
+    <changeSet id="lambda-ai-2026091900010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="ai_chat_attachment" columnName="source"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="ai_chat_attachment">
+            <column name="source" type="varchar(16)" defaultValueString="uploaded"
+                    remarks="附件来源(uploaded=用户上传,generated=工具生成);终态绑定只认generated孤儿,隔离伪造引用"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

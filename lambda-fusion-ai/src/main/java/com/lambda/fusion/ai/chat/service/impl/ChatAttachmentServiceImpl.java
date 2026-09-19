@@ -2,6 +2,7 @@ package com.lambda.fusion.ai.chat.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.lambda.fusion.ai.AiConstants.ChatAttachmentSource;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
@@ -156,11 +157,12 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         ChatAttachmentEntity entity = new ChatAttachmentEntity();
         entity.setId(IdUtil.getSnowflakeNextIdStr());
         entity.setSessionId(session.getId());
-        entity.setFileName(StringUtils.defaultIfBlank(file.getOriginalFilename(), entity.getId()));
+        entity.setFileName(StringUtils.defaultIfBlank(normalizeFileName(file.getOriginalFilename()), entity.getId()));
         entity.setFileType(extension);
         entity.setMimeType(file.getContentType());
         entity.setSizeBytes(file.getSize());
         entity.setCategory(category);
+        entity.setSource(ChatAttachmentSource.UPLOADED.getCode());
         entity.setCreatedAt(LocalDateTime.now());
 
         // MultipartFile 内容在请求结束后即被清理，先落临时文件再持久化；finally 立即删除
@@ -220,6 +222,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         entity.setMimeType(normalizedMimeType);
         entity.setSizeBytes(size);
         entity.setCategory(resolveGeneratedCategory(normalizedMimeType));
+        entity.setSource(ChatAttachmentSource.GENERATED.getCode());
         entity.setCreatedAt(LocalDateTime.now());
 
         try {
@@ -303,6 +306,30 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             if (entity == null
                     || (entity.getMessageId() != null && !entity.getMessageId().equals(messageId))) {
                 throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
+            }
+            entity.setMessageId(messageId);
+            chatAttachmentMapper.updateById(entity);
+            attachments.add(entity);
+        }
+        return attachments;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<ChatAttachmentEntity> bindGeneratedToMessage(
+            ChatSessionEntity session, List<String> attachmentIds, Long messageId) {
+        List<ChatAttachmentEntity> attachments = new java.util.ArrayList<>();
+        for (String attachmentId : attachmentIds) {
+            // 只认本会话内「工具生成且未绑定」的孤儿附件；伪造/缺失/越界/已绑定一律跳过，
+            // 工具输出里的 attachment:<id> 引用不是可信事实，不能让它终结整条 Run。
+            ChatAttachmentEntity entity = chatAttachmentMapper.selectOne(new LambdaQueryWrapper<ChatAttachmentEntity>()
+                    .eq(ChatAttachmentEntity::getId, attachmentId)
+                    .eq(ChatAttachmentEntity::getSessionId, session.getId())
+                    .eq(ChatAttachmentEntity::getSource, ChatAttachmentSource.GENERATED.getCode())
+                    .isNull(ChatAttachmentEntity::getMessageId));
+            if (entity == null) {
+                log.warn("生成附件终态绑定跳过（不存在/来源不符/已绑定/跨会话）: attachmentId={}, sessionId={}", attachmentId, session.getId());
+                continue;
             }
             entity.setMessageId(messageId);
             chatAttachmentMapper.updateById(entity);

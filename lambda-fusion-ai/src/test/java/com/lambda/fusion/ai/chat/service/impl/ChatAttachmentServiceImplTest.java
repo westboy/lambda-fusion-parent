@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.ai.AiConstants.ChatAttachmentSource;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
@@ -280,6 +282,32 @@ class ChatAttachmentServiceImplTest {
             assertThatThrownBy(() -> service.upload("session-1", doc)).isInstanceOf(AiBusinessException.class);
         }
         verifyNoInteractions(appService);
+    }
+
+    @Test
+    void shouldBindOnlyGeneratedOrphanAttachments() {
+        ChatSessionEntity session = sessionOf("app-1");
+        ChatAttachmentEntity generated = attachment("session-1", null);
+        generated.setSource(ChatAttachmentSource.GENERATED.getCode());
+        when(attachmentMapper.selectOne(any())).thenReturn(generated);
+
+        List<ChatAttachmentEntity> bound = service.bindGeneratedToMessage(session, List.of("att-1"), 10L);
+
+        assertThat(bound).hasSize(1);
+        assertThat(generated.getMessageId()).isEqualTo(10L);
+        verify(attachmentMapper).updateById(generated);
+    }
+
+    @Test
+    void shouldSkipForgedMissingOrForeignGeneratedAttachmentIds() {
+        // 伪造/缺失/来源不符/已绑定的引用一律查不到（查询带 generated+孤儿条件），降级为跳过。
+        ChatSessionEntity session = sessionOf("app-1");
+        when(attachmentMapper.selectOne(any())).thenReturn(null);
+
+        List<ChatAttachmentEntity> bound = service.bindGeneratedToMessage(session, List.of("att-x", "att-y"), 10L);
+
+        assertThat(bound).isEmpty();
+        verify(attachmentMapper, never()).updateById(any(ChatAttachmentEntity.class));
     }
 
     private static ChatSessionEntity sessionOf(String appId) {

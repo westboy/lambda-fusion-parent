@@ -48,6 +48,10 @@ public class ChatAttachmentEntity {
     @Schema(description = "类别: IMAGE/DOCUMENT/AUDIO/VIDEO/FILE")
     private String category;
 
+    @TableField("source")
+    @Schema(description = "来源: uploaded=用户上传 / generated=工具生成")
+    private String source;
+
     @TableField("storage_type")
     @Schema(description = "存储类型: LOCAL/OSS")
     private String storageType;

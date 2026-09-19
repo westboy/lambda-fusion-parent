@@ -145,7 +145,7 @@ class ChatRunServiceImplTest {
                         null));
 
         assertThat(result.committed()).isTrue();
-        verify(attachmentService).bindToMessage(session, List.of("123456"), 10L);
+        verify(attachmentService).bindGeneratedToMessage(session, List.of("123456"), 10L);
         ArgumentCaptor<LambdaUpdateWrapper<ChatRunEntity>> updateCaptor =
                 ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
         verify(runMapper).update(isNull(), updateCaptor.capture());

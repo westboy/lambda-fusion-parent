@@ -51,6 +51,13 @@ public interface ChatAttachmentService {
      */
     List<ChatAttachmentEntity> bindToMessage(ChatSessionEntity session, List<String> attachmentIds, Long messageId);
 
+    /**
+     * 终态绑定工具生成的附件到助手消息：只认本会话内「工具生成且未绑定」的孤儿附件；
+     * 缺失、已绑定、跨会话或来源不符的 ID 降级为跳过并告警——伪造或已删除的引用不能终结整条 Run。
+     */
+    List<ChatAttachmentEntity> bindGeneratedToMessage(
+            ChatSessionEntity session, List<String> attachmentIds, Long messageId);
+
     /** 按消息 ID 批量查询用于历史消息展示的附件。 */
     List<ChatAttachmentEntity> listByMessageIds(Collection<Long> messageIds);
 

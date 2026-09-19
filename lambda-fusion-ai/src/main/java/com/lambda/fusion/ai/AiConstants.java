@@ -719,4 +719,14 @@ public interface AiConstants {
 
         private final String code;
     }
+
+    /** 对话附件来源，持久化字面量为小写 code。 */
+    @Getter
+    @AllArgsConstructor
+    enum ChatAttachmentSource {
+        UPLOADED("uploaded"),
+        GENERATED("generated");
+
+        private final String code;
+    }
 }
