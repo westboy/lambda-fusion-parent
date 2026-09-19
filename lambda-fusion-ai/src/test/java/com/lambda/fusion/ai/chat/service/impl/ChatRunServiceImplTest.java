@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -309,6 +310,62 @@ class ChatRunServiceImplTest {
                 .isInstanceOf(AiBusinessException.class)
                 .satisfies(e -> assertThat(((AiBusinessException) e).getCode())
                         .isEqualTo(AiErrorCode.CHAT_RUN_STATE_CONFLICT.getCode()));
+    }
+
+    @Test
+    void shouldAbandonFinalizationWhenSnapshotVersionFenceMismatches() {
+        // 快照版本围栏：库内版本已被并发推进（v3 ≠ 期望 v1），终结放弃且不做任何写入。
+        ChatRunEntity identity = run(ChatRunStatus.RUNNING);
+        ChatRunEntity persisted = run(ChatRunStatus.RUNNING);
+        persisted.setSnapshotVersion(3L);
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId("session-1");
+        session.setUserId("user-1");
+        when(sessionMapper.selectForUpdate("session-1")).thenReturn(session);
+        when(runMapper.selectOne(any())).thenReturn(persisted);
+
+        var result = service.finalizeExecution(
+                identity,
+                new ChatRunFinalizationCommand(
+                        ChatRunStatus.FAILED,
+                        ChatRunFinishReason.ERROR,
+                        ChatRunSnapshot.empty("run-1", "agui-1", 1),
+                        null,
+                        ChatRunFailureCode.INTERRUPTED,
+                        "执行节点故障",
+                        1L));
+
+        assertThat(result.committed()).isFalse();
+        assertThat(result.status()).isEqualTo(ChatRunStatus.RUNNING.name());
+        verifyNoInteractions(messageService, attachmentService);
+        verify(runMapper, never()).update(isNull(), any(LambdaUpdateWrapper.class));
+    }
+
+    @Test
+    void shouldCommitFinalizationWhenSnapshotVersionFenceMatches() {
+        ChatRunEntity identity = run(ChatRunStatus.RUNNING);
+        ChatRunEntity persisted = run(ChatRunStatus.RUNNING);
+        persisted.setSnapshotVersion(1L);
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId("session-1");
+        session.setUserId("user-1");
+        when(sessionMapper.selectForUpdate("session-1")).thenReturn(session);
+        when(runMapper.selectOne(any())).thenReturn(persisted);
+        when(runMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+
+        var result = service.finalizeExecution(
+                identity,
+                new ChatRunFinalizationCommand(
+                        ChatRunStatus.FAILED,
+                        ChatRunFinishReason.ERROR,
+                        ChatRunSnapshot.empty("run-1", "agui-1", 1),
+                        null,
+                        ChatRunFailureCode.INTERRUPTED,
+                        "执行节点故障",
+                        1L));
+
+        assertThat(result.committed()).isTrue();
+        verify(runMapper).update(isNull(), any(LambdaUpdateWrapper.class));
     }
 
     private static ChatRunEntity run(ChatRunStatus status) {

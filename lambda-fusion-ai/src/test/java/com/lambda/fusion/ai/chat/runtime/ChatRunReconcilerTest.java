@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,6 +65,7 @@ class ChatRunReconcilerTest {
         reconciler = new ChatRunReconciler(runMapper, sessionMapper, instanceFactory, properties);
 
         when(sessionMapper.selectById("session-1")).thenReturn(session());
+        lenient().when(runService.loadCurrentOrIdentity(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient()
                 .when(runService.finalizeExecution(any(), any(ChatRunFinalizationCommand.class)))
                 .thenAnswer(invocation -> {
@@ -93,6 +95,7 @@ class ChatRunReconcilerTest {
 
     @AfterEach
     void tearDown() {
+        reconciler.stop();
         instanceScheduler.shutdownNow();
     }
 
@@ -183,6 +186,38 @@ class ChatRunReconcilerTest {
 
         ChatRunFinalizationCommand command = captureFinalize();
         assertThat(command.errorCode()).isEqualTo(ChatRunFailureCode.INTERRUPTED);
+    }
+
+    @Test
+    void shouldAbandonAndRetryNextRoundWhenRunAdvancedDuringConverge() {
+        ChatRunEntity stale = staleRun(7_200, false);
+        when(runMapper.selectList(any())).thenReturn(List.of(stale), List.of(stale));
+        // 版本围栏落败：库内返回未提交且非终态（运行已被并发推进，如用户刚确认）。
+        when(runService.finalizeExecution(any(), any(ChatRunFinalizationCommand.class)))
+                .thenReturn(new ChatRunFinalizationResult(false, ChatRunStatus.RUNNING.name(), null, null, null));
+
+        reconciler.reconcile();
+        reconciler.reconcile();
+
+        // 落败即摘除去重标记：下一轮可重新判定，不卡死不堆积。
+        verify(instanceFactory, times(2)).createTerminalOnly(any(), any(), any());
+        verify(runService, times(2)).finalizeExecution(any(), any(ChatRunFinalizationCommand.class));
+    }
+
+    @Test
+    void shouldDeduplicateConvergingRunWhileFinalizeRetryPending() {
+        ChatRunEntity stale = staleRun(7_200, false);
+        when(runMapper.selectList(any())).thenReturn(List.of(stale));
+        // 该方法已有 Answer 桩，重新打桩须用 doThrow 避免触发既有 Answer。
+        org.mockito.Mockito.doThrow(new RuntimeException("db down"))
+                .when(runService)
+                .finalizeExecution(any(), any(ChatRunFinalizationCommand.class));
+
+        reconciler.reconcile();
+        reconciler.reconcile();
+
+        // 终结提交失败进入退避重试：去重标记保留，下一轮不重复创建终结实例。
+        verify(instanceFactory, times(1)).createTerminalOnly(any(), any(), any());
     }
 
     private ChatRunFinalizationCommand captureFinalize() {

@@ -13,6 +13,8 @@ import com.lambda.fusion.core.utils.TenantUtils;
 import jakarta.annotation.PreDestroy;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +40,9 @@ public class ChatRunReconciler {
     private final ChatSessionMapper sessionMapper;
     private final ChatExecutionInstanceFactory instanceFactory;
     private final AiProperties properties;
+    /** 正在收敛中的 Run（含终结失败的退避重试）：防止数据库故障期间每轮重复创建终结实例堆积。 */
+    private final Set<String> converging = ConcurrentHashMap.newKeySet();
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "chat-run-reconciler");
         thread.setDaemon(true);
@@ -87,16 +92,22 @@ public class ChatRunReconciler {
 
     /** 按类别阈值复核并收敛单条停滞运行；单条失败只告警，不影响本批其它记录。 */
     private void reconcileOne(ChatRunEntity run, AiProperties.Chat.Run.Reconcile cfg) {
+        // 正在收敛中（含终结失败的退避重试）的 Run 跳过，防止数据库故障期间重复实例堆积。
+        if (!converging.add(run.getId())) {
+            return;
+        }
         try {
             ChatSessionEntity session = sessionMapper.selectById(run.getSessionId());
             if (session == null) {
                 log.warn("Run对账找不到会话，跳过本轮: runId={}, sessionId={}", run.getId(), run.getSessionId());
+                converging.remove(run.getId());
                 return;
             }
             boolean awaiting = hasPendingInteraction(run);
             long timeoutSeconds = awaiting ? cfg.getAwaitInteractionTimeoutSeconds() : cfg.getOrphanTimeoutSeconds();
             LocalDateTime lastProgress = run.getUpdatedAt() == null ? run.getStartedAt() : run.getUpdatedAt();
             if (lastProgress == null || lastProgress.isAfter(LocalDateTime.now().minusSeconds(timeoutSeconds))) {
+                converging.remove(run.getId());
                 return;
             }
             TenantUtils.withTenant(session.getTenantId(), () -> {
@@ -104,6 +115,7 @@ public class ChatRunReconciler {
                 return null;
             });
         } catch (RuntimeException failure) {
+            converging.remove(run.getId());
             log.warn("Run对账收敛失败，等待下一轮: runId={}", run.getId(), failure);
         }
     }
@@ -111,7 +123,8 @@ public class ChatRunReconciler {
     /**
      * 收敛一条停滞运行：待交互超时报 {@code AWAIT_TIMEOUT}，孤儿运行报 {@code INTERRUPTED}。
      * 待交互运行与 stop 路径同语义——优先加载 AgentScope 状态以在终结时补写拒绝结果，
-     * 不可用时降级为纯业务终结。
+     * 不可用时降级为纯业务终结。终结携带快照版本围栏：对账窗口内运行被并发推进
+     * （如用户刚确认）时放弃，避免误杀刚恢复的运行。
      */
     private void converge(ChatRunEntity run, ChatSessionEntity session, boolean awaiting) {
         ChatRunFailureCode code = awaiting ? ChatRunFailureCode.AWAIT_TIMEOUT : ChatRunFailureCode.INTERRUPTED;
@@ -120,8 +133,26 @@ public class ChatRunReconciler {
         if (instance == null) {
             instance = instanceFactory.createTerminalOnly(run, session, scheduler);
         }
-        instance.finalizeFailed(code, message);
-        log.info("Run{}已收敛: runId={}", awaiting ? "待交互超时" : "孤儿运行", run.getId());
+        ChatExecutionInstance.FenceFinalizeOutcome outcome = instance.finalizeFailedIfUnchanged(code, message);
+        switch (outcome) {
+            case SUPERSEDED -> {
+                converging.remove(run.getId());
+                log.info("Run对账收敛放弃（运行已被并发推进）: runId={}", run.getId());
+            }
+            case SETTLED -> {
+                converging.remove(run.getId());
+                log.info("Run{}已收敛: runId={}", awaiting ? "待交互超时" : "孤儿运行", run.getId());
+            }
+            case RETRYING -> {
+                // 提交失败退避重试中：保留去重标记，实例的终态提交信号完成时摘除。
+                ChatExecutionInstance tracked = instance;
+                tracked.terminalCommittedSignal().whenComplete((ignored, failure) -> converging.remove(run.getId()));
+                log.info("Run{}收敛提交失败，退避重试中: runId={}", awaiting ? "待交互超时" : "孤儿运行", run.getId());
+            }
+            default -> {
+                // 枚举全分支已覆盖。
+            }
+        }
     }
 
     /** 尝试为待交互运行构造带 Agent 的实例；AgentScope 状态不可用时返回 {@code null} 走降级。 */

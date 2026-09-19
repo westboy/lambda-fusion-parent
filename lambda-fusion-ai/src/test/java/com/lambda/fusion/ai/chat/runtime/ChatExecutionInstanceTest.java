@@ -192,6 +192,31 @@ class ChatExecutionInstanceTest {
     }
 
     @Test
+    void shouldSettleWhenFencedFinalizeCommits() {
+        when(runService.finalizeExecution(any(), any())).thenReturn(committed(ChatRunStatus.FAILED.name()));
+
+        ChatExecutionInstance.FenceFinalizeOutcome outcome =
+                instance.finalizeFailedIfUnchanged(ChatRunFailureCode.INTERRUPTED, "执行节点故障");
+
+        assertThat(outcome).isEqualTo(ChatExecutionInstance.FenceFinalizeOutcome.SETTLED);
+        assertThat(run.getStatus()).isEqualTo(ChatRunStatus.FAILED.name());
+    }
+
+    @Test
+    void shouldSupersedeWhenFencedFinalizeFindsNewerVersion() {
+        // 库内版本已被并发推进（未提交且非终态）：放弃终结，不置终态，终态提交信号完成供摘除。
+        when(runService.finalizeExecution(any(), any()))
+                .thenReturn(new ChatRunFinalizationResult(false, ChatRunStatus.RUNNING.name(), null, null, null));
+
+        ChatExecutionInstance.FenceFinalizeOutcome outcome =
+                instance.finalizeFailedIfUnchanged(ChatRunFailureCode.AWAIT_TIMEOUT, "等待用户确认超时");
+
+        assertThat(outcome).isEqualTo(ChatExecutionInstance.FenceFinalizeOutcome.SUPERSEDED);
+        assertThat(run.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
+        assertThat(instance.terminalCommittedSignal().toCompletableFuture()).isDone();
+    }
+
+    @Test
     void shouldRefreshVersionAndRetryWhenCheckpointCollides() {
         // 版本碰撞：第一次写入被拒（非终态），实例刷新版本后按新版本重写成功。
         ChatRunEntity persisted = new ChatRunEntity();

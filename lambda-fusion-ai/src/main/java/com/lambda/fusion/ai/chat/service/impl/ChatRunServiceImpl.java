@@ -298,6 +298,15 @@ public class ChatRunServiceImpl extends AbstractCrudService<ChatRunEntity, ChatR
             return new ChatRunFinalizationResult(
                     false, run.getStatus(), run.getFinishReason(), run.getErrorCode(), run.getErrorMessage());
         }
+        // 快照版本围栏（对账等外部收敛方）：行已被并发推进（如对账窗口内用户刚确认）则放弃本次终结，
+        // 避免把刚恢复的新阶段误杀。行锁内比较，与终态判定同帧。
+        if (command.expectedSnapshotVersion() != null
+                && !Objects.equals(
+                        command.expectedSnapshotVersion(),
+                        run.getSnapshotVersion() == null ? 0L : run.getSnapshotVersion())) {
+            return new ChatRunFinalizationResult(
+                    false, run.getStatus(), run.getFinishReason(), run.getErrorCode(), run.getErrorMessage());
+        }
 
         ChatRunStatus targetStatus = command.targetStatus();
         ChatRunSnapshot snapshot = command.snapshot();

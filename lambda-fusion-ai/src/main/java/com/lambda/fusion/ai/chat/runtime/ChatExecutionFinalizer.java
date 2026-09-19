@@ -54,14 +54,17 @@ public final class ChatExecutionFinalizer {
      * @param reason 结束原因
      * @param errorCode 错误码
      * @param errorMessage 错误信息
+     * @param expectedSnapshotVersion 快照版本围栏（可空）：非空时库内版本已变则放弃提交
+     * @return 终态提交结果
      */
-    public void commitTerminal(
+    public ChatRunFinalizationResult commitTerminal(
             ChatRunEntity run,
             ChatRunSnapshot snapshot,
             ChatRunStatus status,
             ChatRunFinishReason reason,
             ChatRunFailureCode errorCode,
-            String errorMessage) {
+            String errorMessage,
+            Long expectedSnapshotVersion) {
         String toolJson = snapshot.tools().isEmpty()
                 ? null
                 : JsonUtils.getJsonCodec()
@@ -69,18 +72,40 @@ public final class ChatExecutionFinalizer {
                                 .map(ChatExecutionFinalizer::toPersistedToolCall)
                                 .toList());
         ChatRunFinalizationResult result = runService.finalizeExecution(
-                run, new ChatRunFinalizationCommand(status, reason, snapshot, toolJson, errorCode, errorMessage));
+                run,
+                new ChatRunFinalizationCommand(
+                        status, reason, snapshot, toolJson, errorCode, errorMessage, expectedSnapshotVersion));
         applyResultAndPublish(run, result);
+        return result;
+    }
+
+    /** 提交业务终态（无快照版本围栏）。 */
+    public ChatRunFinalizationResult commitTerminal(
+            ChatRunEntity run,
+            ChatRunSnapshot snapshot,
+            ChatRunStatus status,
+            ChatRunFinishReason reason,
+            ChatRunFailureCode errorCode,
+            String errorMessage) {
+        return commitTerminal(run, snapshot, status, reason, errorCode, errorMessage, null);
     }
 
     /** 完整消息/附件投影失败后，仅提交 FAILED 终态并发布对应终态事件。 */
-    public void commitFailureWithoutProjection(ChatRunEntity run, ChatRunFailureCode errorCode, String errorMessage) {
+    public ChatRunFinalizationResult commitFailureWithoutProjection(
+            ChatRunEntity run, ChatRunFailureCode errorCode, String errorMessage, Long expectedSnapshotVersion) {
         ChatRunSnapshot emptySnapshot = ChatRunSnapshot.empty(run.getId(), run.getAguiRunId(), run.getPhaseNo());
         ChatRunFinalizationResult result = runService.finalizeExecution(
                 run,
                 new ChatRunFinalizationCommand(
-                        ChatRunStatus.FAILED, ChatRunFinishReason.ERROR, emptySnapshot, null, errorCode, errorMessage));
+                        ChatRunStatus.FAILED,
+                        ChatRunFinishReason.ERROR,
+                        emptySnapshot,
+                        null,
+                        errorCode,
+                        errorMessage,
+                        expectedSnapshotVersion));
         applyResultAndPublish(run, result);
+        return result;
     }
 
     private void applyResultAndPublish(ChatRunEntity run, ChatRunFinalizationResult result) {
@@ -93,6 +118,10 @@ public final class ChatExecutionFinalizer {
             run.setAguiRunId(persisted.getAguiRunId());
         }
         ChatRunStatus actualStatus = ChatRunStatus.valueOf(run.getStatus());
+        if (!actualStatus.isTerminal()) {
+            // 快照版本围栏落败（并发推进）：不发布终态事件、不设置缓冲过期，运行继续。
+            return;
+        }
         AguiEvent terminalEvent = actualStatus == ChatRunStatus.FAILED
                 ? new AguiEvent.RunError(
                         run.getSessionId(),

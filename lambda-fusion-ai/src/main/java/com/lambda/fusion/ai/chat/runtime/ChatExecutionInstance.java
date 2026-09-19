@@ -4,6 +4,7 @@ import com.lambda.fusion.ai.AiConstants.ChatRunFailureCode;
 import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
 import com.lambda.fusion.ai.AiProperties;
+import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
 import com.lambda.fusion.ai.chat.model.ConfirmTransition;
 import com.lambda.fusion.ai.chat.model.SubmitToolInput;
@@ -66,8 +67,8 @@ public final class ChatExecutionInstance {
     private final CompletableFuture<Void> drainedSignal = new CompletableFuture<>();
     private final CompletableFuture<Void> localPhaseDrainedSignal = new CompletableFuture<>();
     /**
-     * 业务终态提交完成信号：终态 CAS 成功、采纳外部终态或放弃终结时完成，
-     * 供协调器提前释放容量许可——记忆尾部不再占用执行额度。
+     * 业务终态提交完成信号：终态 CAS 成功、采纳外部终态、放弃终结或版本围栏落败时完成——
+     * 即本实例的终结职责已结束，供协调器/对账方释放容量许可或摘除去重标记。
      */
     private final CompletableFuture<Void> terminalCommittedSignal = new CompletableFuture<>();
 
@@ -84,6 +85,11 @@ public final class ChatExecutionInstance {
      * 终态 DB 提交进行中：提交已移出实例锁，此标志在锁内封住 confirm/submitInput 的推进窗口。
      */
     private boolean finalizeCommitInProgress;
+    /**
+     * 终态快照版本围栏（仅对账等外部收敛方开启）：终结提交仅当库内快照版本仍等于该值才生效，
+     * 版本已变（如对账窗口内被确认推进）则放弃，避免误杀并发推进的运行。退避重试同样携带围栏。
+     */
+    private volatile Long finalizeFenceSnapshotVersion;
 
     private boolean sourceActive;
     private int finalizeAttempts;
@@ -676,6 +682,39 @@ public final class ChatExecutionInstance {
         finalizeTerminal(ChatRunStatus.FAILED, ChatRunFinishReason.ERROR, errorCode, errorMessage);
     }
 
+    /** 带快照版本围栏的终结结果。 */
+    public enum FenceFinalizeOutcome {
+        /** 已终结（提交成功或已是终态），调用方可摘除。 */
+        SETTLED,
+        /** 版本围栏落败：运行已被并发推进（如对账窗口内用户确认），本次终结放弃。 */
+        SUPERSEDED,
+        /** 提交失败，退避重试进行中（重试仍携带围栏）。 */
+        RETRYING
+    }
+
+    /**
+     * 带快照版本围栏的失败终结（供对账等外部收敛方）：仅当库内快照版本仍等于本实例构造时
+     * 捕获的值才提交；版本已变则放弃。仅适用于无活动源流的新建终结实例。
+     *
+     * @param errorCode 失败码
+     * @param errorMessage 失败消息
+     * @return 终结结果
+     */
+    public FenceFinalizeOutcome finalizeFailedIfUnchanged(ChatRunFailureCode errorCode, String errorMessage) {
+        synchronized (this) {
+            if (terminal || finalizeCommitInProgress) {
+                return FenceFinalizeOutcome.SETTLED;
+            }
+            finalizeFenceSnapshotVersion = persistedSnapshotVersion;
+        }
+        ChatRunFinalizationResult result =
+                finalizeTerminal(ChatRunStatus.FAILED, ChatRunFinishReason.ERROR, errorCode, errorMessage);
+        if (result == null) {
+            return FenceFinalizeOutcome.RETRYING;
+        }
+        return result.committed() ? FenceFinalizeOutcome.SETTLED : FenceFinalizeOutcome.SUPERSEDED;
+    }
+
     /**
      * 终态提交的唯一入口：实例锁内完成状态翻转、检查点取消与快照闭合，随后把数据库终态提交
      * （含消息/附件投影与会话行锁等待）移到实例锁外执行，提交结束后回锁同步排空信号。
@@ -692,13 +731,14 @@ public final class ChatExecutionInstance {
      * @param reason       结束原因
      * @param errorCode    失败码；非 FAILED 终态为 {@code null}
      * @param errorMessage 失败消息；非 FAILED 终态为 {@code null}
+     * @return 终态提交结果；已终结/提交中或转入退避重试时返回 {@code null}
      */
-    private void finalizeTerminal(
+    private ChatRunFinalizationResult finalizeTerminal(
             ChatRunStatus status, ChatRunFinishReason reason, ChatRunFailureCode errorCode, String errorMessage) {
         ChatRunSnapshot snapshot;
         synchronized (this) {
             if (terminal || finalizeCommitInProgress) {
-                return;
+                return null;
             }
             terminal = true;
             finalizeCommitInProgress = true;
@@ -720,13 +760,26 @@ public final class ChatExecutionInstance {
             }
             snapshot = accumulator.buildSnapshot();
         }
+        ChatRunFinalizationResult result;
         try {
-            chatExecutionFinalizer.commitTerminal(run, snapshot, status, reason, errorCode, errorMessage);
+            result = chatExecutionFinalizer.commitTerminal(
+                    run, snapshot, status, reason, errorCode, errorMessage, finalizeFenceSnapshotVersion);
         } catch (RuntimeException finalizeFailure) {
             handleFinalizeFailure(status, reason, errorCode, errorMessage, finalizeFailure);
-            return;
+            return null;
+        }
+        if (!result.committed() && !ChatRunStatus.isTerminal(result.status())) {
+            // 快照版本落败：运行已被并发推进，本次终结放弃，复位标志且不重试；
+            // 本实例的终结职责到此结束，完成终态提交信号供对账方摘除去重标记。
+            synchronized (this) {
+                terminal = false;
+                finalizeCommitInProgress = false;
+                terminalCommittedSignal.complete(null);
+            }
+            return result;
         }
         completeTerminalAfterCommit();
+        return result;
     }
 
     /**
@@ -803,10 +856,21 @@ public final class ChatExecutionInstance {
             closePendingToolCalls();
             fallbackMessage = "对话结果终结失败: " + ChatRunSnapshotSanitizer.safeMessage(projectionFailure);
         }
+        ChatRunFinalizationResult result;
         try {
-            chatExecutionFinalizer.commitFailureWithoutProjection(run, ChatRunFailureCode.ERROR, fallbackMessage);
+            result = chatExecutionFinalizer.commitFailureWithoutProjection(
+                    run, ChatRunFailureCode.ERROR, fallbackMessage, finalizeFenceSnapshotVersion);
         } catch (RuntimeException fallbackFailure) {
             handleFallbackCommitFailure(projectionFailure, fallbackFailure);
+            return;
+        }
+        if (!result.committed() && !ChatRunStatus.isTerminal(result.status())) {
+            // 快照版本围栏落败：放弃最小终结，复位标志并结束本实例的终结职责。
+            synchronized (this) {
+                terminal = false;
+                finalizeCommitInProgress = false;
+                terminalCommittedSignal.complete(null);
+            }
             return;
         }
         completeTerminalAfterCommit();
