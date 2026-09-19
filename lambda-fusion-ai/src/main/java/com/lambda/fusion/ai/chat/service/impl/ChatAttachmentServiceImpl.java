@@ -3,15 +3,18 @@ package com.lambda.fusion.ai.chat.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.AiConstants.ChatAttachmentSource;
+import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewPolicy;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatAttachmentView;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
+import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.support.ChatFileSupport;
@@ -115,6 +118,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
 
     private final ChatAttachmentMapper chatAttachmentMapper;
     private final ChatSessionMapper chatSessionMapper;
+    private final ChatRunMapper chatRunMapper;
     private final AiFileStorageResolver storageResolver;
     private final AiProperties aiProperties;
     private final ChatAttachmentPreviewTokenService previewTokenService;
@@ -125,6 +129,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
     public ChatAttachmentServiceImpl(
             ChatAttachmentMapper chatAttachmentMapper,
             ChatSessionMapper chatSessionMapper,
+            ChatRunMapper chatRunMapper,
             AiFileStorageResolver storageResolver,
             AiProperties aiProperties,
             ChatAttachmentPreviewTokenService previewTokenService,
@@ -132,6 +137,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             AppService appService) {
         this.chatAttachmentMapper = chatAttachmentMapper;
         this.chatSessionMapper = chatSessionMapper;
+        this.chatRunMapper = chatRunMapper;
         this.storageResolver = storageResolver;
         this.aiProperties = aiProperties;
         this.previewTokenService = previewTokenService;
@@ -411,7 +417,20 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             // 已发送附件不单独删除，随会话级联清理，避免历史消息出现空洞引用
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
         }
-        chatAttachmentMapper.deleteById(attachmentId);
+        // 工具生成且尚未绑定的附件是活跃 Run 的终结投影，运行期间禁止删除（否则终态投影缺失）。
+        if (ChatAttachmentSource.GENERATED.getCode().equals(entity.getSource())
+                && chatRunMapper.exists(new LambdaQueryWrapper<ChatRunEntity>()
+                        .eq(ChatRunEntity::getSessionId, entity.getSessionId())
+                        .notIn(ChatRunEntity::getStatus, ChatRunStatus.terminalNames()))) {
+            throw new AiBusinessException(AiErrorCode.CHAT_RUN_ALREADY_ACTIVE, entity.getSessionId());
+        }
+        // 条件删除兜底并发绑定：检查与删除之间被绑定时按不可删除处理。
+        int removed = chatAttachmentMapper.delete(new LambdaQueryWrapper<ChatAttachmentEntity>()
+                .eq(ChatAttachmentEntity::getId, entity.getId())
+                .isNull(ChatAttachmentEntity::getMessageId));
+        if (removed != 1) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_NOT_FOUND, attachmentId);
+        }
         deleteStoredFilesAfterCommit(List.of(entity));
     }
 
@@ -458,10 +477,15 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
                         .last("LIMIT " + Math.max(1, limit)));
         int purged = 0;
         for (ChatAttachmentEntity orphan : orphans) {
-            // 先删文件后删记录：记录先删而文件删除失败会留下无法再次定位的存储对象；
-            // 顺序反过来时最坏只是下一轮对已删对象重试一次删除。
-            deleteStoredFile(orphan);
-            purged += chatAttachmentMapper.deleteById(orphan.getId());
+            // 先删文件后删记录：文件删除失败时保留记录留下一轮重试，
+            // 否则将永久失去存储对象的定位依据。
+            if (!deleteStoredFile(orphan)) {
+                continue;
+            }
+            // 条件删除兜底并发绑定：选中后又被绑定的附件已不再是孤儿，跳过不删。
+            purged += chatAttachmentMapper.delete(new LambdaQueryWrapper<ChatAttachmentEntity>()
+                    .eq(ChatAttachmentEntity::getId, orphan.getId())
+                    .isNull(ChatAttachmentEntity::getMessageId));
         }
         if (purged > 0) {
             log.info("已回收孤儿对话附件: count={}, cutoff={}", purged, cutoff);
@@ -488,23 +512,25 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         cleanup.run();
     }
 
-    // 按行记录的 storageType 路由删除（配置变更后旧附件仍可删）；失败仅告警不阻断
-    private void deleteStoredFile(ChatAttachmentEntity attachment) {
+    // 按行记录的 storageType 路由删除（配置变更后旧附件仍可删）；全部成功或本就缺失才返回 true
+    private boolean deleteStoredFile(ChatAttachmentEntity attachment) {
         if (StringUtils.isBlank(attachment.getStorageType())) {
-            return;
+            return true;
         }
-        deleteStoredPath(attachment, attachment.getStoragePath(), "原文件");
-        deleteStoredPath(attachment, attachment.getPreviewStoragePath(), "派生预览");
+        return deleteStoredPath(attachment, attachment.getStoragePath(), "原文件")
+                & deleteStoredPath(attachment, attachment.getPreviewStoragePath(), "派生预览");
     }
 
-    private void deleteStoredPath(ChatAttachmentEntity attachment, String storagePath, String label) {
+    private boolean deleteStoredPath(ChatAttachmentEntity attachment, String storagePath, String label) {
         if (StringUtils.isBlank(storagePath)) {
-            return;
+            return true;
         }
         try {
             storageResolver.resolve(attachment.getStorageType()).delete(storagePath);
+            return true;
         } catch (RuntimeException e) {
             log.warn("删除对话附件{}失败(att={}, path={}): {}", label, attachment.getId(), storagePath, e.getMessage());
+            return false;
         }
     }
 

@@ -16,6 +16,7 @@ import com.lambda.fusion.ai.apps.model.entity.AppEntity;
 import com.lambda.fusion.ai.apps.service.AppService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentPreviewTokenService;
 import com.lambda.fusion.ai.chat.mapper.ChatAttachmentMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
@@ -46,6 +47,7 @@ class ChatAttachmentServiceImplTest {
 
     private ChatAttachmentMapper attachmentMapper;
     private ChatSessionMapper sessionMapper;
+    private ChatRunMapper runMapper;
     private AiFileStorageResolver storageResolver;
     private AiFileStorage storage;
     private AppService appService;
@@ -55,6 +57,7 @@ class ChatAttachmentServiceImplTest {
     void setUp() {
         attachmentMapper = mock(ChatAttachmentMapper.class);
         sessionMapper = mock(ChatSessionMapper.class);
+        runMapper = mock(ChatRunMapper.class);
         storage = mock(AiFileStorage.class);
         storageResolver = mock(AiFileStorageResolver.class);
         appService = mock(AppService.class);
@@ -64,6 +67,7 @@ class ChatAttachmentServiceImplTest {
         service = new ChatAttachmentServiceImpl(
                 attachmentMapper,
                 sessionMapper,
+                runMapper,
                 storageResolver,
                 new AiProperties(),
                 mock(ChatAttachmentPreviewTokenService.class),
@@ -209,14 +213,14 @@ class ChatAttachmentServiceImplTest {
         orphan.setStorageType("LOCAL");
         orphan.setStoragePath("chat/session-1/orphan.txt");
         when(attachmentMapper.selectList(any())).thenReturn(List.of(orphan));
-        when(attachmentMapper.deleteById("att-1")).thenReturn(1);
+        when(attachmentMapper.delete(any())).thenReturn(1);
 
         int purged = service.purgeOrphans(java.time.LocalDateTime.now().minusHours(1), 100);
 
         assertThat(purged).isEqualTo(1);
         org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(storage, attachmentMapper);
         inOrder.verify(storage).delete("chat/session-1/orphan.txt");
-        inOrder.verify(attachmentMapper).deleteById("att-1");
+        inOrder.verify(attachmentMapper).delete(any());
     }
 
     @Test
@@ -227,7 +231,59 @@ class ChatAttachmentServiceImplTest {
 
         assertThat(purged).isZero();
         verifyNoInteractions(storage);
-        verify(attachmentMapper, org.mockito.Mockito.never()).deleteById(anyString());
+        verify(attachmentMapper, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void shouldKeepOrphanRecordWhenStoredFileDeletionFails() {
+        ChatAttachmentEntity orphan = attachment("session-1", null);
+        orphan.setStorageType("LOCAL");
+        orphan.setStoragePath("chat/session-1/orphan.txt");
+        when(attachmentMapper.selectList(any())).thenReturn(List.of(orphan));
+        org.mockito.Mockito.doThrow(new RuntimeException("oss down"))
+                .when(storage)
+                .delete(anyString());
+
+        int purged = service.purgeOrphans(java.time.LocalDateTime.now().minusHours(1), 100);
+
+        // 文件删除失败：记录保留留下一轮重试，不失去存储对象的定位依据。
+        assertThat(purged).isZero();
+        verify(attachmentMapper, never()).delete(any());
+    }
+
+    @Test
+    void shouldRejectDeleteOfGeneratedAttachmentWhileRunActive() {
+        ChatAttachmentEntity entity = attachment("session-1", null);
+        entity.setSource(ChatAttachmentSource.GENERATED.getCode());
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            when(attachmentMapper.selectById("att-1")).thenReturn(entity);
+            when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(sessionOf("app-1"));
+            when(runMapper.exists(any())).thenReturn(true);
+
+            assertThatThrownBy(() -> service.delete("att-1"))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(e -> assertThat(((AiBusinessException) e).getCode())
+                            .isEqualTo(AiErrorCode.CHAT_RUN_ALREADY_ACTIVE.getCode()));
+        }
+        verify(attachmentMapper, never()).delete(any());
+    }
+
+    @Test
+    void shouldDeleteUploadedOrphanWithConditionalGuard() {
+        ChatAttachmentEntity entity = attachment("session-1", null);
+        entity.setSource(ChatAttachmentSource.UPLOADED.getCode());
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            when(attachmentMapper.selectById("att-1")).thenReturn(entity);
+            when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(sessionOf("app-1"));
+            when(attachmentMapper.delete(any())).thenReturn(1);
+
+            service.delete("att-1");
+
+            verify(attachmentMapper).delete(any());
+            verifyNoInteractions(runMapper);
+        }
     }
 
     @Test
