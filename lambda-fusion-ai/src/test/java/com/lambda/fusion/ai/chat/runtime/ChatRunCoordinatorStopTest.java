@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 
 class ChatRunCoordinatorStopTest {
 
-    private ChatExecutionService coordinator;
+    private ChatRunCoordinator coordinator;
 
     @AfterEach
     void tearDown() {
@@ -35,8 +35,8 @@ class ChatRunCoordinatorStopTest {
 
     @Test
     void shouldOnlyCloseBusinessRunWhenThereIsNoLocalExecution() {
-        ChatExecutionInstanceFactory instanceFactory = mock(ChatExecutionInstanceFactory.class);
-        ChatExecutionInstance finalizer = mock(ChatExecutionInstance.class);
+        ChatRunInstanceFactory instanceFactory = mock(ChatRunInstanceFactory.class);
+        ChatRunInstance finalizer = mock(ChatRunInstance.class);
         ChatRunEntity run = new ChatRunEntity();
         run.setId("run-1");
         run.setStatus(ChatRunStatus.RUNNING.name());
@@ -56,8 +56,8 @@ class ChatRunCoordinatorStopTest {
 
     @Test
     void shouldClosePersistedAskingStateWithoutInterruptingAgent() {
-        ChatExecutionInstanceFactory instanceFactory = mock(ChatExecutionInstanceFactory.class);
-        ChatExecutionInstance finalizer = mock(ChatExecutionInstance.class);
+        ChatRunInstanceFactory instanceFactory = mock(ChatRunInstanceFactory.class);
+        ChatRunInstance finalizer = mock(ChatRunInstance.class);
         ChatRunEntity run = new ChatRunEntity();
         run.setId("run-1");
         run.setStatus(ChatRunStatus.RUNNING.name());
@@ -88,10 +88,10 @@ class ChatRunCoordinatorStopTest {
         verify(instanceFactory, never()).createTerminalOnly(any(), any(), any(ScheduledExecutorService.class));
     }
 
-    private static ChatExecutionService coordinator(ChatExecutionInstanceFactory instanceFactory) {
+    private static ChatRunCoordinator coordinator(ChatRunInstanceFactory instanceFactory) {
         ChatRunStateService runService = mock(ChatRunStateService.class);
         when(runService.loadCurrentOrIdentity(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        return new ChatExecutionService(
+        return new ChatRunCoordinator(
                 runService,
                 mock(ChatRunEventStore.class),
                 mock(ChatMessageService.class),

@@ -42,16 +42,16 @@
 ## 架构
 
 ```
-请求 ──▶ ChatController(SSE) ──▶ ChatServiceImpl ──▶ ChatRunService(归属校验) ──▶ ChatExecutionService
+请求 ──▶ ChatController(SSE) ──▶ ChatServiceImpl ──▶ ChatRunService(归属校验) ──▶ ChatRunCoordinator
           ├─ ChatRunStateService     Run 状态机（CAS + REQUIRES_NEW）
           ├─ ChatRunEventStore       当前进程短期回放与实时订阅（bootstrap + SSE 心跳）
-          ├─ ChatExecutionCapacityLimiter  全局/每用户并发许可（仅本节点）
-          └─ ChatExecutionInstanceFactory
-               └─ ChatExecutionInstance  单 Run 执行实例（实例锁 + 阶段推进 + 快照检查点）
+          ├─ ChatRunCapacityLimiter  全局/每用户并发许可（仅本节点）
+          └─ ChatRunInstanceFactory
+               └─ ChatRunInstance  单 Run 执行实例（实例锁 + 阶段推进 + 快照检查点）
                     ├─ AgentExecutionAdapter     RuntimeContext 构造 / HITL 阶段边界截断
                     ├─ AgentStreamLifecycle      源流订阅 + 交互超时 + 强制 dispose
-                    ├─ ChatExecutionSnapshotBuilder → snapshot_json（延迟检查点落库）
-                    ├─ ChatExecutionFinalizer    终态提交（锁外执行，DB 行锁串行）
+                    ├─ ChatRunSnapshotAccumulator → snapshot_json（延迟检查点落库）
+                    ├─ ChatRunFinalizer    终态提交（锁外执行，DB 行锁串行）
                     └─ AgentFactory              按 (app,tenant,profile) 构建+缓存 HarnessAgent
                           ├─ ModelResolver / EmbeddingModelResolver   DB modelId -> AgentScope Model
                           ├─ ToolkitAssembler        本地 @AiTools + 媒体绑定 + MCP + ChatRun 专属工具
@@ -77,7 +77,7 @@
 | `apps` | 智能应用 CRUD + 发布/下线 + 配置审计 + workspace 文件管理 API |
 | `chat` | 对话会话、SSE 流式聊天、Run 生命周期、主动出站 |
 | `chat.attachment` | 聊天附件：上传/消息组装/按需读取工具/预览签名/孤儿回收/工作区产物发布 |
-| `chat.runtime` | 对话执行运行时：`ChatExecutionService` / `ChatExecutionInstance(Factory)` / `ChatExecutionFinalizer` / `AgentExecutionAdapter` / `AgentStreamLifecycle` / `ChatExecutionCapacityLimiter` / 快照 / AG-UI 编码 / HITL 校验器 |
+| `chat.runtime` | 对话执行运行时：`ChatRunCoordinator` / `ChatRunInstance(Factory)` / `ChatRunFinalizer` / `AgentExecutionAdapter` / `AgentStreamLifecycle` / `ChatRunCapacityLimiter` / 快照 / AG-UI 编码 / HITL 校验器 |
 | `mcp` | MCP 服务管理 |
 | `rag` | 知识库管理 + 文档切块入库 + 检索注入（中间件/工具）+ 原文件存储 |
 | `subagent` | 子代理定义管理（DB 驱动，与定时任务共用表） |
@@ -97,7 +97,7 @@
 ## 核心链路
 
 - **Agent 构建**：`AgentFactory.getOrBuild(appId, tenantId, profile)` 按 `appType` 分支（CHAT_RUN 与 CHANNEL 双运行场景，Channel Agent 缓存键带 `-channel` 后缀）；CHAT 关闭 workspace/子代理能力，WORKSPACE 开启（AGENTS.md/技能/子代理/记忆）+ 按 `sandboxBackend` 选文件系统 spec；`selfEvolve` 决定只读/可写。RAG 按 `ai_app.rag_mode`（GENERIC/AGENTIC/BOTH）挂中间件或注册工具。配置变更经 `ConfigChangedEvent` 失效缓存；多实例下经 Dubbo broadcast 扩散到各节点（`cluster.invalidation-broadcast`）。被淘汰的 HarnessAgent 延迟到在途 Run 终态后才 close。
-- **流式对话**：`ChatServiceImpl` 是唯一 SSE 入口——只订阅 Run 事件，浏览器断开仅解除订阅，后台 Run 继续执行。`ChatExecutionService` 以 DB Run 为业务状态与并发裁决的唯一来源，JVM 只保留本地阶段句柄；`ChatExecutionInstance` 在实例锁内处理事件回调与 HITL 交互，**终态提交移到锁外**（DB 行锁保证串行；提交失败有限重试，耗尽降级为最小失败终态），快照检查点（`snapshot_json`，默认 15s 间隔）周期落库供断线恢复。Agent 事件经 `AgentEventMapper` 转成 AG-UI SSE。
+- **流式对话**：`ChatServiceImpl` 是唯一 SSE 入口——只订阅 Run 事件，浏览器断开仅解除订阅，后台 Run 继续执行。`ChatRunCoordinator` 以 DB Run 为业务状态与并发裁决的唯一来源，JVM 只保留本地阶段句柄；`ChatRunInstance` 在实例锁内处理事件回调与 HITL 交互，**终态提交移到锁外**（DB 行锁保证串行；提交失败有限重试，耗尽降级为最小失败终态），快照检查点（`snapshot_json`，默认 15s 间隔）周期落库供断线恢复。Agent 事件经 `AgentEventMapper` 转成 AG-UI SSE。
 - **HITL 人机协同**：两类机制——① 工具执行前确认（`@RequireConfirm`/`@AiTools(requireConfirm=true)`），② 挂起式提问（`UserInteractionTools` 的 `ask_single_choice`/`ask_multi_choice`/`ask_text_input` 抛 `ToolSuspendException` 挂起 Agent）。Agent 挂起时 ChatRun 仍为 RUNNING，待交互体现在快照 `pendingTools`/`pendingInputs`；用户经 confirm/input 端点提交，`ConfirmationValidator`/`ToolInputValidator` 校验三方 ID 一致后以 CAS 推进下一阶段。
 - **会话标识**：内部 ChatRun 的 `RuntimeContext.sessionId` 直接使用 `ChatSession.id`；`runId` 只标识一次业务回合。`gw-*` 只属于外部 Channel 的 Gateway 路由路径。
 - **外部通道**：内置钉钉/飞书/企微适配器（`AiConfigure.ChannelAdapterConfig`，各 `@ConditionalOnClass`）+ 下游自定义 `Channel` Bean，`ChannelLifecycle` 自动注册到 `ChannelManager` 并经共享 `HarnessGateway` 路由到 LF agent（靠 `preferredAgentId` 或 `ChannelConfig.defaultAgentId` 指定 `app:{appId}:t:{tenantId}`）。通道→agent 的绑定由 `channel` 包的 `ai_channel_config` 表管理。
@@ -134,7 +134,7 @@
 | `POST /v1/ai/sessions/{id}/runs/{runId}/input` | `ai:chat-session:run-input-submit` | HITL 挂起输入提交（SSE） |
 | `POST /v1/ai/sessions/{id}/runs/{runId}/stop` | `ai:chat-session:run-stop` | 停止 Run |
 
-ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输出，数据库快照用于页面恢复，状态仅有 `RUNNING / COMPLETED / STOPPED / FAILED`；AgentScope 的 `ASKING`（工具确认/挂起输入）不复制成业务状态，体现为快照 pendingTools/pendingInputs 与工具状态枚举。本模块不实现节点心跳、租约、远程停止、旧调用接管或全局维护扫描。多实例下若请求未落回执行实例，返回持久化 bootstrap 后关闭 SSE；用户可显式停止旧 Run 并创建新 Run。并发受 `ChatExecutionCapacityLimiter` 限制（全局 `max-active-runs` + 每用户 `max-active-runs-per-user`，仅本节点）。详见 [对话运行时设计](../docs/design/chat-runtime.md)。
+ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输出，数据库快照用于页面恢复，状态仅有 `RUNNING / COMPLETED / STOPPED / FAILED`；AgentScope 的 `ASKING`（工具确认/挂起输入）不复制成业务状态，体现为快照 pendingTools/pendingInputs 与工具状态枚举。本模块不实现节点心跳、租约、远程停止、旧调用接管或全局维护扫描。多实例下若请求未落回执行实例，返回持久化 bootstrap 后关闭 SSE；用户可显式停止旧 Run 并创建新 Run。并发受 `ChatRunCapacityLimiter` 限制（全局 `max-active-runs` + 每用户 `max-active-runs-per-user`，仅本节点）。详见 [对话运行时设计](../docs/design/chat-runtime.md)。
 
 ### 聊天附件
 - 上传 `POST /v1/ai/chat/attachments`（`ai:chat-attachment:upload`，multipart `sessionId`+`file`）：支持图片（jpg/jpeg/png/gif/webp）与文档（pdf/doc/docx/txt/md），受应用级 `enableImageUpload`/`enableFileUpload` 开关校验；另有详情/删除/登录下载（支持 Range）与**签名直链** `/{id}/preview|file?expires=&sig=`（HMAC-SHA256，默认 TTL 1h，OSS 后端 302 到短期预签名地址；Office 原件另存派生 PDF 预览）。
@@ -436,7 +436,7 @@ POST /v1/ai/scheduled-tasks
 | 聊天附件 | `chat/attachment/` + `chat/service/impl/ChatAttachmentServiceImpl.java` |
 | 子代理 | `subagent/` 包 |
 | 定时任务 | `schedule/` 包 |
-| 对话执行运行时 | `chat/runtime/`（ChatExecutionService / ChatExecutionInstance / AgentExecutionAdapter 等） |
+| 对话执行运行时 | `chat/runtime/`（ChatRunCoordinator / ChatRunInstance / AgentExecutionAdapter 等） |
 | 流式对话 | `chat/service/impl/ChatServiceImpl.java` |
 | 主动出站 | `chat/controller/OutboundController.java` |
 | 多实例缓存失效 | `runtime/event/DubboConfigInvalidationBroadcaster.java` |

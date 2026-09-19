@@ -10,7 +10,7 @@ import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.SubmitToolInput;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
-import com.lambda.fusion.ai.chat.runtime.ChatExecutionService;
+import com.lambda.fusion.ai.chat.runtime.ChatRunCoordinator;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapModel;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEvent;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
@@ -39,7 +39,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChatServiceImpl implements ChatService {
 
     private final ChatRunService chatRunService;
-    private final ChatExecutionService chatExecutionService;
+    private final ChatRunCoordinator chatExecutionService;
     private final ChatRunEventStore eventStore;
     private final AiProperties properties;
     /** SSE 心跳调度器：单线程守护池，只负责到点触发。 */

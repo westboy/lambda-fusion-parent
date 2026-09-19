@@ -20,7 +20,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
- * 执行实例工厂：统一构造 {@link ChatExecutionInstance}。带 Agent 的实例只用于新 Run 或持久化 HITL 的显式继续，
+ * 执行实例工厂：统一构造 {@link ChatRunInstance}。带 Agent 的实例只用于新 Run 或持久化 HITL 的显式继续，
  * 无 Agent 的纯落库实例仅用于终结。工厂只组装对象，不登记本地执行状态或事件缓冲；本地阶段句柄与
  * 容量生命周期由协调器管理。
  *
@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class ChatExecutionInstanceFactory {
+public class ChatRunInstanceFactory {
 
     private final ChatRunStateService runService;
     private final ChatRunEventStore eventStore;
@@ -54,7 +54,7 @@ public class ChatExecutionInstanceFactory {
      * @param scheduler 调度器，由协调器按次传入，实例不自建
      * @return 带 Agent 的执行实例
      */
-    public ChatExecutionInstance createAgentBacked(
+    public ChatRunInstance createAgentBacked(
             ChatRunEntity run, ChatSessionEntity session, ScheduledExecutorService scheduler) {
         return newInstance(run, session, scheduler, createAgentExecution(run, session));
     }
@@ -79,20 +79,20 @@ public class ChatExecutionInstanceFactory {
      * @param scheduler 调度器，由协调器按次传入
      * @return 无 Agent 的终结实例
      */
-    public ChatExecutionInstance createTerminalOnly(
+    public ChatRunInstance createTerminalOnly(
             ChatRunEntity run, ChatSessionEntity session, ScheduledExecutorService scheduler) {
         return newInstance(run, session, scheduler, null);
     }
 
     /** 组装实例的公共部分：解码持久化快照，聚合所有构造依赖。 */
-    private ChatExecutionInstance newInstance(
+    private ChatRunInstance newInstance(
             ChatRunEntity run,
             ChatSessionEntity session,
             ScheduledExecutorService scheduler,
             AgentExecutionAdapter agentExecution) {
-        ChatExecutionSnapshotBuilder chatExecutionSnapshotBuilder =
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson()));
-        return new ChatExecutionInstance(
+        ChatRunSnapshotAccumulator chatExecutionSnapshotBuilder =
+                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson()));
+        return new ChatRunInstance(
                 runService,
                 eventStore,
                 properties,

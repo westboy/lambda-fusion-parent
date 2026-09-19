@@ -46,7 +46,7 @@ import reactor.core.Disposable;
  * @author Jin
  */
 @Slf4j
-public final class ChatExecutionInstance {
+public final class ChatRunInstance {
 
     /**
      * 完整消息/附件投影的最大尝试次数；耗尽后切换到不含投影的最小失败终结。
@@ -72,13 +72,13 @@ public final class ChatExecutionInstance {
      */
     private final CompletableFuture<Void> terminalCommittedSignal = new CompletableFuture<>();
 
-    private final ChatExecutionFinalizer chatExecutionFinalizer;
+    private final ChatRunFinalizer chatExecutionFinalizer;
     private final AgentStreamLifecycle agentStreamLifecycle;
 
     private final ChatRunEntity run;
     private final ChatSessionEntity session;
     private final AgentExecutionAdapter agentExecutionAdapter;
-    private final ChatExecutionSnapshotBuilder accumulator;
+    private final ChatRunSnapshotAccumulator accumulator;
     private boolean rootAgentEnded;
     private boolean terminal;
     /**
@@ -125,7 +125,7 @@ public final class ChatExecutionInstance {
      * @param agentExecutionAdapter  Agent 执行适配器；仅执行终结流程时可为 {@code null}
      * @param accumulator            快照累加器
      */
-    ChatExecutionInstance(
+    ChatRunInstance(
             ChatRunStateService runService,
             ChatRunEventStore eventStore,
             AiProperties properties,
@@ -135,7 +135,7 @@ public final class ChatExecutionInstance {
             ChatRunEntity run,
             ChatSessionEntity session,
             AgentExecutionAdapter agentExecutionAdapter,
-            ChatExecutionSnapshotBuilder accumulator) {
+            ChatRunSnapshotAccumulator accumulator) {
         this.runService = runService;
         this.eventStore = eventStore;
         this.properties = properties;
@@ -147,7 +147,7 @@ public final class ChatExecutionInstance {
         this.agentExecutionAdapter = agentExecutionAdapter;
         this.accumulator = accumulator;
         this.persistedSnapshotVersion = run.getSnapshotVersion() == null ? 0L : run.getSnapshotVersion();
-        this.chatExecutionFinalizer = new ChatExecutionFinalizer(runService, eventStore, properties);
+        this.chatExecutionFinalizer = new ChatRunFinalizer(runService, eventStore, properties);
         this.agentStreamLifecycle = new AgentStreamLifecycle(run.getId(), scheduler, properties);
         this.eventMapper = new AgentEventMapper(
                 run.getSessionId(),

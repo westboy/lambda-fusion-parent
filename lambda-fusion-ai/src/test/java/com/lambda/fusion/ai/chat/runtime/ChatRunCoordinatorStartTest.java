@@ -52,7 +52,7 @@ import reactor.core.publisher.Sinks;
 /** Run 启动调度测试。 */
 class ChatRunCoordinatorStartTest {
 
-    private ChatExecutionService coordinator;
+    private ChatRunCoordinator coordinator;
 
     @AfterEach
     void tearDown() {
@@ -73,14 +73,14 @@ class ChatRunCoordinatorStartTest {
         AgentFactory agentFactory = mock(AgentFactory.class);
         HarnessAgent agent = mock(HarnessAgent.class);
         AiProperties properties = new AiProperties();
-        ChatExecutionInstanceFactory instanceFactory = new ChatExecutionInstanceFactory(
+        ChatRunInstanceFactory instanceFactory = new ChatRunInstanceFactory(
                 runService,
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
                 mock(ObjectProvider.class),
                 properties);
-        coordinator = new ChatExecutionService(
+        coordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 messageService,
@@ -152,8 +152,8 @@ class ChatRunCoordinatorStartTest {
         ChatRunStateService runService = mock(ChatRunStateService.class);
         ChatRunEventStore eventStore = mock(ChatRunEventStore.class);
         ChatMessageService messageService = mock(ChatMessageService.class);
-        ChatExecutionInstanceFactory instanceFactory = mock(ChatExecutionInstanceFactory.class);
-        ChatExecutionInstance execution = mock(ChatExecutionInstance.class);
+        ChatRunInstanceFactory instanceFactory = mock(ChatRunInstanceFactory.class);
+        ChatRunInstance execution = mock(ChatRunInstance.class);
         ChatRunEntity run = run("run-1", 1L);
         ChatSessionEntity session = session();
         CountDownLatch constructionStarted = new CountDownLatch(1);
@@ -168,7 +168,7 @@ class ChatRunCoordinatorStartTest {
             releaseConstruction.await();
             return execution;
         });
-        coordinator = new ChatExecutionService(
+        coordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 messageService,
@@ -202,14 +202,14 @@ class ChatRunCoordinatorStartTest {
         AiProperties properties = new AiProperties();
         // 每用户容量收敛为 1：若许可仍被记忆尾部占用，第二个 Run 将被容量拒绝。
         properties.getChat().getRun().setMaxActiveRunsPerUser(1);
-        ChatExecutionInstanceFactory instanceFactory = new ChatExecutionInstanceFactory(
+        ChatRunInstanceFactory instanceFactory = new ChatRunInstanceFactory(
                 runService,
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
                 mock(ObjectProvider.class),
                 properties);
-        coordinator = new ChatExecutionService(
+        coordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 messageService,

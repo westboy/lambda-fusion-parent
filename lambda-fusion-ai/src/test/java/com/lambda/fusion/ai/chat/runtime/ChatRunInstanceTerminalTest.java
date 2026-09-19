@@ -45,7 +45,7 @@ import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
-/** 终态解释与关闭路径的锁定测试：终态事实由 {@link ChatExecutionInstance} 唯一解释。 */
+/** 终态解释与关闭路径的锁定测试：终态事实由 {@link ChatRunInstance} 唯一解释。 */
 class ChatRunInstanceTerminalTest {
 
     private final ChatRunStateService runService = mock(ChatRunStateService.class);
@@ -53,7 +53,7 @@ class ChatRunInstanceTerminalTest {
     private final AgentExecutionAdapter adapter = mock(AgentExecutionAdapter.class);
     private final WorkspaceAuditRecorder workspaceAuditRecorder = mock(WorkspaceAuditRecorder.class);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private ChatExecutionInstance instance;
+    private ChatRunInstance instance;
 
     @AfterEach
     void tearDown() {
@@ -143,7 +143,7 @@ class ChatRunInstanceTerminalTest {
         ChatRunEventStore realStore = new ChatRunEventStore(tinyBuffer);
         ChatRunEntity run = run(ChatRunStatus.RUNNING, snapshot("", false, false));
         try {
-            instance = new ChatExecutionInstance(
+            instance = new ChatRunInstance(
                     runService,
                     realStore,
                     new AiProperties(),
@@ -153,7 +153,7 @@ class ChatRunInstanceTerminalTest {
                     run,
                     session(),
                     adapter,
-                    new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+                    new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
             stubTerminalCommit();
             String oversizeDelta = "x".repeat(2048);
             when(adapter.stream(any(Msg.class)))
@@ -307,8 +307,8 @@ class ChatRunInstanceTerminalTest {
         return captor.getValue();
     }
 
-    private ChatExecutionInstance newInstance(ChatRunEntity run) {
-        ChatExecutionInstance created = new ChatExecutionInstance(
+    private ChatRunInstance newInstance(ChatRunEntity run) {
+        ChatRunInstance created = new ChatRunInstance(
                 runService,
                 eventStore,
                 new AiProperties(),
@@ -318,7 +318,7 @@ class ChatRunInstanceTerminalTest {
                 run,
                 session(),
                 adapter,
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
         return created;
     }
 

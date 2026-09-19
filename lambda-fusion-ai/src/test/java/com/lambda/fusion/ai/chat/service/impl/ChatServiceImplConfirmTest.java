@@ -17,7 +17,7 @@ import com.lambda.fusion.ai.chat.model.RunContext;
 import com.lambda.fusion.ai.chat.model.SendMessage;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
-import com.lambda.fusion.ai.chat.runtime.ChatExecutionService;
+import com.lambda.fusion.ai.chat.runtime.ChatRunCoordinator;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapModel;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
@@ -30,7 +30,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 class ChatServiceImplConfirmTest {
 
     private final ChatRunService runService = mock(ChatRunService.class);
-    private final ChatExecutionService chatExecutionService = mock(ChatExecutionService.class);
+    private final ChatRunCoordinator chatExecutionService = mock(ChatRunCoordinator.class);
     private final ChatRunEventStore eventStore = mock(ChatRunEventStore.class);
     private final AiProperties properties = new AiProperties();
     private final ChatServiceImpl chatService =

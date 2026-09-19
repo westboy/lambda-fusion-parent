@@ -32,7 +32,7 @@ Agent 记忆、工具事件或媒体意图提示。工具是否可用由 Toolkit
 SendMessage(content + attachmentIds)
   -> Bean Validation（要求正文或附件至少存在一项）
   -> ChatRun 保存原始用户消息
-  -> ChatExecutionService
+  -> ChatRunCoordinator
   -> AgentExecutionAdapter.stream(原始用户消息)
   -> HarnessAgent.streamEvents
   -> 模型依据 Toolkit ToolSchema 自主决定是否调用匹配工具

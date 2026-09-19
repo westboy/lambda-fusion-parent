@@ -66,7 +66,7 @@ class ChatRunInstanceDrainTest {
     private final AgentExecutionAdapter adapter = mock(AgentExecutionAdapter.class);
     private final WorkspaceAuditRecorder workspaceAuditRecorder = mock(WorkspaceAuditRecorder.class);
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private ChatExecutionInstance instance;
+    private ChatRunInstance instance;
 
     @AfterEach
     void tearDown() {
@@ -267,7 +267,7 @@ class ChatRunInstanceDrainTest {
                         checkpointThread.set(Thread.currentThread().getName());
                         return true;
                     });
-            instance = new ChatExecutionInstance(
+            instance = new ChatRunInstance(
                     runService,
                     eventStore,
                     properties,
@@ -277,7 +277,7 @@ class ChatRunInstanceDrainTest {
                     run,
                     session(),
                     adapter,
-                    new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+                    new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
             Sinks.Many<AgentEvent> source = Sinks.many().unicast().onBackpressureBuffer();
             when(adapter.stream(any(Msg.class))).thenReturn(source.asFlux());
 
@@ -338,7 +338,7 @@ class ChatRunInstanceDrainTest {
     @Test
     void shouldRunWorkspaceAuditOffSourceTerminationThread() {
         ChatRunEntity run = run(ChatRunStatus.RUNNING);
-        instance = new ChatExecutionInstance(
+        instance = new ChatRunInstance(
                 runService,
                 eventStore,
                 new AiProperties(),
@@ -348,7 +348,7 @@ class ChatRunInstanceDrainTest {
                 run,
                 session(),
                 adapter,
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
         stubTerminalCommit();
         AtomicReference<String> auditThread = new AtomicReference<>();
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -415,12 +415,12 @@ class ChatRunInstanceDrainTest {
         lenient().when(eventStore.latestCursor(anyString())).thenReturn(1L);
     }
 
-    private ChatExecutionInstance newInstance(ChatRunEntity run) {
+    private ChatRunInstance newInstance(ChatRunEntity run) {
         return newInstance(run, new AiProperties());
     }
 
-    private ChatExecutionInstance newInstance(ChatRunEntity run, AiProperties properties) {
-        return new ChatExecutionInstance(
+    private ChatRunInstance newInstance(ChatRunEntity run, AiProperties properties) {
+        return new ChatRunInstance(
                 runService,
                 eventStore,
                 properties,
@@ -430,7 +430,7 @@ class ChatRunInstanceDrainTest {
                 run,
                 session(),
                 adapter,
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
+                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson())));
     }
 
     private static AgentEvent agentEnd() {

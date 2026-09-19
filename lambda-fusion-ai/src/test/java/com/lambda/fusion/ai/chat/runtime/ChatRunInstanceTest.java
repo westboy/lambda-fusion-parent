@@ -37,11 +37,11 @@ import org.junit.jupiter.api.Test;
  * 执行实例并发语义测试：终态 DB 提交与检查点写入已移出实例锁（实例 monitor 内不做数据库 I/O），
  * 锁外提交窗口内 confirm/requestStop 被 finalizeCommitInProgress 拦截为状态冲突。
  */
-class ChatExecutionInstanceTest {
+class ChatRunInstanceTest {
 
     private ChatRunStateService runService;
     private ScheduledExecutorService scheduler;
-    private ChatExecutionInstance instance;
+    private ChatRunInstance instance;
     private ChatRunEntity run;
 
     @BeforeEach
@@ -58,7 +58,7 @@ class ChatExecutionInstanceTest {
         run.setAguiRunId("agui-1");
         run.setPhaseNo(1);
         run.setStatus(ChatRunStatus.RUNNING.name());
-        instance = new ChatExecutionInstance(
+        instance = new ChatRunInstance(
                 runService,
                 mock(ChatRunEventStore.class),
                 new AiProperties(),
@@ -68,7 +68,7 @@ class ChatExecutionInstanceTest {
                 run,
                 session(),
                 null,
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshot.empty("run-1", "agui-1", 1)));
+                new ChatRunSnapshotAccumulator(ChatRunSnapshot.empty("run-1", "agui-1", 1)));
     }
 
     @AfterEach
@@ -195,10 +195,10 @@ class ChatExecutionInstanceTest {
     void shouldSettleWhenFencedFinalizeCommits() {
         when(runService.finalizeExecution(any(), any())).thenReturn(committed(ChatRunStatus.FAILED.name()));
 
-        ChatExecutionInstance.FenceFinalizeOutcome outcome =
+        ChatRunInstance.FenceFinalizeOutcome outcome =
                 instance.finalizeFailedIfUnchanged(ChatRunFailureCode.INTERRUPTED, "执行节点故障");
 
-        assertThat(outcome).isEqualTo(ChatExecutionInstance.FenceFinalizeOutcome.SETTLED);
+        assertThat(outcome).isEqualTo(ChatRunInstance.FenceFinalizeOutcome.SETTLED);
         assertThat(run.getStatus()).isEqualTo(ChatRunStatus.FAILED.name());
     }
 
@@ -208,10 +208,10 @@ class ChatExecutionInstanceTest {
         when(runService.finalizeExecution(any(), any()))
                 .thenReturn(new ChatRunFinalizationResult(false, ChatRunStatus.RUNNING.name(), null, null, null));
 
-        ChatExecutionInstance.FenceFinalizeOutcome outcome =
+        ChatRunInstance.FenceFinalizeOutcome outcome =
                 instance.finalizeFailedIfUnchanged(ChatRunFailureCode.AWAIT_TIMEOUT, "等待用户确认超时");
 
-        assertThat(outcome).isEqualTo(ChatExecutionInstance.FenceFinalizeOutcome.SUPERSEDED);
+        assertThat(outcome).isEqualTo(ChatRunInstance.FenceFinalizeOutcome.SUPERSEDED);
         assertThat(run.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         assertThat(instance.terminalCommittedSignal().toCompletableFuture()).isDone();
     }

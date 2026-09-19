@@ -13,7 +13,7 @@ import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
-import com.lambda.fusion.ai.chat.runtime.ChatExecutionCapacityLimiter.Permit;
+import com.lambda.fusion.ai.chat.runtime.ChatRunCapacityLimiter.Permit;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapEncoder;
 import com.lambda.fusion.ai.chat.runtime.agui.AguiBootstrapModel;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
@@ -53,7 +53,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-public class ChatExecutionService {
+public class ChatRunCoordinator {
 
     private final ChatRunStateService runService;
     private final ChatRunEventStore eventStore;
@@ -61,9 +61,9 @@ public class ChatExecutionService {
     private final ChatAttachmentService attachmentService;
     private final ChatAttachmentMessageBuilder attachmentMessageBuilder;
     private final AppService appService;
-    private final ChatExecutionInstanceFactory instanceFactory;
+    private final ChatRunInstanceFactory instanceFactory;
     private final AiProperties properties;
-    private final ChatExecutionCapacityLimiter capacityLimiter;
+    private final ChatRunCapacityLimiter capacityLimiter;
     private final ConcurrentMap<String, LocalPhaseHandle> activeLocalPhases = new ConcurrentHashMap<>();
     private final ExecutorService executionExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2, runnable -> {
@@ -84,14 +84,14 @@ public class ChatExecutionService {
      * @param instanceFactory 执行实例工厂
      * @param properties AI 模块配置
      */
-    public ChatExecutionService(
+    public ChatRunCoordinator(
             ChatRunStateService runService,
             ChatRunEventStore eventStore,
             ChatMessageService messageService,
             ChatAttachmentService attachmentService,
             ChatAttachmentMessageBuilder attachmentMessageBuilder,
             AppService appService,
-            ChatExecutionInstanceFactory instanceFactory,
+            ChatRunInstanceFactory instanceFactory,
             AiProperties properties) {
         this.runService = runService;
         this.eventStore = eventStore;
@@ -101,7 +101,7 @@ public class ChatExecutionService {
         this.appService = appService;
         this.instanceFactory = instanceFactory;
         this.properties = properties;
-        this.capacityLimiter = new ChatExecutionCapacityLimiter(properties);
+        this.capacityLimiter = new ChatRunCapacityLimiter(properties);
     }
 
     /** 启动本次请求刚创建的运行；方法只预占容量并安排后台构造，不在 HTTP 线程创建 Agent。 */
@@ -134,7 +134,7 @@ public class ChatExecutionService {
 
     /** 在后台执行器中构造 Agent、跟踪本地阶段句柄并订阅首阶段事件流。 */
     private void buildAndStart(ChatRunEntity run, ChatSessionEntity session, Permit permit) {
-        ChatExecutionInstance execution;
+        ChatRunInstance execution;
         try {
             execution = instanceFactory.createAgentBacked(run, session, scheduler);
         } catch (RuntimeException createFailure) {
@@ -232,10 +232,10 @@ public class ChatExecutionService {
             ChatRunEntity run,
             ChatSessionEntity session,
             int sourcePhaseNo,
-            Function<ChatExecutionInstance, ConfirmTransition> operation) {
+            Function<ChatRunInstance, ConfirmTransition> operation) {
         Permit permit =
                 capacityLimiter.tryAcquire(session).orElseThrow(() -> new IllegalStateException("当前节点对话运行容量已满"));
-        ChatExecutionInstance candidate;
+        ChatRunInstance candidate;
         try {
             candidate = instanceFactory.createAgentBacked(run, session, scheduler);
         } catch (RuntimeException createFailure) {
@@ -341,11 +341,11 @@ public class ChatExecutionService {
             ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(current.getSnapshotJson());
             boolean noPendingInteraction = snapshot.pendingTools().isEmpty()
                     && snapshot.pendingInputs().isEmpty();
-            ChatExecutionInstance terminalOnly = createStoppedExecution(current, session, noPendingInteraction);
+            ChatRunInstance terminalOnly = createStoppedExecution(current, session, noPendingInteraction);
             terminalOnly.requestStop();
             return;
         }
-        ChatExecutionInstance execution = handle.execution();
+        ChatRunInstance execution = handle.execution();
         if (!execution.requestStop()) {
             return;
         }
@@ -382,7 +382,7 @@ public class ChatExecutionService {
     }
 
     /** 在后台执行器上装配用户消息（含附件与应用上下文）后订阅 Agent 首阶段。 */
-    private void startExecution(ChatExecutionInstance execution) {
+    private void startExecution(ChatRunInstance execution) {
         ChatRunEntity run = execution.run();
         try {
             ChatMessageEntity userMessage = messageService
@@ -401,7 +401,7 @@ public class ChatExecutionService {
 
     /** 启动被拒或构造失败时，用无 Agent 实例提交 {@code START_FAILED}，避免 Run 悬挂在 RUNNING。 */
     private void failStart(ChatRunEntity run, ChatSessionEntity session, RuntimeException failure) {
-        ChatExecutionInstance rejected = instanceFactory.createTerminalOnly(run, session, scheduler);
+        ChatRunInstance rejected = instanceFactory.createTerminalOnly(run, session, scheduler);
         rejected.finalizeFailed(ChatRunFailureCode.START_FAILED, ChatRunSnapshotSanitizer.safeMessage(failure));
     }
 
@@ -409,7 +409,7 @@ public class ChatExecutionService {
      * 为本地无活动阶段的停止请求构造替代实例。无待交互投影时直接落 STOPPED；HITL 暂停中优先加载
      * AgentScope 状态补写拒绝结果，状态不可用时降级为纯业务终结。
      */
-    private ChatExecutionInstance createStoppedExecution(
+    private ChatRunInstance createStoppedExecution(
             ChatRunEntity run, ChatSessionEntity session, boolean noPendingInteraction) {
         if (noPendingInteraction) {
             return instanceFactory.createTerminalOnly(run, session, scheduler);
@@ -427,7 +427,7 @@ public class ChatExecutionService {
      * 同一或更新阶段已存在时复用其协调结果。这里只协调本地资源，不判断 Run 是否有效，也不参与跨节点赢家裁决。
      */
     private LocalPhaseSelection trackLocalPhase(
-            ChatExecutionInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
+            ChatRunInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
         LocalPhaseHandle candidate = new LocalPhaseHandle(execution, permit, activePhaseNo, resumePhase);
         while (true) {
             LocalPhaseHandle existing =
@@ -451,7 +451,7 @@ public class ChatExecutionService {
     }
 
     /** 等待旧阶段排空，带超时上限；超时或中断按状态冲突抛出，避免请求线程被卡死的旧源流无限拖住。 */
-    private void awaitOldPhaseDrained(ChatExecutionInstance candidate, LocalPhaseHandle existing) {
+    private void awaitOldPhaseDrained(ChatRunInstance candidate, LocalPhaseHandle existing) {
         try {
             existing.execution()
                     .localPhaseDrainedSignal()
@@ -478,20 +478,19 @@ public class ChatExecutionService {
     /** 当前 JVM 单个执行阶段的资源句柄；不持久化，也不表达 Run 所有权。 */
     private static final class LocalPhaseHandle {
 
-        private final ChatExecutionInstance execution;
+        private final ChatRunInstance execution;
         private final Permit permit;
         private final int activePhaseNo;
         private final CompletableFuture<ConfirmTransition> resumeTransition;
 
-        private LocalPhaseHandle(
-                ChatExecutionInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
+        private LocalPhaseHandle(ChatRunInstance execution, Permit permit, int activePhaseNo, boolean resumePhase) {
             this.execution = execution;
             this.permit = permit;
             this.activePhaseNo = activePhaseNo;
             this.resumeTransition = resumePhase ? new CompletableFuture<>() : null;
         }
 
-        private ChatExecutionInstance execution() {
+        private ChatRunInstance execution() {
             return execution;
         }
 

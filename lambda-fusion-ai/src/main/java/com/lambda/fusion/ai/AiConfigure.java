@@ -14,7 +14,7 @@ import com.lambda.fusion.ai.channel.service.ChannelConfigService;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentOrphanCleaner;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
-import com.lambda.fusion.ai.chat.runtime.ChatExecutionInstanceFactory;
+import com.lambda.fusion.ai.chat.runtime.ChatRunInstanceFactory;
 import com.lambda.fusion.ai.chat.runtime.ChatRunReconciler;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
@@ -188,7 +188,7 @@ public class AiConfigure {
         public ChatRunReconciler chatRunReconciler(
                 ChatRunMapper runMapper,
                 ChatSessionMapper sessionMapper,
-                ChatExecutionInstanceFactory instanceFactory,
+                ChatRunInstanceFactory instanceFactory,
                 AiProperties properties) {
             ChatRunReconciler reconciler = new ChatRunReconciler(runMapper, sessionMapper, instanceFactory, properties);
             reconciler.start();

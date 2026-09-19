@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
-import com.lambda.fusion.ai.chat.runtime.ChatExecutionCapacityLimiter.Permit;
+import com.lambda.fusion.ai.chat.runtime.ChatRunCapacityLimiter.Permit;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -13,14 +13,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
-class ChatExecutionCapacityLimiterTest {
+class ChatRunCapacityLimiterTest {
 
     @Test
     void shouldReleaseGlobalAndPerUserCapacityWithPermit() {
         AiProperties properties = new AiProperties();
         properties.getChat().getRun().setMaxActiveRuns(2);
         properties.getChat().getRun().setMaxActiveRunsPerUser(1);
-        ChatExecutionCapacityLimiter limiter = new ChatExecutionCapacityLimiter(properties);
+        ChatRunCapacityLimiter limiter = new ChatRunCapacityLimiter(properties);
 
         Permit first = limiter.tryAcquire(session("tenant-1", "user-1")).orElseThrow();
         assertThat(limiter.tryAcquire(session("tenant-1", "user-1"))).isEmpty();
@@ -38,7 +38,7 @@ class ChatExecutionCapacityLimiterTest {
     void shouldAcquireSingleGlobalPermitAtomically() throws Exception {
         AiProperties properties = new AiProperties();
         properties.getChat().getRun().setMaxActiveRuns(1);
-        ChatExecutionCapacityLimiter limiter = new ChatExecutionCapacityLimiter(properties);
+        ChatRunCapacityLimiter limiter = new ChatRunCapacityLimiter(properties);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -60,7 +60,7 @@ class ChatExecutionCapacityLimiterTest {
 
     private static CompletableFuture<Optional<Permit>> attemptAcquire(
             ExecutorService executor,
-            ChatExecutionCapacityLimiter limiter,
+            ChatRunCapacityLimiter limiter,
             ChatSessionEntity session,
             CountDownLatch ready,
             CountDownLatch start) {

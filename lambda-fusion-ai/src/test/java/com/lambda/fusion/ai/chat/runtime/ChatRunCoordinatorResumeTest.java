@@ -29,8 +29,8 @@ class ChatRunCoordinatorResumeTest {
 
     private final ChatRunStateService runService = mock(ChatRunStateService.class);
     private final ChatRunEventStore eventStore = mock(ChatRunEventStore.class);
-    private final ChatExecutionInstanceFactory instanceFactory = mock(ChatExecutionInstanceFactory.class);
-    private ChatExecutionService coordinator;
+    private final ChatRunInstanceFactory instanceFactory = mock(ChatRunInstanceFactory.class);
+    private ChatRunCoordinator coordinator;
 
     @AfterEach
     void tearDown() {
@@ -81,8 +81,8 @@ class ChatRunCoordinatorResumeTest {
         verify(runService, never()).finalizeExecution(any(), any());
     }
 
-    private ChatExecutionService newCoordinator() {
-        return new ChatExecutionService(
+    private ChatRunCoordinator newCoordinator() {
+        return new ChatRunCoordinator(
                 runService,
                 eventStore,
                 mock(ChatMessageService.class),

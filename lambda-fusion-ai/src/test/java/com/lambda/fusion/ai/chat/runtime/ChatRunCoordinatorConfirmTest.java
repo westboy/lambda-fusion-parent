@@ -55,8 +55,8 @@ class ChatRunCoordinatorConfirmTest {
     private ChatRunStateService runService;
     private ChatRunEventStore eventStore;
     private AgentFactory agentFactory;
-    private ChatExecutionService coordinator;
-    private ChatExecutionInstanceFactory instanceFactory;
+    private ChatRunCoordinator coordinator;
+    private ChatRunInstanceFactory instanceFactory;
     private HarnessAgent agent;
     private ReActAgent delegate;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -71,14 +71,14 @@ class ChatRunCoordinatorConfirmTest {
         when(agent.getDelegate()).thenReturn(delegate);
         when(agentFactory.getOrBuildForChatRun(anyString(), anyString())).thenReturn(agent);
         AiProperties properties = new AiProperties();
-        instanceFactory = new ChatExecutionInstanceFactory(
+        instanceFactory = new ChatRunInstanceFactory(
                 runService,
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
                 mock(ObjectProvider.class),
                 properties);
-        coordinator = new ChatExecutionService(
+        coordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 mock(ChatMessageService.class),
@@ -257,8 +257,8 @@ class ChatRunCoordinatorConfirmTest {
     void shouldFailFastWhenOldPhaseNeverDrainsDuringHandover() {
         AiProperties properties = new AiProperties();
         properties.getChat().getRun().setStopGraceSeconds(1);
-        ChatExecutionInstanceFactory mockFactory = mock(ChatExecutionInstanceFactory.class);
-        ChatExecutionService fastCoordinator = new ChatExecutionService(
+        ChatRunInstanceFactory mockFactory = mock(ChatRunInstanceFactory.class);
+        ChatRunCoordinator fastCoordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 mock(ChatMessageService.class),
@@ -270,10 +270,10 @@ class ChatRunCoordinatorConfirmTest {
         try {
             ChatSessionEntity session = session();
             ChatRunEntity oldRun = awaitingRun(1);
-            ChatExecutionInstance oldExecution = mock(ChatExecutionInstance.class);
+            ChatRunInstance oldExecution = mock(ChatRunInstance.class);
             when(oldExecution.run()).thenReturn(oldRun);
             when(oldExecution.localPhaseDrainedSignal()).thenReturn(new CompletableFuture<>());
-            ChatExecutionInstance candidate = mock(ChatExecutionInstance.class);
+            ChatRunInstance candidate = mock(ChatRunInstance.class);
             when(candidate.run()).thenReturn(awaitingRun(2));
             when(mockFactory.createAgentBacked(any(), any(), any())).thenReturn(oldExecution, candidate);
             // 旧阶段句柄注册完成后才放行 confirm，保证交接确定性。
@@ -305,8 +305,8 @@ class ChatRunCoordinatorConfirmTest {
     void shouldFailFastWhenLeaderResumeNeverCompletes() {
         AiProperties properties = new AiProperties();
         properties.getChat().getRun().setStopGraceSeconds(1);
-        ChatExecutionInstanceFactory mockFactory = mock(ChatExecutionInstanceFactory.class);
-        ChatExecutionService fastCoordinator = new ChatExecutionService(
+        ChatRunInstanceFactory mockFactory = mock(ChatRunInstanceFactory.class);
+        ChatRunCoordinator fastCoordinator = new ChatRunCoordinator(
                 runService,
                 eventStore,
                 mock(ChatMessageService.class),
@@ -319,7 +319,7 @@ class ChatRunCoordinatorConfirmTest {
             ChatSessionEntity session = session();
             CountDownLatch leaderConfirmStarted = new CountDownLatch(1);
             CountDownLatch releaseLeader = new CountDownLatch(1);
-            ChatExecutionInstance leader = mock(ChatExecutionInstance.class);
+            ChatRunInstance leader = mock(ChatRunInstance.class);
             when(leader.run()).thenReturn(awaitingRun(2));
             when(leader.localPhaseDrainedSignal()).thenReturn(new CompletableFuture<>());
             when(leader.confirm(any())).thenAnswer(invocation -> {
@@ -328,7 +328,7 @@ class ChatRunCoordinatorConfirmTest {
                 releaseLeader.await(10, TimeUnit.SECONDS);
                 return new ConfirmTransition(awaitingRun(3), session, true);
             });
-            ChatExecutionInstance followerCandidate = mock(ChatExecutionInstance.class);
+            ChatRunInstance followerCandidate = mock(ChatRunInstance.class);
             when(followerCandidate.run()).thenReturn(awaitingRun(2));
             when(mockFactory.createAgentBacked(any(), any(), any())).thenReturn(leader, followerCandidate);
 
@@ -382,7 +382,7 @@ class ChatRunCoordinatorConfirmTest {
                 });
     }
 
-    private ChatExecutionInstance execution(ChatRunEntity run, ChatSessionEntity session) {
+    private ChatRunInstance execution(ChatRunEntity run, ChatSessionEntity session) {
         return instanceFactory.createAgentBacked(run, session, scheduler);
     }
 

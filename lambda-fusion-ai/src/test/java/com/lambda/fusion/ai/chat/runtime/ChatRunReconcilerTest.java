@@ -42,7 +42,7 @@ class ChatRunReconcilerTest {
 
     private ChatRunMapper runMapper;
     private ChatSessionMapper sessionMapper;
-    private ChatExecutionInstanceFactory instanceFactory;
+    private ChatRunInstanceFactory instanceFactory;
     private ChatRunStateService runService;
     private ChatRunEventStore eventStore;
     private AgentExecutionAdapter adapter;
@@ -55,7 +55,7 @@ class ChatRunReconcilerTest {
     void setUp() {
         runMapper = mock(ChatRunMapper.class);
         sessionMapper = mock(ChatSessionMapper.class);
-        instanceFactory = mock(ChatExecutionInstanceFactory.class);
+        instanceFactory = mock(ChatRunInstanceFactory.class);
         runService = mock(ChatRunStateService.class);
         eventStore = mock(ChatRunEventStore.class);
         adapter = mock(AgentExecutionAdapter.class);
@@ -226,9 +226,9 @@ class ChatRunReconcilerTest {
         return captor.getValue();
     }
 
-    private ChatExecutionInstance terminalInstance(
+    private ChatRunInstance terminalInstance(
             ChatRunEntity run, ChatSessionEntity session, AgentExecutionAdapter executionAdapter) {
-        return new ChatExecutionInstance(
+        return new ChatRunInstance(
                 runService,
                 eventStore,
                 properties,
@@ -238,7 +238,7 @@ class ChatRunReconcilerTest {
                 run,
                 session,
                 executionAdapter,
-                new ChatExecutionSnapshotBuilder(ChatRunSnapshotCodec.decode(
+                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(
                         run.getSnapshotJson() == null || !run.getSnapshotJson().startsWith("{")
                                 ? ChatRunSnapshotCodec.encode(ChatRunSnapshot.empty("run-1", "agui-1", 1))
                                 : run.getSnapshotJson())));

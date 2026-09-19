@@ -5,7 +5,7 @@
 > 持久化与重启恢复。
 >
 > 调度引擎复用 AgentScope 官方扩展 `agentscope-extensions-scheduler-quartz`；Agent 定义复用现有 `ai_sub_agent` 表
-> （加 `category` 分类）。本文不引入 `AgentFactory` / `HarnessAgent` / `ChatExecutionService` 这套 App 化会话运行时——
+> （加 `category` 分类）。本文不引入 `AgentFactory` / `HarnessAgent` / `ChatRunCoordinator` 这套 App 化会话运行时——
 > 独立定时任务为无头一次性执行，用不上会话 / 状态持久化 / 多渠道路由，避免平行体系与过度设计（工程契约 §2、§20）。
 
 ## 1. 选型与边界
@@ -37,7 +37,7 @@
 
 - 定时任务是**无头、一次性、独立**的 Agent：它不属于任何 `ai_app`，不需要会话（`la_ai_chat_run`）、不需要跨轮状态持久化、不需要多渠道（钉钉 / 飞书）路由。
 - `AgentFactory.getOrBuild(appId, tenantId)` 构建的是 App 化的 `HarnessAgent`（带 modelResolver / 状态存储 / 网关注册 / 配置失效），对独立定时任务属于过度设计。
-- 两者**不冲突、各司其职**：App 会话走 `ChatExecutionService`；定时任务走扩展的 `AgentScheduler`。复用同一套「模型解析 + 工具白名单」范式即可。
+- 两者**不冲突、各司其职**：App 会话走 `ChatRunCoordinator`；定时任务走扩展的 `AgentScheduler`。复用同一套「模型解析 + 工具白名单」范式即可。
 
 ## 2. 架构
 

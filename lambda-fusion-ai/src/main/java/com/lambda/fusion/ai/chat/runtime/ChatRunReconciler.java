@@ -38,7 +38,7 @@ public class ChatRunReconciler {
 
     private final ChatRunMapper runMapper;
     private final ChatSessionMapper sessionMapper;
-    private final ChatExecutionInstanceFactory instanceFactory;
+    private final ChatRunInstanceFactory instanceFactory;
     private final AiProperties properties;
     /** 正在收敛中的 Run（含终结失败的退避重试）：防止数据库故障期间每轮重复创建终结实例堆积。 */
     private final Set<String> converging = ConcurrentHashMap.newKeySet();
@@ -129,11 +129,11 @@ public class ChatRunReconciler {
     private void converge(ChatRunEntity run, ChatSessionEntity session, boolean awaiting) {
         ChatRunFailureCode code = awaiting ? ChatRunFailureCode.AWAIT_TIMEOUT : ChatRunFailureCode.INTERRUPTED;
         String message = awaiting ? "等待用户确认/输入超时，已自动结束" : "执行节点故障或服务重启，运行已中断";
-        ChatExecutionInstance instance = awaiting ? tryCreateAgentBacked(run, session) : null;
+        ChatRunInstance instance = awaiting ? tryCreateAgentBacked(run, session) : null;
         if (instance == null) {
             instance = instanceFactory.createTerminalOnly(run, session, scheduler);
         }
-        ChatExecutionInstance.FenceFinalizeOutcome outcome = instance.finalizeFailedIfUnchanged(code, message);
+        ChatRunInstance.FenceFinalizeOutcome outcome = instance.finalizeFailedIfUnchanged(code, message);
         switch (outcome) {
             case SUPERSEDED -> {
                 converging.remove(run.getId());
@@ -145,7 +145,7 @@ public class ChatRunReconciler {
             }
             case RETRYING -> {
                 // 提交失败退避重试中：保留去重标记，实例的终态提交信号完成时摘除。
-                ChatExecutionInstance tracked = instance;
+                ChatRunInstance tracked = instance;
                 tracked.terminalCommittedSignal().whenComplete((ignored, failure) -> converging.remove(run.getId()));
                 log.info("Run{}收敛提交失败，退避重试中: runId={}", awaiting ? "待交互超时" : "孤儿运行", run.getId());
             }
@@ -156,7 +156,7 @@ public class ChatRunReconciler {
     }
 
     /** 尝试为待交互运行构造带 Agent 的实例；AgentScope 状态不可用时返回 {@code null} 走降级。 */
-    private ChatExecutionInstance tryCreateAgentBacked(ChatRunEntity run, ChatSessionEntity session) {
+    private ChatRunInstance tryCreateAgentBacked(ChatRunEntity run, ChatSessionEntity session) {
         try {
             return instanceFactory.createAgentBacked(run, session, scheduler);
         } catch (RuntimeException agentUnavailable) {

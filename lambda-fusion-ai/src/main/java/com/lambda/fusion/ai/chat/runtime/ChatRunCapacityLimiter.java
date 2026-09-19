@@ -9,13 +9,13 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** 当前节点 Agent 执行阶段的容量限制器；不保存 Run，也不参与业务状态判断。 */
-final class ChatExecutionCapacityLimiter {
+final class ChatRunCapacityLimiter {
 
     private final Semaphore globalPermits;
     private final int maxPerUser;
     private final ConcurrentHashMap<UserKey, Integer> userCounts = new ConcurrentHashMap<>();
 
-    ChatExecutionCapacityLimiter(AiProperties properties) {
+    ChatRunCapacityLimiter(AiProperties properties) {
         AiProperties.Chat.Run run = properties.getChat().getRun();
         globalPermits = new Semaphore(run.getMaxActiveRuns(), true);
         maxPerUser = run.getMaxActiveRunsPerUser();
@@ -62,11 +62,11 @@ final class ChatExecutionCapacityLimiter {
 
     static final class Permit implements AutoCloseable {
 
-        private final ChatExecutionCapacityLimiter owner;
+        private final ChatRunCapacityLimiter owner;
         private final UserKey key;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private Permit(ChatExecutionCapacityLimiter owner, UserKey key) {
+        private Permit(ChatRunCapacityLimiter owner, UserKey key) {
             this.owner = owner;
             this.key = key;
         }

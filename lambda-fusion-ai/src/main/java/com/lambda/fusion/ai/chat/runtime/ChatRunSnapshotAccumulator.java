@@ -16,7 +16,7 @@ import java.util.Map;
  *
  * @author Jin
  */
-public final class ChatExecutionSnapshotBuilder {
+public final class ChatRunSnapshotAccumulator {
 
     private final String runId;
     private String aguiRunId;
@@ -37,7 +37,7 @@ public final class ChatExecutionSnapshotBuilder {
      *
      * @param snapshot 已持久化的执行快照
      */
-    public ChatExecutionSnapshotBuilder(ChatRunSnapshot snapshot) {
+    public ChatRunSnapshotAccumulator(ChatRunSnapshot snapshot) {
         runId = snapshot.runId();
         aguiRunId = snapshot.aguiRunId();
         phaseNo = snapshot.phaseNo();
