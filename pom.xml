@@ -30,6 +30,7 @@
         <module>lambda-fusion-message</module>
         <module>lambda-fusion-logger-api</module>
         <module>lambda-fusion-logger</module>
+        <module>lambda-fusion-workflow</module>
     </modules>
 
     <dependencyManagement>

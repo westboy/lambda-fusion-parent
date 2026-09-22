@@ -72,6 +72,7 @@
 | dictionary | `lambda.fusion.dict` |
 | datasource | `lambda.fusion.datasource` |
 | ai | `lambda.fusion.ai` |
+| workflow | `lambda.fusion.workflow` |
 
 基础框架 cloud-starter 的前缀（`lambda.oss`、`lambda.security`、`lambda.liquibase`、`lambda.sse`、`lambda.cache` 等）来自 `lambda-cloud-parent`，不得在 fusion 模块内重新定义。
 

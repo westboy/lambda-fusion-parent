@@ -12,7 +12,7 @@
 
 ## 2. 适用范围（Scope）
 
-本宪章适用于本仓库内所有 `lambda-fusion-*` 模块（bom / core / authority / authority-api / permission（含 permission-api、permission-datascope）/ config / dictionary / datasource / oss / ai / startup）中的：
+本宪章适用于本仓库内所有 `lambda-fusion-*` 模块（bom / core / authority / authority-api / permission（含 permission-api、permission-datascope）/ config / dictionary / datasource / oss / ai / message / logger / workflow / startup）中的：
 
 - 代码生成、功能开发、缺陷修复
 - 重构与架构调整

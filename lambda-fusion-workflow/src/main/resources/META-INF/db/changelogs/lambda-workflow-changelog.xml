@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <!-- warm-flow 1.8.9 引擎 7 表（源自 warm-flow-all.sql），结构保持与官方 DDL 一致；
+         仅追加 business_id / instance_id 两个高频查询索引（官方升级脚本不涉及删除）。
+         租户过滤由框架 TenantLineInnerInterceptor 承担，tenant_id 列为引擎内置，勿删。 -->
+
+    <changeSet id="lambda-fusion-workflow-202609220001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_definition"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_definition" remarks="流程定义表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_definition_id" nullable="false"/>
+            </column>
+            <column name="flow_code" type="varchar(40)" remarks="流程编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="flow_name" type="varchar(100)" remarks="流程名称">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model_value" type="varchar(40)" defaultValue="CLASSICS"
+                    remarks="设计器模型（CLASSICS经典模型 MIMIC仿钉钉模型）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="category" type="varchar(100)" remarks="流程类别"/>
+            <column name="version" type="varchar(20)" remarks="流程版本">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_publish" type="tinyint(1)" defaultValueNumeric="0" remarks="是否发布（0未发布 1已发布 9失效）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="form_custom" type="char(1)" defaultValue="N" remarks="审批表单是否自定义（Y是 N否）"/>
+            <column name="form_path" type="varchar(100)" remarks="审批表单路径"/>
+            <column name="activity_status" type="tinyint(1)" defaultValueNumeric="1" remarks="流程激活状态（0挂起 1激活）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="listener_type" type="varchar(100)" remarks="监听器类型"/>
+            <column name="listener_path" type="varchar(400)" remarks="监听器路径"/>
+            <column name="ext" type="varchar(500)" remarks="业务详情 存业务表对象json字符串"/>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(64)" defaultValue="" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_node"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_node" remarks="流程节点表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_node_id" nullable="false"/>
+            </column>
+            <column name="node_type" type="tinyint(1)" remarks="节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="definition_id" type="bigint" remarks="流程定义id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_code" type="varchar(100)" remarks="流程节点编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_name" type="varchar(100)" remarks="流程节点名称"/>
+            <column name="permission_flag" type="varchar(200)"
+                    remarks="权限标识（权限类型:权限标识，可以多个，用@@隔开)"/>
+            <column name="node_ratio" type="varchar(200)" remarks="流程签署比例值"/>
+            <column name="coordinate" type="varchar(100)" remarks="坐标"/>
+            <column name="any_node_skip" type="varchar(100)" remarks="任意结点跳转"/>
+            <column name="listener_type" type="varchar(100)" remarks="监听器类型"/>
+            <column name="listener_path" type="varchar(400)" remarks="监听器路径"/>
+            <column name="form_custom" type="char(1)" defaultValue="N" remarks="审批表单是否自定义（Y是 N否）"/>
+            <column name="form_path" type="varchar(100)" remarks="审批表单路径"/>
+            <column name="version" type="varchar(20)" remarks="版本">
+                <constraints nullable="false"/>
+            </column>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(64)" defaultValue="" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="ext" type="text" remarks="节点扩展属性"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220003" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_skip"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_skip" remarks="节点跳转关联表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_skip_id" nullable="false"/>
+            </column>
+            <column name="definition_id" type="bigint" remarks="流程定义id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="now_node_code" type="varchar(100)" remarks="当前流程节点的编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="now_node_type" type="tinyint(1)"
+                    remarks="当前节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）"/>
+            <column name="next_node_code" type="varchar(100)" remarks="下一个流程节点的编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="next_node_type" type="tinyint(1)"
+                    remarks="下一个节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）"/>
+            <column name="skip_name" type="varchar(100)" remarks="跳转名称"/>
+            <column name="skip_type" type="varchar(40)" remarks="跳转类型（PASS审批通过 REJECT退回）"/>
+            <column name="skip_condition" type="varchar(200)" remarks="跳转条件"/>
+            <column name="coordinate" type="varchar(100)" remarks="坐标"/>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(64)" defaultValue="" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220004" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_instance"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_instance" remarks="流程实例表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_instance_id" nullable="false"/>
+            </column>
+            <column name="definition_id" type="bigint" remarks="对应flow_definition表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="business_id" type="varchar(40)" remarks="业务id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_type" type="tinyint(1)" remarks="节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_code" type="varchar(40)" remarks="流程节点编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_name" type="varchar(100)" remarks="流程节点名称"/>
+            <column name="variable" type="text" remarks="任务变量"/>
+            <column name="flow_status" type="varchar(20)"
+                    remarks="流程状态（0待提交 1审批中 2审批通过 4终止 5作废 6撤销 8已完成 9已退回 10失效 11拿回）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="activity_status" type="tinyint(1)" defaultValueNumeric="1" remarks="流程激活状态（0挂起 1激活）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="def_json" type="text" remarks="流程定义json"/>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(64)" defaultValue="" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="ext" type="varchar(500)" remarks="扩展字段，预留给业务系统使用"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <!-- 业务高频查询：按业务单据查实例（listByBusiness） -->
+    <changeSet id="lambda-fusion-workflow-202609220005" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="idx_business_id" tableName="flow_instance"/>
+            </not>
+        </preConditions>
+        <createIndex indexName="idx_business_id" tableName="flow_instance">
+            <column name="business_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220006" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_task"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_task" remarks="待办任务表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_task_id" nullable="false"/>
+            </column>
+            <column name="definition_id" type="bigint" remarks="对应flow_definition表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="instance_id" type="bigint" remarks="对应flow_instance表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_code" type="varchar(100)" remarks="节点编码">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_name" type="varchar(100)" remarks="节点名称"/>
+            <column name="node_type" type="tinyint(1)" remarks="节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="flow_status" type="varchar(20)"
+                    remarks="流程状态（0待提交 1审批中 2审批通过 4终止 5作废 6撤销 8已完成 9已退回 10失效 11拿回）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="form_custom" type="char(1)" defaultValue="N" remarks="审批表单是否自定义（Y是 N否）"/>
+            <column name="form_path" type="varchar(100)" remarks="审批表单路径"/>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(64)" defaultValue="" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220007" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_his_task"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_his_task" remarks="历史任务记录表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_his_task_id" nullable="false"/>
+            </column>
+            <column name="definition_id" type="bigint" remarks="对应flow_definition表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="instance_id" type="bigint" remarks="对应flow_instance表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="task_id" type="bigint" remarks="对应flow_task表的id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="node_code" type="varchar(100)" remarks="开始节点编码"/>
+            <column name="node_name" type="varchar(100)" remarks="开始节点名称"/>
+            <column name="node_type" type="tinyint(1)" remarks="开始节点类型（0开始节点 1中间节点 2结束节点 3互斥网关 4并行网关）"/>
+            <column name="target_node_code" type="varchar(200)" remarks="目标节点编码"/>
+            <column name="target_node_name" type="varchar(200)" remarks="结束节点名称"/>
+            <column name="approver" type="varchar(40)" remarks="审批人"/>
+            <column name="cooperate_type" type="tinyint(1)" defaultValueNumeric="0"
+                    remarks="协作方式(1审批 2转办 3委派 4会签 5票签 6加签 7减签)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="collaborator" type="varchar(500)" remarks="协作人"/>
+            <column name="skip_type" type="varchar(10)" remarks="流转类型（PASS通过 REJECT退回 NONE无动作）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="flow_status" type="varchar(20)"
+                    remarks="流程状态（0待提交 1审批中 2审批通过 4终止 5作废 6撤销 8已完成 9已退回 10失效 11拿回）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="form_custom" type="char(1)" defaultValue="N" remarks="审批表单是否自定义（Y是 N否）"/>
+            <column name="form_path" type="varchar(100)" remarks="审批表单路径"/>
+            <column name="message" type="varchar(500)" remarks="审批意见"/>
+            <column name="variable" type="text" remarks="任务变量"/>
+            <column name="ext" type="text" remarks="业务详情 存业务表对象json字符串"/>
+            <column name="create_time" type="datetime" remarks="任务开始时间"/>
+            <column name="update_time" type="datetime" remarks="审批完成时间"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <!-- 业务高频查询：按实例查审批历史 -->
+    <changeSet id="lambda-fusion-workflow-202609220008" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="idx_instance_id" tableName="flow_his_task"/>
+            </not>
+        </preConditions>
+        <createIndex indexName="idx_instance_id" tableName="flow_his_task">
+            <column name="instance_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220009" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="flow_user"/>
+            </not>
+        </preConditions>
+        <createTable tableName="flow_user" remarks="流程用户表">
+            <column name="id" type="bigint" remarks="主键id">
+                <constraints primaryKey="true" primaryKeyName="pk_flow_user_id" nullable="false"/>
+            </column>
+            <column name="type" type="char(1)"
+                    remarks="人员类型（1待办任务的审批人权限 2待办任务的转办人权限 3待办任务的委托人权限）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="processed_by" type="varchar(80)" remarks="权限人"/>
+            <column name="associated" type="bigint" remarks="任务表id">
+                <constraints nullable="false"/>
+            </column>
+            <column name="create_time" type="datetime" remarks="创建时间"/>
+            <column name="create_by" type="varchar(80)" remarks="创建人"/>
+            <column name="update_time" type="datetime" remarks="更新时间"/>
+            <column name="update_by" type="varchar(64)" defaultValue="" remarks="更新人"/>
+            <column name="del_flag" type="char(1)" defaultValue="0" remarks="删除标志"/>
+            <column name="tenant_id" type="varchar(40)" remarks="租户id"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220010" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <not>
+                    <indexExists indexName="user_processed_type" tableName="flow_user"/>
+                </not>
+                <tableExists tableName="flow_user"/>
+            </and>
+        </preConditions>
+        <createIndex indexName="user_processed_type" tableName="flow_user">
+            <column name="processed_by"/>
+            <column name="type"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-workflow-202609220011" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <not>
+                    <indexExists indexName="user_associated" tableName="flow_user"/>
+                </not>
+                <tableExists tableName="flow_user"/>
+            </and>
+        </preConditions>
+        <createIndex indexName="user_associated" tableName="flow_user">
+            <column name="associated"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

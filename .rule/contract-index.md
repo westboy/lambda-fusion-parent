@@ -34,7 +34,7 @@
 - `AuthUtils` / `UserDetails` / 禁止重复解析 Sa-Token 上下文
 - `DictEnum` / `@DictMapper` / `BaseEntity` / `@EqualsAndHashCode(callSuper=true)` / `@TableName("la_*")`
 - `@AutoConfiguration` / `*Configure` / `*Properties` / `AutoConfiguration.imports` / 末尾无空行 / `com.lambda.fusion.autoconfig`
-- 配置前缀 / `lambda.fusion.authorize`（authority）/ `lambda.fusion.permission` / `lambda.fusion.datascope` / `lambda.fusion.config` / `lambda.fusion.dict` / `lambda.fusion.datasource` / `lambda.fusion.ai` / cloud-starter 前缀 `lambda.oss` `lambda.security` `lambda.liquibase` `lambda.sse` `lambda.cache`
+- 配置前缀 / `lambda.fusion.authorize`（authority）/ `lambda.fusion.permission` / `lambda.fusion.datascope` / `lambda.fusion.config` / `lambda.fusion.dict` / `lambda.fusion.datasource` / `lambda.fusion.ai` / `lambda.fusion.workflow`（workflow，工作流） / cloud-starter 前缀 `lambda.oss` `lambda.security` `lambda.liquibase` `lambda.sse` `lambda.cache`
 - `@Service` / `@Component` / `@Bean` 边界 / `@ConditionalOnClass` / `@ConditionalOnProperty` / `@ConditionalOnMissingBean` / `ObjectProvider` / optional=true / 优雅降级 / 条件装配收口 Configure
 - `tenant_id` / `TenantContextInterceptor` / `TenantContextHolder` / 单一共享库 + 字段级隔离 / `mybatis-plus.tenant.enabled=true` / 普通租户 CRUD 默认使用租户插件 / 显式目标租户 / authority 租户开通与管理 / 受控跨租户流程 / `setTenantId` 与 `@InterceptorIgnore(tenantLine=true)` 例外边界 / 后台租户上下文传播
 - Liquibase / `META-INF/db/changelogs` / `lambda-*-changelog.xml` / `lambda-datasource-changelog.xml` 最先 / `lambda-additional-changelog.xml` 最后 / 命名严格匹配 / 禁止改写既有 changeSet

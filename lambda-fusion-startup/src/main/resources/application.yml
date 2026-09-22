@@ -106,6 +106,9 @@ lambda:
         url: ${MAIN_DB_URL}
         username: ${MAIN_DB_USERNAME}
         password: ${MAIN_DB_PASSWORD}
+    #### 工作流模块（warm-flow 引擎）：引擎全局开关见顶层 warm-flow 配置 ####
+    workflow:
+      enabled: ${WORKFLOW_ENABLED:true}
     ai:
       #### AgentScope Workspace：LOCAL 单节点；JDBC 多节点共享。切换后不迁移旧数据 ####
       workspace:
@@ -250,3 +253,12 @@ lambda:
   cache:
     type: caffeine
     enabled: true
+
+################################# warm-flow 工作流引擎 #################################
+warm-flow:
+  #### 引擎横幅关闭；模块说明与表结构见 lambda-fusion-workflow ####
+  banner: false
+  #### 设计器 UI 静态资源（/warm-flow-ui/**）与数据接口（/warm-flow/**）开关。
+  #### iframe 内 token 传递的鉴权对齐为 P2 事项（docs/design/workflow.md §12），
+  #### 生产环境可经 WORKFLOW_UI_ENABLED=false 关闭设计器入口 ####
+  ui: ${WORKFLOW_UI_ENABLED:true}
