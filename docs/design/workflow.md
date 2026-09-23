@@ -96,6 +96,7 @@
 | `WorkflowBusinessProvider` SPI | 业务单据标题/链接解析（下游实现） | 本仓库（接口） |
 | `AuthorityHandlerSelectService` | 设计器办理人弹窗（用户/角色/部门页签）对接 authority 远程接口（`RemoteUserService.pageUsers` / `RemoteRoleService` / `RemoteOrganizationService`，1.8.9 起扩充）；storageId 按 §4.1 标识约定生成（`user:`/`role:`/`org:` 前缀，引擎 `@@` 分隔原样落 `permission_flag`）；装配顺序：容器已有 Bean（单体）→ Dubbo 引用兜底（check=false）→ authority 未就绪按次降级空列表 | 本仓库 |
 | `DictCategoryService` | 设计器流程类别下拉对接 dictionary 模块 `workflow_category` 字典（只读映射，Tree 映射字典名落 `flow_definition.category`）；dictionary 缺失不装配、字典类型未配置返回空列表；默认类别（人事/行政/财务/其他）由 workflow changelog 幂等种子初始化 | 本仓库 |
+| `RegistryFormPathService` | 设计器自定义表单路径下拉对接本模块 `la_workflow_form_path` 注册表（后台维护，§10.5）；仅返回启用项，Tree(id=form_path, name=form_name) | 本仓库（P2） |
 
 ## 4. 关键设计
 
@@ -555,7 +556,77 @@ workflow_task_admin         改办理人/任意跳转
 
 **⑥ 实时提醒（P2 前端零改动）**：assignment 事件 → message 模块发站内信 → SSE 推既有 `notification` 事件 → `notificationStore` 已有监听自动刷新铃铛；待办页不做轮询，进入页面即刷新（推拉边界与 message-center 一致）。
 
-### 10.5 全链路时序（下游视角）
+### 10.5 流程自定义表单管理（后台维护，P2）
+
+**动机**：设计器基础信息的 `form_path`（自定义审批表单路径）由 warm-flow `FormPathService` SPI 供给（`FrameInvoker.getBean`，无 Bean 时新建默认 `formCustom='N'`、只能手填字符串）。该数据是「注册表」语义（名称 + 路由 + 启停 + 备注，路径需唯一性校验），不适合用字典承载（字典是 key-value 枚举模型），故做成本模块自建子域的后台维护功能。
+
+**范围边界**：本期只做「注册表 + 设计器下拉供给」；任务办理端按 `form_path` 跳转自定义表单的消费逻辑不做（办理抽屉仍走通用审批），业务接入时补前端路由与跳转即可。
+
+#### ① 表结构（workflow changelog 幂等建表）
+
+```text
+la_workflow_form_path  流程自定义表单注册表
+  id          varchar(32)  主键
+  form_name   varchar(100) 表单名称（设计器下拉显示）
+  form_path   varchar(255) 表单路径/前端路由（唯一约束 uk_form_path，设计器 Tree.id 落 flow_definition.form_path）
+  remarks     varchar(255) 备注
+  enabled     tinyint      启停（1 启用 0 停用；SPI 只返回启用项）
+  tenant_id   varchar(64)  租户（框架租户插件自动填充/过滤，与业务表同机制，§4.2）
+  created_by/created_at/updated_by/updated_at  审计四件套（框架填充）
+```
+
+#### ② 后端（workflow 模块新增 `formpath` 子域，标准分层，契约 §10）
+
+```text
+com.lambda.fusion.workflow.formpath
+├── controller/FormPathController.java    只编排 Service
+├── service/FormPathService.java          业务接口（勿与引擎 SPI 同名混淆，见⑤）
+├── service/impl/FormPathServiceImpl.java
+├── mapper/FormPathMapper.java            extends BaseMapper
+└── model/  FormPathEntity / FormPathPage / FormPathSaveCommand
+```
+
+REST（管理端，权限码实际码值）：
+
+| 方法 | 路径 | 权限码 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/workflow/form-path/page` | `workflow_form_path_list` | 分页（名称/路径模糊） |
+| GET | `/workflow/form-path/list-enabled` | 登录即可 | 启用项全量（设计器下拉数据源同源） |
+| POST | `/workflow/form-path` | `workflow_form_path_add` | 新增（路径唯一校验） |
+| PUT | `/workflow/form-path/{id}` | `workflow_form_path_update` | 修改（路径唯一校验） |
+| PUT | `/workflow/form-path/{id}/toggle` | `workflow_form_path_update` | 启停切换 |
+| DELETE | `/workflow/form-path/{id}` | `workflow_form_path_delete` | 删除 |
+
+#### ③ SPI 适配（bridge 包）
+
+`bridge/RegistryFormPathService implements org.dromara.warm.flow.ui.service.FormPathService`：查询启用项 → `Tree(id=form_path, name=form_name)`（id 落库、name 显示，与 DictCategoryService 同模式）。装配进 `WorkflowConfigure` 嵌套配置，UI 插件在 classpath 才注册。已发布定义引用的表单被停用/删除不回溯（`form_path` 是字符串快照，仅影响新建选择），与引擎 ext 类字段语义一致。
+
+#### ④ 前端（lambda-fusion-web，独立提交）
+
+- `api/system/workflow.ts` 增 `FormPathApi`；`views/workflow/formpath/index.vue` 标准 vxe-grid CRUD（名称/路径/备注/启停开关）
+- 菜单：工作流顶级菜单下挂「表单管理」`/workflow/formpath/`，按钮权限码 4 个；authority 数据初始化 changeSet 幂等登记（菜单 + 按钮 + 角色授权，参照既有 workflow 菜单 changeSet）
+
+#### ⑤ 明确不做
+
+- 不做表单渲染/跳转消费端（业务接入时再做）；
+- 不做表单设计器（那是低代码范畴，与 warm-flow 无关）；
+- 不校验 `form_path` 与前端真实路由的一致性——注册表只保证格式与唯一，路由存在性是业务责任（与 §10.3 不解析权限标识同理：模块不猜业务语义）；
+- SPI 实现类不暴露为 REST，REST 层不复用引擎 SPI 接口名（避免 `FormPathService` 一名两义）。
+
+#### ⑥ 实施清单
+
+```text
+[ ] lambda-workflow-changelog.xml：建表 + uk_form_path 唯一索引
+[ ] formpath 子域：entity/page/command/mapper/service/impl/controller
+[ ] bridge/RegistryFormPathService + WorkflowConfigure 嵌套装配
+[ ] 错误码：复用 16120-16129 段（16130 起留给 formpath：16130 路径已存在 / 16131 表单不存在）
+[ ] authority 数据初始化 changeSet：菜单 WfForm0001 + 4 按钮 + 3 角色授权
+[ ] mvn compile（Spotless/SpotBugs）+ install
+[ ] 前端：FormPathApi + formpath 页面 + 菜单 RES_PATH 登记（随 authority changeSet 同版本落地）
+[ ] 验证：设计器新建流程 → formCustom 默认 Y → 下拉出现启用表单 → 保存后 flow_definition.form_path 为路由值
+```
+
+### 10.6 全链路时序（下游视角）
 
 ```text
 用户提交请假单 ──▶ 业务接口（草稿→审批中 + start）──▶ flow_instance/flow_task 落库（租户插件自动填 tenant_id）
