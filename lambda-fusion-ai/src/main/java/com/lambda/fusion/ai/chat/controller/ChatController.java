@@ -159,7 +159,6 @@ public class ChatController {
     }
 
     @SaCheckPermission(value = "ai:chat-session:run-stop")
-    @OperationLog(module = "AI", value = "停止指定对话Run")
     @Operation(summary = "停止指定对话Run")
     @PostMapping("/{id}/runs/{runId}/stop")
     public WebAsyncTask<Void> stop(
