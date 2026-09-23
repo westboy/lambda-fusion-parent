@@ -740,4 +740,138 @@
             ]]></sql>
     </changeSet>
 
+    <!-- ========== 工作流菜单（顶级独立节点：待办/已办/我发起/定义/实例/设计器）
+         设计器为前端自建包装页 views/workflow/designer/index.vue（iframe 挂 /warm-flow-ui/index.html，
+         动态携带 id/onlyDesignShow/theme/darkColors/Authorization 参数），故 RES_TYPE=1 普通页面菜单。
+         若改用后端 EMBEDDED_PAGE（RES_TYPE=2）直嵌静态页，iframe 地址必须存 RES_URL 列
+         （/auth/menus 以 res_url as url 下发 → meta.iframeSrc），URL 列对菜单导航无效（勿用）。 ========== -->
+    <changeSet id="lambda-authority-20260923000001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_resources WHERE RES_PATH = '/workflow'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('WfTop00001', null, '工作流', '/workflow', 0, 1, null, 0, null, 'lucide:workflow', 0, null, 0, null,
+                    null, null, 1, null, null, 300),
+                   ('WfTodo0001', 'WfTop00001', '我的待办', '/workflow/todo/', 1, 1, null, 0, null, 'lucide:inbox', 0,
+                    'WfTop00001', 0, null, null, null, 0, null, null, 1),
+                   ('WfDone0001', 'WfTop00001', '我的已办', '/workflow/done/', 1, 1, null, 0, null, 'lucide:check-check',
+                    0, 'WfTop00001', 0, null, null, null, 0, null, null, 2),
+                   ('WfMine0001', 'WfTop00001', '我发起的', '/workflow/mine/', 1, 1, null, 0, null, 'lucide:file-clock',
+                    0, 'WfTop00001', 0, null, null, null, 0, null, null, 3),
+                   ('WfDefn0001', 'WfTop00001', '流程定义', '/workflow/definition/', 1, 1, null, 0, null,
+                    'lucide:layout-template', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 4),
+                   ('WfInst0001', 'WfTop00001', '实例管理', '/workflow/instance/', 1, 1, null, 0, null,
+                    'lucide:list-tree', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 5),
+                   ('WfDesn0001', 'WfTop00001', '流程设计器', '/workflow/designer/', 1, 1, null, 0, null,
+                    'lucide:pen-tool', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 6);
+        ]]></sql>
+    </changeSet>
+
+    <!-- ========== 工作流按钮权限（RES_TYPE=3，RES_PATH 即 v-access/@SaCheckPermission 权限码） ========== -->
+    <changeSet id="lambda-authority-20260923000002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_resources WHERE RES_PATH = 'workflow_definition_list'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('WfDefL001', 'WfDefn0001', '定义查询', 'workflow_definition_list', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-WfDefn0001', 0, null, null, null, 0, null, null, 1),
+                   ('WfDefA001', 'WfDefn0001', '定义保存/复制', 'workflow_definition_add', 2147483647, 3, null, 0, '',
+                    null, 0, 'WfTop00001-WfDefn0001', 0, null, null, null, 0, null, null, 2),
+                   ('WfDefP001', 'WfDefn0001', '定义发布/失效', 'workflow_definition_publish', 2147483647, 3, null, 0,
+                    '', null, 0, 'WfTop00001-WfDefn0001', 0, null, null, null, 0, null, null, 3),
+                   ('WfDefD001', 'WfDefn0001', '定义删除', 'workflow_definition_delete', 2147483647, 3, null, 0, '',
+                    null, 0, 'WfTop00001-WfDefn0001', 0, null, null, null, 0, null, null, 4),
+                   ('WfDefE001', 'WfDefn0001', '定义导出', 'workflow_definition_export', 2147483647, 3, null, 0, '',
+                    null, 0, 'WfTop00001-WfDefn0001', 0, null, null, null, 0, null, null, 5),
+                   ('WfInsL001', 'WfInst0001', '实例查询', 'workflow_instance_list', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-WfInst0001', 0, null, null, null, 0, null, null, 1),
+                   ('WfInsA001', 'WfInst0001', '发起流程', 'workflow_instance_add', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-WfInst0001', 0, null, null, null, 0, null, null, 2),
+                   ('WfInsM001', 'WfInst0001', '实例终止/挂起/激活', 'workflow_instance_admin', 2147483647, 3, null, 0,
+                    '', null, 0, 'WfTop00001-WfInst0001', 0, null, null, null, 0, null, null, 3),
+                   ('WfTskM001', 'WfInst0001', '任务改办理人/任意跳转', 'workflow_task_admin', 2147483647, 3, null, 0,
+                    '', null, 0, 'WfTop00001-WfInst0001', 0, null, null, null, 0, null, null, 4);
+        ]]></sql>
+    </changeSet>
+
+    <!-- ========== 工作流菜单角色授权（非 DEV 用户按 la_role_resources 过滤菜单；
+         普通办理角色按需在权限管理界面追加——待办/已办/我发起三个页面建议对所有业务角色开放） ========== -->
+    <changeSet id="lambda-authority-20260923000003" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_role_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_role_resources WHERE RESOURCE_ID = 'WfTop00001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'WfTop00001', null),
+                   ('ROLE_SYSTEM', 'WfTop00001', null),
+                   ('ROLE_DEV', 'WfTop00001', null),
+                   ('ROLE_ADMIN', 'WfTodo0001', null),
+                   ('ROLE_SYSTEM', 'WfTodo0001', null),
+                   ('ROLE_DEV', 'WfTodo0001', null),
+                   ('ROLE_ADMIN', 'WfDone0001', null),
+                   ('ROLE_SYSTEM', 'WfDone0001', null),
+                   ('ROLE_DEV', 'WfDone0001', null),
+                   ('ROLE_ADMIN', 'WfMine0001', null),
+                   ('ROLE_SYSTEM', 'WfMine0001', null),
+                   ('ROLE_DEV', 'WfMine0001', null),
+                   ('ROLE_ADMIN', 'WfDefn0001', null),
+                   ('ROLE_SYSTEM', 'WfDefn0001', null),
+                   ('ROLE_DEV', 'WfDefn0001', null),
+                   ('ROLE_ADMIN', 'WfInst0001', null),
+                   ('ROLE_SYSTEM', 'WfInst0001', null),
+                   ('ROLE_DEV', 'WfInst0001', null),
+                   ('ROLE_ADMIN', 'WfDesn0001', null),
+                   ('ROLE_SYSTEM', 'WfDesn0001', null),
+                   ('ROLE_DEV', 'WfDesn0001', null),
+                   ('ROLE_ADMIN', 'WfDefL001', null),
+                   ('ROLE_SYSTEM', 'WfDefL001', null),
+                   ('ROLE_DEV', 'WfDefL001', null),
+                   ('ROLE_ADMIN', 'WfDefA001', null),
+                   ('ROLE_SYSTEM', 'WfDefA001', null),
+                   ('ROLE_DEV', 'WfDefA001', null),
+                   ('ROLE_ADMIN', 'WfDefP001', null),
+                   ('ROLE_SYSTEM', 'WfDefP001', null),
+                   ('ROLE_DEV', 'WfDefP001', null),
+                   ('ROLE_ADMIN', 'WfDefD001', null),
+                   ('ROLE_SYSTEM', 'WfDefD001', null),
+                   ('ROLE_DEV', 'WfDefD001', null),
+                   ('ROLE_ADMIN', 'WfDefE001', null),
+                   ('ROLE_SYSTEM', 'WfDefE001', null),
+                   ('ROLE_DEV', 'WfDefE001', null),
+                   ('ROLE_ADMIN', 'WfInsL001', null),
+                   ('ROLE_SYSTEM', 'WfInsL001', null),
+                   ('ROLE_DEV', 'WfInsL001', null),
+                   ('ROLE_ADMIN', 'WfInsA001', null),
+                   ('ROLE_SYSTEM', 'WfInsA001', null),
+                   ('ROLE_DEV', 'WfInsA001', null),
+                   ('ROLE_ADMIN', 'WfInsM001', null),
+                   ('ROLE_SYSTEM', 'WfInsM001', null),
+                   ('ROLE_DEV', 'WfInsM001', null),
+                   ('ROLE_ADMIN', 'WfTskM001', null),
+                   ('ROLE_SYSTEM', 'WfTskM001', null),
+                   ('ROLE_DEV', 'WfTskM001', null);
+        ]]></sql>
+    </changeSet>
+
 </databaseChangeLog>

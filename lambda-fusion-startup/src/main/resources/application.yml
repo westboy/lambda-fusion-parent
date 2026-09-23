@@ -218,7 +218,9 @@ lambda:
       # 匿名放行：开放接口、WebSocket、附件签名预览/下载直链、发布应用公开名片。
       # 注意：框架 SaInterceptor 以 isAnnotation(false) 构建（不识别 @SaIgnore），
       # 匿名路径必须经此 ignored 列表放行；仅放行 profile 名片，access 仍需登录鉴权。
-      ignored: /open/**,/ws/**,/v1/ai/chat/attachments/*/preview,/v1/ai/chat/attachments/*/file,/v1/ai/public/apps/*/profile,/auth/public-key
+      # warm-flow 设计器静态页放行（iframe 文档请求无法带 header）；
+      # 数据接口 /warm-flow/** 不放行——设计器经 URL Authorization 参数携带登录态（designer/index.vue）
+      ignored: /open/**,/ws/**,/v1/ai/chat/attachments/*/preview,/v1/ai/chat/attachments/*/file,/v1/ai/public/apps/*/profile,/auth/public-key,/warm-flow-ui/**
       check-same-token: false
       max-login-count: 5
       is-concurrent: true
@@ -256,9 +258,10 @@ lambda:
 
 ################################# warm-flow 工作流引擎 #################################
 warm-flow:
-  #### 引擎横幅关闭；模块说明与表结构见 lambda-fusion-workflow ####
   banner: false
   #### 设计器 UI 静态资源（/warm-flow-ui/**）与数据接口（/warm-flow/**）开关。
-  #### iframe 内 token 传递的鉴权对齐为 P2 事项（docs/design/workflow.md §12），
   #### 生产环境可经 WORKFLOW_UI_ENABLED=false 关闭设计器入口 ####
   ui: ${WORKFLOW_UI_ENABLED:true}
+  framework: spring_boot
+  token-name: Authorization
+

@@ -26,4 +26,23 @@ public interface WorkflowConstants {
      * flow_user 人员类型：待办任务的审批人权限
      */
     String USER_TYPE_APPROVAL = "1";
+
+    enum Type {
+        /**
+         * 任务开始办理
+         */
+        START,
+        /**
+         * 新待办分派（通知场景消费）
+         */
+        ASSIGNMENT,
+        /**
+         * 当前任务完成（业务状态回写消费）
+         */
+        FINISH,
+        /**
+         * 任务创建
+         */
+        CREATE
+    }
 }

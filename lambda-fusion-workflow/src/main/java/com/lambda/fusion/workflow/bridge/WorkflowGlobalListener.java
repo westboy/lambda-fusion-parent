@@ -1,5 +1,6 @@
 package com.lambda.fusion.workflow.bridge;
 
+import com.lambda.fusion.workflow.WorkflowConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.core.entity.Instance;
@@ -27,25 +28,25 @@ public class WorkflowGlobalListener implements GlobalListener {
 
     @Override
     public void start(ListenerVariable listenerVariable) {
-        publish(WorkflowFlowEvent.Type.START, listenerVariable);
+        publish(WorkflowConstants.Type.START, listenerVariable);
     }
 
     @Override
     public void assignment(ListenerVariable listenerVariable) {
-        publish(WorkflowFlowEvent.Type.ASSIGNMENT, listenerVariable);
+        publish(WorkflowConstants.Type.ASSIGNMENT, listenerVariable);
     }
 
     @Override
     public void finish(ListenerVariable listenerVariable) {
-        publish(WorkflowFlowEvent.Type.FINISH, listenerVariable);
+        publish(WorkflowConstants.Type.FINISH, listenerVariable);
     }
 
     @Override
     public void create(ListenerVariable listenerVariable) {
-        publish(WorkflowFlowEvent.Type.CREATE, listenerVariable);
+        publish(WorkflowConstants.Type.CREATE, listenerVariable);
     }
 
-    private void publish(WorkflowFlowEvent.Type type, ListenerVariable listenerVariable) {
+    private void publish(WorkflowConstants.Type type, ListenerVariable listenerVariable) {
         Instance instance = listenerVariable.getInstance();
         if (instance == null) {
             return;

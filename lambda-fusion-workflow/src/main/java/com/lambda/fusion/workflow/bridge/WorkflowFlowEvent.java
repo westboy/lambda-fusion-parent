@@ -1,5 +1,7 @@
 package com.lambda.fusion.workflow.bridge;
 
+import com.lambda.fusion.workflow.WorkflowConstants;
+
 /**
  * 流程领域事件：由 {@link WorkflowGlobalListener} 把引擎四钩子转发为 Spring 事件
  *
@@ -17,31 +19,11 @@ package com.lambda.fusion.workflow.bridge;
  * @author jin
  */
 public record WorkflowFlowEvent(
-        Type type,
+        WorkflowConstants.Type type,
         Long instanceId,
         String businessId,
         Long taskId,
         String flowStatus,
         String tenantId,
         String nodeCode,
-        long occurredAt) {
-
-    public enum Type {
-        /**
-         * 任务开始办理
-         */
-        START,
-        /**
-         * 新待办分派（通知场景消费）
-         */
-        ASSIGNMENT,
-        /**
-         * 当前任务完成（业务状态回写消费）
-         */
-        FINISH,
-        /**
-         * 任务创建
-         */
-        CREATE
-    }
-}
+        long occurredAt) {}

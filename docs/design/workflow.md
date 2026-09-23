@@ -509,17 +509,17 @@ src/views/workflow/
 
 跨页面组件复用有先例（tenant 页复用 role 的 `role-permission-dialog.vue`）：业务方单据详情页如需内嵌审批操作区，直接 import `workflow/components/approval-drawer.vue`。
 
-**② API 模块**：`packages/system-ui/src/api/system/workflow.ts`，对齐 `message.ts`/`application.ts` 先例——同文件导出 `namespace WorkflowApi` 类型与 `getTodoTasksApi`/`getDoneTasksApi`/`getMyInstancesApi`/`getInstanceChartApi`/`startInstanceApi`/`passTaskApi`/`rejectTaskApi`/`transferTaskApi` 等函数；在 `src/index.ts` 追加 `export * from './api/system/workflow'`。分页请求/响应沿用全仓既有约定（application 页面先例）：请求参数名 **`page`/`size`**（对应 `PageQuery`），vxe-grid `proxyConfig.ajax.query` 内做 `items: res.records, total: Number(res.total)` 映射——`PageView` 无需额外适配层。
+**② API 模块**：`packages/system-ui/src/api/system/workflow.ts`，对齐 `message.ts` 先例——`namespace WorkflowApi` 类型 + 顶层导出函数（用户侧）与 `WorkflowAdminApi`（管理端分页参数类型）。分页请求参数名 **`pageNum`/`pageSize`**（对齐后端 `PageQuery` 字段，同 ai 模块 `pageParams` 先例；application 页的 `page/size` 是 authority 路径风格接口特例）；vxe-grid `proxyConfig.ajax.query` 内做 `items: res.records, total: Number(res.total)` 映射——`PageView` 无需额外适配层。
 
-**③ 菜单登记（纯后端配置，零前端路由代码）**：在权限管理的菜单/资源中登记——
+**③ 菜单登记（已按 AI 工作台先例落库，零前端路由代码）**：菜单与按钮权限码初始化已写入 `lambda-fusion-authority` 的 data-init changelog（`lambda-authority-20260923000001/2/3`，幂等 preConditions），部署即有菜单——
 
 | 菜单 | path | component | 说明 |
 | --- | --- | --- | --- |
 | 待办 / 已办 / 我发起 | `/workflow/todo` 等 | 留空自动推导 `workflow/todo/index` | 普通角色可见 |
 | 流程定义 / 实例管理 | `/workflow/definition` 等 | 显式同上 | 按钮级权限码控制 |
-| **流程设计器** | — | 菜单类型=**内嵌页面**（`EMBEDDED_PAGE`），url=`/warm-flow-ui/index.html` | authority `MenuRouteAssembler` 自动产出 `IFrameView` + `meta.iframeSrc`，**设计器零前端开发嵌入** |
+| **流程设计器** | `/workflow/designer` | 留空自动推导 `workflow/designer/index` | **前端自建包装页**（views/workflow/designer/index.vue）：iframe 挂 `/warm-flow-ui/index.html`，动态携带 `id`（definitionId，编辑/新增）、`theme`/`darkColors`（**跟随宿主暗色模式**，usePreferences 响应式）、`Authorization`（`Bearer ${accessToken}` 随 URL 传递，数据接口共享登录态）；监听 postmessage `close` 返回列表。定义列表「编辑」与菜单入口均走完整模式（含基础信息）；`onlyDesignShow` 独显参数预留给纯查看场景 |
 
-部署注意（P1 状态）：后端已落地引擎开关 `warm-flow.ui`（startup 经 `WORKFLOW_UI_ENABLED` 控制）；设计器页面与数据接口**均需登录态**（sa-token 白名单未放行 warm-flow 路径）。网关/nginx（及 dev 的 vite proxy）需把 `/warm-flow-ui/**`、`/warm-flow/**` 转发到后端（当前 proxy 只配了 `/api`）；iframe 内 `Authorization` header 无法自动携带的鉴权对齐为 P2 事项（§12）——联调前设计器页面暂以 dev 直开带 token 方式验证。
+部署注意（P1 定稿）：后端已落地引擎开关 `warm-flow.ui`（startup 经 `WORKFLOW_UI_ENABLED` 控制）；sa-token 白名单仅放行设计器**静态页** `/warm-flow-ui/**`（iframe 文档请求无法带 header），**数据接口 `/warm-flow/**` 保留登录鉴权**——设计器经 URL `Authorization` 参数携带 `Bearer token`（包装页注入，§12 鉴权对齐已落地）。网关/nginx（及 dev 的 vite proxy）需把 `/warm-flow-ui/**`、`/warm-flow/**` 转发到后端（vite proxy 已配）。
 
 **④ 流程图渲染（P1 定稿）**：`flow-chart.vue` 基于 `@vue-flow/*` 渲染 `GET /workflow/instance/{id}/chart`（P1 实际响应：`{ flow: FlowCombine, instance: InstanceView }`），只读展示（Controls + Background + MiniMap 用官方包）。字段映射（引擎 `FlowCombine` 结构已从源码核实）：
 
