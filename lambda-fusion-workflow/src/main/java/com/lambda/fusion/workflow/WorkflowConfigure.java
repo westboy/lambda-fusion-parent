@@ -1,9 +1,19 @@
 package com.lambda.fusion.workflow;
 
+import com.lambda.fusion.authority.api.RemoteOrganizationService;
+import com.lambda.fusion.authority.api.RemoteRoleService;
+import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.workflow.bridge.AuthorityHandlerSelectService;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.warm.flow.ui.service.HandlerSelectService;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.ClassUtils;
 
 /**
  * Workflow 模块装配类
@@ -19,4 +29,49 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @EnableConfigurationProperties(WorkflowProperties.class)
 @ComponentScan(basePackageClasses = WorkflowConfigure.class)
-public class WorkflowConfigure {}
+public class WorkflowConfigure {
+
+    /**
+     * 设计器办理人弹窗（用户/角色/部门页签）装配。
+     *
+     * <p>数据源为 authority 的三个远程契约接口：容器已有 Bean（单体中 authority 适配器组件）优先，
+     * 缺失且 Dubbo 可用时自建引用（check=false），都没有时降级为空列表。
+     * 条件注解保护 optional 依赖（authority-api / UI 插件不在 classpath 时不装配）。
+     */
+    @Slf4j
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(
+            name = {
+                "com.lambda.fusion.authority.api.RemoteUserService",
+                "org.dromara.warm.flow.ui.service.HandlerSelectService"
+            })
+    public static class AuthorityHandlerSelectConfiguration {
+
+        @Bean
+        public HandlerSelectService handlerSelectService(
+                ObjectProvider<RemoteUserService> remoteUserServiceProvider,
+                ObjectProvider<RemoteRoleService> remoteRoleServiceProvider,
+                ObjectProvider<RemoteOrganizationService> remoteOrganizationServiceProvider) {
+            return new AuthorityHandlerSelectService(
+                    remoteUserServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteUserService.class))),
+                    remoteRoleServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteRoleService.class))),
+                    remoteOrganizationServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteOrganizationService.class))));
+        }
+
+        /** Dubbo 不在 classpath 时返回 null，由实现降级为空列表 */
+        private <T> T dubboReference(Class<T> interfaceClass) {
+            if (!ClassUtils.isPresent(
+                    "org.apache.dubbo.config.ReferenceConfig", getClass().getClassLoader())) {
+                log.debug("classpath 无 Dubbo，{} 使用本地空降级", interfaceClass.getSimpleName());
+                return null;
+            }
+            org.apache.dubbo.config.ReferenceConfig<T> reference = new org.apache.dubbo.config.ReferenceConfig<>();
+            reference.setInterface(interfaceClass);
+            reference.setCheck(false);
+            return reference.get();
+        }
+    }
+}

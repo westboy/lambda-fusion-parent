@@ -5,10 +5,14 @@ import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.lambda.cloud.mybatis.handler.EntityMetaFiller;
 import com.lambda.cloud.sse.listener.SseEventListener;
 import com.lambda.fusion.authority.api.RemoteAuthenticationService;
+import com.lambda.fusion.authority.api.RemoteOrganizationService;
+import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.authority.application.service.ApplicationService;
 import com.lambda.fusion.authority.application.service.impl.DbPermissionTokenVerifier;
 import com.lambda.fusion.authority.authentication.adapter.RemoteAuthenticationServiceAdapter;
+import com.lambda.fusion.authority.authentication.adapter.RemoteOrganizationServiceAdapter;
+import com.lambda.fusion.authority.authentication.adapter.RemoteRoleServiceAdapter;
 import com.lambda.fusion.authority.authentication.adapter.RemoteUserServiceAdapter;
 import com.lambda.fusion.authority.authentication.provider.alipay.AlipayMaLoginAdapter;
 import com.lambda.fusion.authority.authentication.provider.alipay.AlipayMaLoginHandler;
@@ -102,6 +106,19 @@ public class AuthorityConfigure implements WebMvcConfigurer {
         @DubboService(interfaceClass = RemoteUserService.class)
         public RemoteUserService remoteUserService(RemoteUserServiceAdapter remoteUserServiceAdapter) {
             return remoteUserServiceAdapter;
+        }
+
+        @Bean
+        @DubboService(interfaceClass = RemoteRoleService.class)
+        public RemoteRoleService remoteRoleService(RemoteRoleServiceAdapter remoteRoleServiceAdapter) {
+            return remoteRoleServiceAdapter;
+        }
+
+        @Bean
+        @DubboService(interfaceClass = RemoteOrganizationService.class)
+        public RemoteOrganizationService remoteOrganizationService(
+                RemoteOrganizationServiceAdapter remoteOrganizationServiceAdapter) {
+            return remoteOrganizationServiceAdapter;
         }
     }
 

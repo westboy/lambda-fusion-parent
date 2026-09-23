@@ -46,5 +46,17 @@
             <artifactId>warm-flow-plugin-ui-sb-web</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 设计器办理人选择：经 authority-api 远程查询用户/角色/组织，Dubbo 或 authority 缺失时优雅降级 -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-authority-api</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-dubbo</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 </project>

@@ -11,11 +11,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
- * 引擎全局监听器：把 warm-flow 四钩子（start/assignment/finish/create）统一转为
- * Spring 领域事件 {@link WorkflowFlowEvent}
- *
- * <p>容器唯一；下游应用监听同一事件做业务回写，比节点监听器（listener_path 配置在定义 JSON）
- * 更可测试、可编排。节点级/定义级 listener_path 能力保留给业务方按引擎原生方式使用，本模块不封装。
+ * 引擎全局监听器：warm-flow 四钩子（start/assignment/finish/create）统一转为 Spring 事件
+ * {@link WorkflowFlowEvent}。节点级 listener_path 保留给业务方按引擎原生方式使用，本模块不封装。
  *
  * @author jin
  */

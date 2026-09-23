@@ -17,4 +17,15 @@ public interface RemoteUserService {
      * @return 用户详情；用户不存在时返回 {@code null}
      */
     RemoteUser getByUsername(String username);
+
+    /**
+     * 分页查询用户列表（供办理人选择等场景）。
+     *
+     * @param tenantId 租户 ID（为空时按平台角色查询口径处理）
+     * @param keyword 关键字（用户名/昵称模糊匹配，可为空）
+     * @param pageNum 页码（从 1 开始）
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
+    RemotePage<RemoteUser> pageUsers(String tenantId, String keyword, int pageNum, int pageSize);
 }

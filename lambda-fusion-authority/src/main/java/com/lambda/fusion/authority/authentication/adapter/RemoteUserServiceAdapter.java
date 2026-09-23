@@ -1,11 +1,14 @@
 package com.lambda.fusion.authority.authentication.adapter;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lambda.fusion.authority.api.RemotePage;
 import com.lambda.fusion.authority.api.RemoteUser;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.authority.organization.model.SimpleOrganization;
 import com.lambda.fusion.authority.role.model.SimpleRole;
 import com.lambda.fusion.authority.user.model.ThirdPartBinding;
 import com.lambda.fusion.authority.user.model.User;
+import com.lambda.fusion.authority.user.model.UserQueryContext;
 import com.lambda.fusion.authority.user.service.UserService;
 import com.lambda.fusion.authority.user.service.UserThirdPartService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -43,6 +46,20 @@ public class RemoteUserServiceAdapter implements RemoteUserService {
             return null;
         }
         return toRemoteUser(user);
+    }
+
+    @Override
+    public RemotePage<RemoteUser> pageUsers(String tenantId, String keyword, int pageNum, int pageSize) {
+        UserQueryContext context = new UserQueryContext();
+        if (tenantId != null) {
+            context.setTenantId(tenantId);
+        }
+        // UserMapper 的 like 不自动包裹通配符，由调用方补 %
+        context.setKeyword(keyword == null || keyword.isBlank() ? null : "%" + keyword + "%");
+        Page<User> page = userService.getUsers(new Page<>(Math.max(pageNum, 1), Math.max(pageSize, 1)), context);
+        List<RemoteUser> rows =
+                page.getRecords().stream().map(this::toRemoteUser).toList();
+        return new RemotePage<>(page.getTotal(), rows);
     }
 
     private RemoteUser toRemoteUser(User user) {

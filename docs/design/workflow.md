@@ -94,6 +94,7 @@
 | `WorkflowGlobalListener` | 引擎四钩子（start/assignment/finish/create）→ Spring 事件 | 本仓库 |
 | `Definition/Instance/Task Service` + Controller | REST 出口与操作编排 | 本仓库 |
 | `WorkflowBusinessProvider` SPI | 业务单据标题/链接解析（下游实现） | 本仓库（接口） |
+| `AuthorityHandlerSelectService` | 设计器办理人弹窗（用户/角色/部门页签）对接 authority 远程接口（`RemoteUserService.pageUsers` / `RemoteRoleService` / `RemoteOrganizationService`，1.8.9 起扩充）；storageId 按 §4.1 标识约定生成（`user:`/`role:`/`org:` 前缀，引擎 `@@` 分隔原样落 `permission_flag`）；装配顺序：容器已有 Bean（单体）→ Dubbo 引用兜底（check=false）→ authority 未就绪按次降级空列表 | 本仓库 |
 
 ## 4. 关键设计
 

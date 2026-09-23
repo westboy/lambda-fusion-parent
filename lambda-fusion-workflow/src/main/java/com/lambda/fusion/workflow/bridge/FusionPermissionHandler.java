@@ -11,19 +11,11 @@ import org.dromara.warm.flow.core.handler.PermissionHandler;
 import org.springframework.stereotype.Component;
 
 /**
- * 办理人权限桥：把 fusion 登录身份翻译为引擎权限标识
+ * 办理人权限桥：把 fusion 登录身份翻译为引擎权限标识。
  *
- * <p>引擎的权限模型是「权限标识串精确匹配」：节点 permission_flag 与 flow_user.processed_by
- * 按标识串等值比对，因此桥接的全部工作是产出当前用户的标识集合：
- * {@code user:{username}}、每个角色 {@code role:{roleCode}}、组织 {@code org:{orgId}}
- * （前缀约定见 {@link WorkflowConstants}）。
- *
- * <p>handler（办理人唯一标识）使用 username，与 authority 的登录与远程查询口径一致，
- * flow_his_task.approver 可直接展示与追溯。无登录上下文（后台线程）时降级为匿名、返回空权限集合，
- * 不抛异常（对齐 AuthUtils.getSafeUsername 的语义）。
- *
- * <p>容器内只应存在一个 PermissionHandler Bean；下游需要「角色展开为用户」等自定义语义时
- * 覆盖本 Bean 并标注 @Primary，convertPermissions 默认透传聚合标识。
+ * <p>引擎按标识串精确匹配节点 permission_flag 与 flow_user.processed_by，标识约定见
+ * {@link WorkflowConstants}。handler 使用 username，无登录上下文时返回空集合、不抛异常。
+ * 容器内只应存在一个 PermissionHandler Bean，下游覆盖用 @Primary。
  *
  * @author jin
  */
