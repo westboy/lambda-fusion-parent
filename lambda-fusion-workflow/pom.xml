@@ -65,5 +65,12 @@
             <version>${project.version}</version>
             <optional>true</optional>
         </dependency>
+        <!-- 待办通知：消费 ASSIGNMENT 事件经 message-api 发站内信，缺失时静默降级 -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-message-api</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 </project>

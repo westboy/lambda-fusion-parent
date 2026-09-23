@@ -1,6 +1,6 @@
 # 工作流（lambda-fusion-workflow）设计
 
-> 状态：初稿（选型 + 桥接设计 + 引擎 DDL 引入 + 分期）
+> 状态：P1 已实现；P2 部分落地（待办通知 / 流程自定义表单管理 / 流程类别字典分类），分期见 §13
 > 相关阅读：`.rule/engineering-contract.md`（§1 依赖治理、§3 自动配置、§5 多租户、§6 Liquibase、§9 Entity/Service、§10 包结构、§12 配置属性、§19 特性开关、§20 最小充分设计）、`.rule/package-structure.md`
 > 引擎版本：warm-flow **1.8.9**（本地源码 `D:\IdeaProjects\warm-flow`，基线 DDL `sql/mysql/warm-flow-all.sql`）
 
@@ -44,8 +44,8 @@
 - 不做 BPMN 导入导出互操作；
 - 不自研流程设计器，复用 `warm-flow-plugin-ui`（见 §4.6）；
 - **不引入 `flow_form`**：引擎 1.8.9 该表脚本标注"TODO form 开发中"，待引擎稳定后跟进（P3）；
-- 不建 `la_flow_*` 业务平行走：P1 本模块**零自有表**，唯一 DB 交付物是引擎 DDL 的 Liquibase 化（§6.4）；
-- 待办消息通知（对接 message 模块）为 P2，本期只埋事件（§4.3）。
+- 不建 `la_flow_*` 业务平行走：P1 本模块**零自有表**，唯一 DB 交付物是引擎 DDL 的 Liquibase 化（§6.4）；P2 为表单注册表引入唯一自有表 `la_workflow_form_path`（业务语义注册表，非引擎平行表，§10.5）；
+- 待办通知已对接 message 模块：`WorkflowTaskNotifier`（bridge，§4.3）消费 `ASSIGNMENT` 事件发站内信，事件埋点同路径继续供业务回写（§4.3）。
 
 ## 3. 总体架构
 
@@ -96,7 +96,7 @@
 | `WorkflowBusinessProvider` SPI | 业务单据标题/链接解析（下游实现） | 本仓库（接口） |
 | `AuthorityHandlerSelectService` | 设计器办理人弹窗（用户/角色/部门页签）对接 authority 远程接口（`RemoteUserService.pageUsers` / `RemoteRoleService` / `RemoteOrganizationService`，1.8.9 起扩充）；storageId 按 §4.1 标识约定生成（`user:`/`role:`/`org:` 前缀，引擎 `@@` 分隔原样落 `permission_flag`）；装配顺序：容器已有 Bean（单体）→ Dubbo 引用兜底（check=false）→ authority 未就绪按次降级空列表 | 本仓库 |
 | `DictCategoryService` | 设计器流程类别下拉对接 dictionary 模块 `workflow_category` 字典（只读映射，Tree 映射字典名落 `flow_definition.category`）；dictionary 缺失不装配、字典类型未配置返回空列表；默认类别（人事/行政/财务/其他）由 workflow changelog 幂等种子初始化 | 本仓库 |
-| `RegistryFormPathService` | 设计器自定义表单路径下拉对接本模块 `la_workflow_form_path` 注册表（后台维护，§10.5）；仅返回启用项，Tree(id=form_path, name=form_name) | 本仓库（P2） |
+| `RegistryFormPathService` | 设计器自定义表单路径下拉对接本模块 `la_workflow_form_path` 注册表（后台维护，§10.5，**已落地**）；仅返回启用项，Tree(id=form_path, name=form_name) | 本仓库 |
 
 ## 4. 关键设计
 
@@ -132,7 +132,7 @@
 - `WorkflowGlobalListener implements GlobalListener`（容器唯一 Bean），四个钩子 `start / assignment / finish / create` 统一转为 Spring 领域事件 `WorkflowFlowEvent`（record：钩子类型、instanceId、businessId、taskId、flowStatus、tenantId、时间戳）发布；
 - 模块内用 `@EventListener` 消费；下游应用监听同一事件做业务回写（如单据状态推进）——比节点监听器（listener_path 配置在定义 JSON 里）更可测试、可编排；
 - 节点级/定义级 `listener_path` 能力保留给业务方按引擎原生方式使用，本模块不封装（避免双出口，§20.1）；
-- P2 起 message 模块（optional 依赖 `lambda-fusion-message-api`，缺失时优雅降级）消费 `assignment` 事件发待办通知，复用 ai 模块 `ScheduledTaskNotifier` 的先例。
+- 待办通知已落地：optional 依赖 `lambda-fusion-message-api`，`WorkflowTaskNotifier`（`@EventListener` 消费 `ASSIGNMENT`，经 `WorkflowConfigure$TaskNotifyConfiguration` 条件装配）发站内信。收件人取 `flow_user` 审批标识中 `user:{username}` 直接展开（`role:`/`org:` 聚合标识不展开，待 authority-api 扩充角色→用户远程接口后再支持）；发送人取 `flow_instance.create_by`；`bizType=WORKFLOW_TASK` + `bizId=taskId` 经 `existsRecent` 防御性判重；message 缺失或发送失败仅记日志，不影响流程流转（对齐 ai 模块 `ScheduledTaskNotifier` 先例）。
 
 ### 4.4 业务单据关联与回写
 
@@ -556,7 +556,7 @@ workflow_task_admin         改办理人/任意跳转
 
 **⑥ 实时提醒（P2 前端零改动）**：assignment 事件 → message 模块发站内信 → SSE 推既有 `notification` 事件 → `notificationStore` 已有监听自动刷新铃铛；待办页不做轮询，进入页面即刷新（推拉边界与 message-center 一致）。
 
-### 10.5 流程自定义表单管理（后台维护，P2）
+### 10.5 流程自定义表单管理（后台维护，P2 已落地）
 
 **动机**：设计器基础信息的 `form_path`（自定义审批表单路径）由 warm-flow `FormPathService` SPI 供给（`FrameInvoker.getBean`，无 Bean 时新建默认 `formCustom='N'`、只能手填字符串）。该数据是「注册表」语义（名称 + 路由 + 启停 + 备注，路径需唯一性校验），不适合用字典承载（字典是 key-value 枚举模型），故做成本模块自建子域的后台维护功能。
 
@@ -568,7 +568,8 @@ workflow_task_admin         改办理人/任意跳转
 la_workflow_form_path  流程自定义表单注册表
   id          varchar(32)  主键
   form_name   varchar(100) 表单名称（设计器下拉显示）
-  form_path   varchar(255) 表单路径/前端路由（唯一约束 uk_form_path，设计器 Tree.id 落 flow_definition.form_path）
+  form_path   varchar(255) 表单路径/前端路由（设计器 Tree.id 落 flow_definition.form_path；
+               唯一约束 uk_workflow_form_path 为 (TENANT_ID, FORM_PATH) 联合唯一——同租户内路径唯一，跨租户允许同名路由）
   remarks     varchar(255) 备注
   enabled     tinyint      启停（1 启用 0 停用；SPI 只返回启用项）
   tenant_id   varchar(64)  租户（框架租户插件自动填充/过滤，与业务表同机制，§4.2）
@@ -579,10 +580,10 @@ la_workflow_form_path  流程自定义表单注册表
 
 ```text
 com.lambda.fusion.workflow.formpath
-├── controller/FormPathController.java    只编排 Service
-├── service/FormPathService.java          业务接口（勿与引擎 SPI 同名混淆，见⑤）
-├── service/impl/FormPathServiceImpl.java
-├── mapper/FormPathMapper.java            extends BaseMapper
+├── controller/FormPathController.java        只编排 Service
+├── service/FormPathManagerService.java       业务接口（Manager 后缀命名，避免与引擎 SPI FormPathService 一名两义）
+├── service/impl/FormPathManagerServiceImpl.java
+├── mapper/FormPathMapper.java                extends BaseMapper
 └── model/  FormPathEntity / FormPathPage / FormPathSaveCommand
 ```
 
@@ -611,18 +612,18 @@ REST（管理端，权限码实际码值）：
 - 不做表单渲染/跳转消费端（业务接入时再做）；
 - 不做表单设计器（那是低代码范畴，与 warm-flow 无关）；
 - 不校验 `form_path` 与前端真实路由的一致性——注册表只保证格式与唯一，路由存在性是业务责任（与 §10.3 不解析权限标识同理：模块不猜业务语义）；
-- SPI 实现类不暴露为 REST，REST 层不复用引擎 SPI 接口名（避免 `FormPathService` 一名两义）。
+- SPI 实现类不暴露为 REST，REST 层不复用引擎 SPI 接口名（已落地为 Manager 后缀命名：管理服务 `FormPathManagerService` 与引擎 SPI `FormPathService` 各归其位）。
 
 #### ⑥ 实施清单
 
 ```text
-[ ] lambda-workflow-changelog.xml：建表 + uk_form_path 唯一索引
-[ ] formpath 子域：entity/page/command/mapper/service/impl/controller
-[ ] bridge/RegistryFormPathService + WorkflowConfigure 嵌套装配
-[ ] 错误码：复用 16120-16129 段（16130 起留给 formpath：16130 路径已存在 / 16131 表单不存在）
-[ ] authority 数据初始化 changeSet：菜单 WfForm0001 + 4 按钮 + 3 角色授权
-[ ] mvn compile（Spotless/SpotBugs）+ install
-[ ] 前端：FormPathApi + formpath 页面 + 菜单 RES_PATH 登记（随 authority changeSet 同版本落地）
+[x] lambda-workflow-changelog.xml：建表 + uk_workflow_form_path 唯一索引（changeSet lambda-fusion-workflow-202609230002）
+[x] formpath 子域：entity/page/command/mapper/service(FormPathManagerService)/impl/controller
+[x] bridge/RegistryFormPathService + WorkflowConfigure 嵌套装配
+[x] 错误码：独立占用 16150-16159 段（16150 表单不存在 / 16151 路径已存在，见 §11）
+[x] authority 数据初始化 changeSet：菜单 WfForm0001 + 4 按钮 + 3 角色授权（已提交）
+[x] mvn compile（Spotless/SpotBugs）通过
+[ ] 前端（lambda-fusion-web，独立提交）：FormPathApi + formpath 页面 + 菜单 RES_PATH 登记
 [ ] 验证：设计器新建流程 → formCustom 默认 Y → 下拉出现启用表单 → 保存后 flow_definition.form_path 为路由值
 ```
 
@@ -644,16 +645,18 @@ REST（管理端，权限码实际码值）：
 
 | 码段 | 用途 |
 | --- | --- |
-| 16100-16109 | 通用：参数非法、流程未发布、并发状态冲突 |
-| 16110-16119 | 定义：不存在、编码重复、已发布不可改、已存在运行中实例不可失效 |
-| 16120-16129 | 实例：不存在、已终态、无权操作（非创建人/非办理人）、businessId 已存在进行中的同流程实例 |
-| 16130-16139 | 任务：不存在、当前用户无办理权限、目标处理人非法、协作操作非法（加签/减签/跳转前置校验失败） |
+| 16100-16109 | 通用：参数非法、流程未发布（16100 / 16101） |
+| 16110-16119 | 定义：不存在、已发布不可删（16110 / 16111） |
+| 16120-16129 | 实例：不存在、已终态（16120 / 16121） |
+| 16130-16139 | 任务：不存在、目标办理人非法（16130 / 16131） |
+| 16140-16149 | 引擎操作：引擎拒绝/异常统一包装（16140 流程操作被拒绝，消息透传引擎原因） |
+| 16150-16159 | 自定义表单：不存在、路径重复（16150 / 16151，§10.5） |
 
 ## 12. 已知限制与后续
 
 1. **`flow_form` 未引入**：引擎标注"开发中"，P3 跟进（§2.3）；
-2. **设计器鉴权收敛**：嵌入方式已定稿（菜单 `EMBEDDED_PAGE` → `IFrameView`，§10.4③）；遗留 `/warm-flow-ui/**` 匿名放行的粒度、设计器数据是否按租户隔离，P1 落地时与 `lambda-cloud-starter-security` 对齐定稿（§4.6）；
-3. **待办通知**：P2 经 `WorkflowFlowEvent` 对接 message 模块（站内信 + SSE 刷新信号），复用 message 现有投递能力，不建流程侧平行通知表；
+2. **设计器鉴权**：已定稿并落地（菜单 `EMBEDDED_PAGE` → `IFrameView`，§10.4③；静态页 `/warm-flow-ui/**` 匿名放行 + 数据接口 `/warm-flow/**` 保留登录态，URL `Authorization` 参数携带 token）；遗留**设计器数据是否按租户强收敛**为 P3 评估项；
+3. **待办通知**：已落地，经 `WorkflowFlowEvent` 对接 message 模块（站内信 + SSE 刷新信号，§4.3），复用 message 现有投递能力，不建流程侧平行通知表；
 4. **角色展开**：节点配置 `role:X` 时待办按聚合标识命中（组成员各自可见待办）；如需"转办时按角色解析成具体人"，下游覆盖 `convertPermissions`，P2 评估是否由模块内置 authority-api 实现；
 5. **流程数据归档**：`flow_his_task` 只增不减，归档/清理策略待实例量上来后单独立项（同 message 归档问题的处置节奏）；
 6. **引擎升级**：跟随 warm-flow release，DDL 变更按 §6.4 的追加式翻译流程处理。
@@ -664,7 +667,7 @@ REST（管理端，权限码实际码值）：
 | --- | --- |
 | P0（前置） | `lambda-cloud-parent` 登记 `warm-flow.version=1.8.9` 与 dependencyManagement（§6.2）；契约 §3.2 前缀表登记 `workflow → lambda.fusion.workflow`（规则文件独立提交，契约 §18.2） |
 | P1（本期） | 后端：模块骨架（pom + 三件套 + imports）；`lambda-workflow-changelog.xml`（7 张引擎表，§6.4）；bridge（`FusionPermissionHandler`/`WorkflowGlobalListener`/`WorkflowFlowEvent`）；definition/instance/task 三子域 Service + Controller（§4.5/§8）；`WorkflowBusinessProvider` SPI + `ObjectProvider` 收集；startup 集成验证（依赖、开关、设计器匿名路径、`mvn compile` 与 Spotless/SpotBugs 通过）。前端（lambda-fusion-web，独立提交）：`system-ui` 新增 `views/workflow/` 页面与组件、`api/system/workflow.ts`、菜单/权限码登记、设计器 `IFrameView` 嵌入与代理配置（§10.4） |
-| P2 | 待办通知对接 message（事件消费 + optional 依赖优雅降级）；`docs/skills/lambda-fusion-workflow/SKILL.md` 模块文档；startup 演示业务落地请假样板（按 §10.2 步骤）；角色展开内置实现的评估结论 |
+| P2 | 待办通知对接 message（**已落地**：`WorkflowTaskNotifier` 事件消费 + optional 依赖优雅降级，§4.3）；流程自定义表单管理（**已落地**：`la_workflow_form_path` 注册表 + formpath 子域 + `RegistryFormPathService` 设计器下拉 + authority 菜单权限 changeSet，§10.5）；流程类别字典分类（**已落地**：`DictCategoryService` 对接 dictionary 模块 `workflow_category` 字典 + changelog 幂等种子，§3）；`docs/skills/lambda-fusion-workflow/SKILL.md` 模块文档（待做）；startup 演示业务落地请假样板（按 §10.2 步骤，待做）；角色展开内置实现的评估结论（含通知收件人 `role:`/`org:` 展开所需的 authority-api 扩充） |
 | P3 | `flow_form` 跟进；流程数据归档策略；设计器按租户/权限强收敛（若 P1 定稿为宽松放行） |
 
 ## 14. 落地检查清单（PDCA Check）

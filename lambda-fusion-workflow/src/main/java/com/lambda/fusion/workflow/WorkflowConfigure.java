@@ -4,11 +4,16 @@ import com.lambda.fusion.authority.api.RemoteOrganizationService;
 import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.dict.service.DictInfoService;
+import com.lambda.fusion.message.api.RemoteMessageService;
 import com.lambda.fusion.workflow.bridge.AuthorityHandlerSelectService;
 import com.lambda.fusion.workflow.bridge.DictCategoryService;
 import com.lambda.fusion.workflow.bridge.RegistryFormPathService;
+import com.lambda.fusion.workflow.bridge.WorkflowTaskNotifier;
 import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.warm.flow.orm.mapper.FlowInstanceMapper;
+import org.dromara.warm.flow.orm.mapper.FlowTaskMapper;
+import org.dromara.warm.flow.orm.mapper.FlowUserMapper;
 import org.dromara.warm.flow.ui.service.CategoryService;
 import org.dromara.warm.flow.ui.service.FormPathService;
 import org.dromara.warm.flow.ui.service.HandlerSelectService;
@@ -20,6 +25,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.ClassUtils;
+
+import java.util.Objects;
 
 /**
  * Workflow 模块装配类
@@ -45,7 +52,6 @@ public class WorkflowConfigure {
      * 缺失且 Dubbo 可用时自建引用（check=false），都没有时降级为空列表。
      * 条件注解保护 optional 依赖（authority-api / UI 插件不在 classpath 时不装配）。
      */
-    @Slf4j
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(
             name = {
@@ -60,23 +66,10 @@ public class WorkflowConfigure {
                 ObjectProvider<RemoteRoleService> remoteRoleServiceProvider,
                 ObjectProvider<RemoteOrganizationService> remoteOrganizationServiceProvider) {
             return new AuthorityHandlerSelectService(
-                    remoteUserServiceProvider.getIfAvailable(() -> dubboReference(RemoteUserService.class)),
-                    remoteRoleServiceProvider.getIfAvailable(() -> dubboReference(RemoteRoleService.class)),
+                    remoteUserServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteUserService.class))),
+                    remoteRoleServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteRoleService.class))),
                     remoteOrganizationServiceProvider.getIfAvailable(
-                            () -> dubboReference(RemoteOrganizationService.class)));
-        }
-
-        /** Dubbo 不在 classpath 时返回 null，由实现降级为空列表 */
-        private <T> T dubboReference(Class<T> interfaceClass) {
-            if (!ClassUtils.isPresent(
-                    "org.apache.dubbo.config.ReferenceConfig", getClass().getClassLoader())) {
-                log.debug("classpath 无 Dubbo，{} 使用本地空降级", interfaceClass.getSimpleName());
-                return null;
-            }
-            org.apache.dubbo.config.ReferenceConfig<T> reference = new org.apache.dubbo.config.ReferenceConfig<>();
-            reference.setInterface(interfaceClass);
-            reference.setCheck(false);
-            return reference.get();
+                            () -> Objects.requireNonNull(dubboReference(RemoteOrganizationService.class))));
         }
     }
 
@@ -108,5 +101,42 @@ public class WorkflowConfigure {
         public FormPathService formPathService(FormPathManagerService formPathManagerService) {
             return new RegistryFormPathService(formPathManagerService);
         }
+    }
+
+    /**
+     * 待办任务通知装配：ASSIGNMENT 事件 → message-api 站内信（§4.3）。
+     * 数据源为 message 模块远程契约：容器已有 Bean（单体中 message 适配器组件）优先，
+     * 缺失且 Dubbo 可用时自建引用（check=false），都没有时通知器空转降级。
+     * 条件注解保护 optional 依赖（message-api 不在 classpath 时不装配）。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.fusion.message.api.RemoteMessageService")
+    public static class TaskNotifyConfiguration {
+
+        @Bean
+        public WorkflowTaskNotifier workflowTaskNotifier(
+                ObjectProvider<RemoteMessageService> remoteMessageServiceProvider,
+                FlowUserMapper flowUserMapper,
+                FlowTaskMapper flowTaskMapper,
+                FlowInstanceMapper flowInstanceMapper) {
+            return new WorkflowTaskNotifier(
+                    remoteMessageServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteMessageService.class))),
+                    flowUserMapper,
+                    flowTaskMapper,
+                    flowInstanceMapper);
+        }
+    }
+
+    /** Dubbo 不在 classpath 时返回 null，由使用方降级为空实现 */
+    static <T> T dubboReference(Class<T> interfaceClass) {
+        if (!ClassUtils.isPresent(
+                "org.apache.dubbo.config.ReferenceConfig", WorkflowConfigure.class.getClassLoader())) {
+            log.debug("classpath 无 Dubbo，{} 使用本地空降级", interfaceClass.getSimpleName());
+            return null;
+        }
+        org.apache.dubbo.config.ReferenceConfig<T> reference = new org.apache.dubbo.config.ReferenceConfig<>();
+        reference.setInterface(interfaceClass);
+        reference.setCheck(false);
+        return reference.get();
     }
 }
