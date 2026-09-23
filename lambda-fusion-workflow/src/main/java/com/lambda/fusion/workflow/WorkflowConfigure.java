@@ -6,9 +6,13 @@ import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.dict.service.DictInfoService;
 import com.lambda.fusion.workflow.bridge.AuthorityHandlerSelectService;
 import com.lambda.fusion.workflow.bridge.DictCategoryService;
+import com.lambda.fusion.workflow.bridge.RegistryFormPathService;
+import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.ui.service.CategoryService;
+import org.dromara.warm.flow.ui.service.FormPathService;
 import org.dromara.warm.flow.ui.service.HandlerSelectService;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -31,6 +35,7 @@ import org.springframework.util.ClassUtils;
 @Configuration
 @EnableConfigurationProperties(WorkflowProperties.class)
 @ComponentScan(basePackageClasses = WorkflowConfigure.class)
+@MapperScan(basePackages = "com.lambda.fusion.workflow.**.mapper")
 public class WorkflowConfigure {
 
     /**
@@ -88,6 +93,20 @@ public class WorkflowConfigure {
         @Bean
         public CategoryService categoryService(DictInfoService dictInfoService) {
             return new DictCategoryService(dictInfoService);
+        }
+    }
+
+    /**
+     * 设计器自定义表单路径装配：本模块 la_workflow_form_path 注册表（启用项）→ 设计器下拉（§10.5）。
+     * 条件注解保护 optional 依赖（UI 插件不在 classpath 时不装配）。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.dromara.warm.flow.ui.service.FormPathService")
+    public static class RegistryFormPathConfiguration {
+
+        @Bean
+        public FormPathService formPathService(FormPathManagerService formPathManagerService) {
+            return new RegistryFormPathService(formPathManagerService);
         }
     }
 }

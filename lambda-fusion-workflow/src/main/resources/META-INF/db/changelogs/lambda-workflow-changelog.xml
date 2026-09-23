@@ -428,4 +428,38 @@
         </insert>
     </changeSet>
 
+    <!-- 流程自定义表单注册表：设计器 form_path 下拉数据源，后台维护（§10.5）。
+         form_path 存业务前端路由，停用/删除不回溯已发布定义（字符串快照，仅影响新建选择）。 -->
+    <changeSet id="lambda-fusion-workflow-202609230002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_workflow_form_path"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_workflow_form_path" remarks="流程自定义表单注册表">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_workflow_form_path_id" nullable="false"/>
+            </column>
+            <column name="FORM_NAME" type="varchar(100)" remarks="表单名称（设计器下拉显示）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FORM_PATH" type="varchar(255)" remarks="表单路径/前端路由（落 flow_definition.form_path）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REMARKS" type="varchar(255)" remarks="备注"/>
+            <column name="ENABLED" type="tinyint(1)" defaultValueNumeric="1" remarks="启停（1启用 0停用）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="uk_workflow_form_path" tableName="la_workflow_form_path" unique="true">
+            <column name="TENANT_ID"/>
+            <column name="FORM_PATH"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>

@@ -63,7 +63,18 @@ public enum WorkflowErrorCode implements ErrorCode {
     /**
      * 引擎拒绝操作（办理人校验/状态校验/协作校验失败等），消息携带引擎原因
      */
-    OPERATION_REJECTED(16140, "流程操作被拒绝：{0}");
+    OPERATION_REJECTED(16140, "流程操作被拒绝：{0}"),
+
+    // ========== 自定义表单 (16150-16159) ==========
+    /**
+     * 表单不存在
+     */
+    FORM_PATH_NOT_FOUND(16150, "自定义表单不存在"),
+
+    /**
+     * 表单路径已存在
+     */
+    FORM_PATH_DUPLICATED(16151, "表单路径已存在");
 
     private final Integer code;
 
