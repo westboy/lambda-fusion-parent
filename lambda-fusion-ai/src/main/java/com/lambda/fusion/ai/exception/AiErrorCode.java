@@ -182,7 +182,9 @@ public enum AiErrorCode implements ErrorCode {
 
     ATTACHMENT_IMAGE_UPLOAD_DISABLED(30219, "当前应用未开启图片上传"),
 
-    ATTACHMENT_FILE_UPLOAD_DISABLED(30220, "当前应用未开启附件上传");
+    ATTACHMENT_FILE_UPLOAD_DISABLED(30220, "当前应用未开启附件上传"),
+
+    ATTACHMENT_EMPTY(30221, "附件内容为空");
 
     private final Integer code;
 

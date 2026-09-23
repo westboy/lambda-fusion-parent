@@ -157,6 +157,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         AiProperties.Chat.Attachment cfg = aiProperties.getChat().getAttachment();
         String extension = resolveExtension(file, cfg);
         validateSize(file, cfg);
+        validateNotEmpty(file);
         String category = resolveCategory(extension, cfg);
         validateUploadPermission(session, category);
 
@@ -549,6 +550,13 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         long maxBytes = cfg.getMaxFileSizeMb() * 1024L * 1024L;
         if (file.getSize() > maxBytes) {
             throw new AiBusinessException(AiErrorCode.ATTACHMENT_SIZE_EXCEEDED, file.getOriginalFilename());
+        }
+    }
+
+    /** 空文件（未选择文件或 0 字节内容）直接拒绝，避免空对象入库后由模型反推「附件是空的」。 */
+    private static void validateNotEmpty(MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new AiBusinessException(AiErrorCode.ATTACHMENT_EMPTY, file.getOriginalFilename());
         }
     }
 

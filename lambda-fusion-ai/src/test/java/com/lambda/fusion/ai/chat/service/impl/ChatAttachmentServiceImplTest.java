@@ -341,6 +341,28 @@ class ChatAttachmentServiceImplTest {
     }
 
     @Test
+    void shouldRejectEmptyFileUpload() {
+        // 空文件（未选择文件或 0 字节内容）在上传入口直接拒绝，避免空对象入库后由模型反推「附件是空的」。
+        ChatSessionEntity session = sessionOf("app-1");
+        when(sessionMapper.selectOwned("session-1", "zhangsan")).thenReturn(session);
+        AppEntity app = new AppEntity();
+        app.setEnableImageUpload(true);
+        app.setEnableFileUpload(true);
+        when(appService.loadById("app-1")).thenReturn(app);
+
+        try (MockedStatic<AuthUtils> auth = Mockito.mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user("zhangsan"));
+            MockMultipartFile empty = new MockMultipartFile("file", "新建 文本文档.txt", "text/plain", new byte[0]);
+
+            assertThatThrownBy(() -> service.upload("session-1", empty))
+                    .isInstanceOf(AiBusinessException.class)
+                    .satisfies(e -> assertThat(((AiBusinessException) e).getCode())
+                            .isEqualTo(AiErrorCode.ATTACHMENT_EMPTY.getCode()));
+        }
+        verifyNoInteractions(attachmentMapper);
+    }
+
+    @Test
     void shouldBindOnlyGeneratedOrphanAttachments() {
         ChatSessionEntity session = sessionOf("app-1");
         ChatAttachmentEntity generated = attachment("session-1", null);
