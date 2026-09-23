@@ -58,5 +58,12 @@
             <artifactId>lambda-cloud-starter-dubbo</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 流程类别：复用 dictionary 模块字典能力，缺失时设计器类别下拉为空 -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-dictionary</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 </project>

@@ -338,4 +338,94 @@
         </createIndex>
     </changeSet>
 
+    <!-- 流程类别字典种子：设计器流程类别下拉（CategoryService）数据源为 dictionary 模块
+         workflow_category 字典，此处仅做幂等初始化；dictionary 模块不在库中时整组跳过（MARK_RAN），
+         类别下拉优雅降级为空、不影响引擎。字典项的日常维护在字典管理界面进行。 -->
+    <changeSet id="lambda-fusion-workflow-202609230001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_dict_type"/>
+                <tableExists tableName="la_dict_info"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_dict_type WHERE DICT_TYPE = 'workflow_category'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <insert tableName="la_dict_type">
+            <column name="ID" value="wf_dict_category_type"/>
+            <column name="PARENT_ID" value="0"/>
+            <column name="DICT_TYPE" value="workflow_category"/>
+            <column name="DICT_NAME" value="流程类别"/>
+            <column name="DATA_TYPE" value="0"/>
+            <column name="SORT" valueNumeric="0"/>
+            <column name="CREATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="UPDATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="CREATED_BY" value="system"/>
+            <column name="UPDATED_BY" value="system"/>
+            <column name="DEL_FLAG" valueNumeric="0"/>
+            <column name="DICT_USAGE" valueNumeric="0"/>
+            <column name="LEVEL" valueNumeric="1"/>
+        </insert>
+        <insert tableName="la_dict_info">
+            <column name="ID" value="wf_dict_category_hr"/>
+            <column name="SORT_NO" value="0"/>
+            <column name="CREATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="UPDATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="CREATED_BY" value="system"/>
+            <column name="UPDATED_BY" value="system"/>
+            <column name="DEL_FLAG" valueNumeric="0"/>
+            <column name="ENABLE_STATE" valueNumeric="1"/>
+            <column name="DICT_TYPE" value="workflow_category"/>
+            <column name="FIELD_TYPE" value="0"/>
+            <column name="FIELD_NAME" value="人事"/>
+            <column name="SELECT_ABLE" valueNumeric="1"/>
+            <column name="LEVEL" valueNumeric="1"/>
+        </insert>
+        <insert tableName="la_dict_info">
+            <column name="ID" value="wf_dict_category_admin"/>
+            <column name="SORT_NO" value="1"/>
+            <column name="CREATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="UPDATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="CREATED_BY" value="system"/>
+            <column name="UPDATED_BY" value="system"/>
+            <column name="DEL_FLAG" valueNumeric="0"/>
+            <column name="ENABLE_STATE" valueNumeric="1"/>
+            <column name="DICT_TYPE" value="workflow_category"/>
+            <column name="FIELD_TYPE" value="0"/>
+            <column name="FIELD_NAME" value="行政"/>
+            <column name="SELECT_ABLE" valueNumeric="1"/>
+            <column name="LEVEL" valueNumeric="1"/>
+        </insert>
+        <insert tableName="la_dict_info">
+            <column name="ID" value="wf_dict_category_finance"/>
+            <column name="SORT_NO" value="2"/>
+            <column name="CREATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="UPDATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="CREATED_BY" value="system"/>
+            <column name="UPDATED_BY" value="system"/>
+            <column name="DEL_FLAG" valueNumeric="0"/>
+            <column name="ENABLE_STATE" valueNumeric="1"/>
+            <column name="DICT_TYPE" value="workflow_category"/>
+            <column name="FIELD_TYPE" value="0"/>
+            <column name="FIELD_NAME" value="财务"/>
+            <column name="SELECT_ABLE" valueNumeric="1"/>
+            <column name="LEVEL" valueNumeric="1"/>
+        </insert>
+        <insert tableName="la_dict_info">
+            <column name="ID" value="wf_dict_category_other"/>
+            <column name="SORT_NO" value="3"/>
+            <column name="CREATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="UPDATED_AT" valueDate="2026-09-23T00:00:00"/>
+            <column name="CREATED_BY" value="system"/>
+            <column name="UPDATED_BY" value="system"/>
+            <column name="DEL_FLAG" valueNumeric="0"/>
+            <column name="ENABLE_STATE" valueNumeric="1"/>
+            <column name="DICT_TYPE" value="workflow_category"/>
+            <column name="FIELD_TYPE" value="0"/>
+            <column name="FIELD_NAME" value="其他"/>
+            <column name="SELECT_ABLE" valueNumeric="1"/>
+            <column name="LEVEL" valueNumeric="1"/>
+        </insert>
+    </changeSet>
+
 </databaseChangeLog>

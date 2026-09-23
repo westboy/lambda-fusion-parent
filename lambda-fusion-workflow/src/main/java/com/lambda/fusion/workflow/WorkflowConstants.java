@@ -27,6 +27,11 @@ public interface WorkflowConstants {
      */
     String USER_TYPE_APPROVAL = "1";
 
+    /**
+     * 流程类别对应的字典类型编码（dictionary 模块 la_dict_type/dict_info 自持）
+     */
+    String DICT_TYPE_WORKFLOW_CATEGORY = "workflow_category";
+
     enum Type {
         /**
          * 任务开始办理

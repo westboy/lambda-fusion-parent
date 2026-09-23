@@ -3,9 +3,11 @@ package com.lambda.fusion.workflow;
 import com.lambda.fusion.authority.api.RemoteOrganizationService;
 import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.dict.service.DictInfoService;
 import com.lambda.fusion.workflow.bridge.AuthorityHandlerSelectService;
-import java.util.Objects;
+import com.lambda.fusion.workflow.bridge.DictCategoryService;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.warm.flow.ui.service.CategoryService;
 import org.dromara.warm.flow.ui.service.HandlerSelectService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -53,12 +55,10 @@ public class WorkflowConfigure {
                 ObjectProvider<RemoteRoleService> remoteRoleServiceProvider,
                 ObjectProvider<RemoteOrganizationService> remoteOrganizationServiceProvider) {
             return new AuthorityHandlerSelectService(
-                    remoteUserServiceProvider.getIfAvailable(
-                            () -> Objects.requireNonNull(dubboReference(RemoteUserService.class))),
-                    remoteRoleServiceProvider.getIfAvailable(
-                            () -> Objects.requireNonNull(dubboReference(RemoteRoleService.class))),
+                    remoteUserServiceProvider.getIfAvailable(() -> dubboReference(RemoteUserService.class)),
+                    remoteRoleServiceProvider.getIfAvailable(() -> dubboReference(RemoteRoleService.class)),
                     remoteOrganizationServiceProvider.getIfAvailable(
-                            () -> Objects.requireNonNull(dubboReference(RemoteOrganizationService.class))));
+                            () -> dubboReference(RemoteOrganizationService.class)));
         }
 
         /** Dubbo 不在 classpath 时返回 null，由实现降级为空列表 */
@@ -72,6 +72,22 @@ public class WorkflowConfigure {
             reference.setInterface(interfaceClass);
             reference.setCheck(false);
             return reference.get();
+        }
+    }
+
+    /**
+     * 设计器流程类别装配：dictionary 模块 {@code workflow_category} 字典 → 设计器类别下拉。
+     * 条件注解保护 optional 依赖（dictionary / UI 插件不在 classpath 时不装配）。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(
+            name = {"com.lambda.fusion.dict.service.DictInfoService", "org.dromara.warm.flow.ui.service.CategoryService"
+            })
+    public static class CategoryConfiguration {
+
+        @Bean
+        public CategoryService categoryService(DictInfoService dictInfoService) {
+            return new DictCategoryService(dictInfoService);
         }
     }
 }
