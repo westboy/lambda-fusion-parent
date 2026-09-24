@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <!-- 请假演示业务（工作流模块接入样板，docs/design/workflow.md §10.2）。
+         business_id（即本表 ID）经 flow_instance.business_id 关联流程实例；
+         租户过滤由框架 TenantLineInnerInterceptor 承担，业务代码不写租户处理（§4.2）。
+         菜单/权限 changeSet 亦随本文件走（本模块的表与本模块的菜单同文件交付）；
+         文件名取 lambda-additional-changelog.xml：DefaultLiquibaseComparator 保证本文件
+         在全部模块 changelog 之后执行，首次启动时 la_resources / la_role_resources
+         （lambda-authority-changelog 建表）必然就绪，菜单插入不会因表未建被 MARK_RAN 跳过。 -->
+
+    <changeSet id="lambda-fusion-startup-202609240001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_leave"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_leave" remarks="请假单（工作流演示业务）">
+            <column name="ID" type="varchar(32)" remarks="主键（同时作为流程 business_id）">
+                <constraints primaryKey="true" primaryKeyName="pk_la_leave_id" nullable="false"/>
+            </column>
+            <column name="APPLICANT" type="varchar(64)" remarks="申请人">
+                <constraints nullable="false"/>
+            </column>
+            <column name="DAYS" type="int" remarks="请假天数（流程变量 days，供 skip_condition 条件分支）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REASON" type="varchar(500)" remarks="请假事由"/>
+            <column name="STATUS" type="tinyint(1)" defaultValueNumeric="0"
+                    remarks="状态：0 草稿 1 审批中 2 通过 3 驳回（流程终态由事件回写）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="idx_la_leave_tenant_status" tableName="la_leave">
+            <column name="TENANT_ID"/>
+            <column name="STATUS"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- 请假演示菜单与按钮权限（la_resources，RES_TYPE 1 菜单 / 3 按钮，RES_PATH 即权限码）。
+         挂工作流顶级菜单（WfTop00001）下；审批操作不在此页，办理人走通用待办页。 -->
+    <changeSet id="lambda-fusion-startup-202609240002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_resources WHERE ID = 'LvMenu0001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('LvMenu0001', 'WfTop00001', '请假演示', '/workflow/leave/', 1, 1, null, 0, null,
+                    'lucide:palmtree', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 8),
+                   ('LvLstL001', 'LvMenu0001', '请假查询', 'leave_demo_list', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-LvMenu0001', 0, null, null, null, 0, null, null, 1),
+                   ('LvLstA001', 'LvMenu0001', '请假新增/编辑', 'leave_demo_add', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-LvMenu0001', 0, null, null, null, 0, null, null, 2),
+                   ('LvLstS001', 'LvMenu0001', '请假提交', 'leave_demo_submit', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-LvMenu0001', 0, null, null, null, 0, null, null, 3),
+                   ('LvLstD001', 'LvMenu0001', '请假删除', 'leave_demo_delete', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-LvMenu0001', 0, null, null, null, 0, null, null, 4);
+        ]]></sql>
+    </changeSet>
+
+    <!-- 请假演示菜单角色授权（ROLE_ADMIN / ROLE_SYSTEM / ROLE_DEV 全量可见） -->
+    <changeSet id="lambda-fusion-startup-202609240003" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_role_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_role_resources WHERE RESOURCE_ID = 'LvMenu0001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'LvMenu0001', null),
+                   ('ROLE_SYSTEM', 'LvMenu0001', null),
+                   ('ROLE_DEV', 'LvMenu0001', null),
+                   ('ROLE_ADMIN', 'LvLstL001', null),
+                   ('ROLE_SYSTEM', 'LvLstL001', null),
+                   ('ROLE_DEV', 'LvLstL001', null),
+                   ('ROLE_ADMIN', 'LvLstA001', null),
+                   ('ROLE_SYSTEM', 'LvLstA001', null),
+                   ('ROLE_DEV', 'LvLstA001', null),
+                   ('ROLE_ADMIN', 'LvLstS001', null),
+                   ('ROLE_SYSTEM', 'LvLstS001', null),
+                   ('ROLE_DEV', 'LvLstS001', null),
+                   ('ROLE_ADMIN', 'LvLstD001', null),
+                   ('ROLE_SYSTEM', 'LvLstD001', null),
+                   ('ROLE_DEV', 'LvLstD001', null);
+        ]]></sql>
+    </changeSet>
+
+</databaseChangeLog>

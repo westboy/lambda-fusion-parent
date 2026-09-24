@@ -64,6 +64,7 @@ mybatis-plus:
   configuration:
     default-enum-type-handler: org.apache.ibatis.type.EnumOrdinalTypeHandler
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-package: com.fusion.startup.*.mapper
 ################################# Lambda 配置 #################################
 lambda:
   #### 加解密组件：AES 密钥 Base64 编码，生产必须经 CRYPTO_AES_SECRET_KEY 注入（openssl rand -base64 32） ####
