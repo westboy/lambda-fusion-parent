@@ -34,8 +34,8 @@ public class DictCategoryService implements CategoryService {
         try {
             List<DictInfo> dictInfoList = dictInfoService.getTreeData(WorkflowConstants.DICT_TYPE_WORKFLOW_CATEGORY);
             // 设计器以 Tree.id 落 flow_definition.category（展示/过滤口径），故映射字典名而非字典项 ID
-            Map<String, String> idToName =
-                    dictInfoList.stream().collect(Collectors.toMap(DictInfo::getId, DictInfo::getFieldName, (a, b) -> a));
+            Map<String, String> idToName = dictInfoList.stream()
+                    .collect(Collectors.toMap(DictInfo::getId, DictInfo::getFieldName, (a, b) -> a));
             return dictInfoList.stream().map(dict -> toTree(dict, idToName)).toList();
         } catch (Exception e) {
             log.warn("流程类别字典查询失败，类别下拉降级为空：{}", e.getMessage());

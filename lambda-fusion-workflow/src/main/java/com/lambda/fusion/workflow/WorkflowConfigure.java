@@ -10,6 +10,7 @@ import com.lambda.fusion.workflow.bridge.DictCategoryService;
 import com.lambda.fusion.workflow.bridge.RegistryFormPathService;
 import com.lambda.fusion.workflow.bridge.WorkflowTaskNotifier;
 import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.orm.mapper.FlowInstanceMapper;
 import org.dromara.warm.flow.orm.mapper.FlowTaskMapper;
@@ -25,8 +26,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.ClassUtils;
-
-import java.util.Objects;
 
 /**
  * Workflow 模块装配类
@@ -66,8 +65,10 @@ public class WorkflowConfigure {
                 ObjectProvider<RemoteRoleService> remoteRoleServiceProvider,
                 ObjectProvider<RemoteOrganizationService> remoteOrganizationServiceProvider) {
             return new AuthorityHandlerSelectService(
-                    remoteUserServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteUserService.class))),
-                    remoteRoleServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteRoleService.class))),
+                    remoteUserServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteUserService.class))),
+                    remoteRoleServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteRoleService.class))),
                     remoteOrganizationServiceProvider.getIfAvailable(
                             () -> Objects.requireNonNull(dubboReference(RemoteOrganizationService.class))));
         }
@@ -120,7 +121,8 @@ public class WorkflowConfigure {
                 FlowTaskMapper flowTaskMapper,
                 FlowInstanceMapper flowInstanceMapper) {
             return new WorkflowTaskNotifier(
-                    remoteMessageServiceProvider.getIfAvailable(() -> Objects.requireNonNull(dubboReference(RemoteMessageService.class))),
+                    remoteMessageServiceProvider.getIfAvailable(
+                            () -> Objects.requireNonNull(dubboReference(RemoteMessageService.class))),
                     flowUserMapper,
                     flowTaskMapper,
                     flowInstanceMapper);
