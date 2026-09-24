@@ -417,6 +417,10 @@ warm-flow:
 
 ### 10.2 后端：接入一个审批业务（5 步，以请假为例）
 
+> **本节已落地为可运行样板**：`lambda-fusion-startup` 的 `com.fusion.startup.leave`（业务表 `la_leave` / 提交即启动 / `LeaveBusinessProvider` / `LeaveFlowStatusUpdater`）+ 前端 `views/workflow/leave/`（请假页与详情抽屉）；菜单/权限 changeSet 随 `lambda-additional-changelog.xml` 交付（comparator 保证最后执行，避免首次启动资源表未建的时序问题；`mvn compile` 已通过）。下述代码段为范式说明，实际实现以 startup 代码为准。
+
+**事件回写状态映射（实测口径，warm-flow 1.8.9 源码核实）**：审批通过到达结束节点时实例 `flow_status` 为 **8（已完成）** 而非 2（TaskServiceImpl#setFlowStatus：结束节点 → FINISHED）；样板映射为 `2/3/8 → 通过`、`9 退回(至发起节点)/6 撤销 → 回草稿`、`4/5/10 → 驳回`、其余中间态忽略。
+
 ```text
 ① 业务表 la_leave（id/tenant_id/applicant/days/reason/status/审计四件套）——业务方自持，引擎不碰
 ② 提交时启动流程      ③ 实现 WorkflowBusinessProvider（待办列表显示标题）
@@ -667,7 +671,7 @@ REST（管理端，权限码实际码值）：
 | --- | --- |
 | P0（前置） | `lambda-cloud-parent` 登记 `warm-flow.version=1.8.9` 与 dependencyManagement（§6.2）；契约 §3.2 前缀表登记 `workflow → lambda.fusion.workflow`（规则文件独立提交，契约 §18.2） |
 | P1（本期） | 后端：模块骨架（pom + 三件套 + imports）；`lambda-workflow-changelog.xml`（7 张引擎表，§6.4）；bridge（`FusionPermissionHandler`/`WorkflowGlobalListener`/`WorkflowFlowEvent`）；definition/instance/task 三子域 Service + Controller（§4.5/§8）；`WorkflowBusinessProvider` SPI + `ObjectProvider` 收集；startup 集成验证（依赖、开关、设计器匿名路径、`mvn compile` 与 Spotless/SpotBugs 通过）。前端（lambda-fusion-web，独立提交）：`system-ui` 新增 `views/workflow/` 页面与组件、`api/system/workflow.ts`、菜单/权限码登记、设计器 `IFrameView` 嵌入与代理配置（§10.4） |
-| P2 | 待办通知对接 message（**已落地**：`WorkflowTaskNotifier` 事件消费 + optional 依赖优雅降级，§4.3）；流程自定义表单管理（**已落地**：`la_workflow_form_path` 注册表 + formpath 子域 + `RegistryFormPathService` 设计器下拉 + authority 菜单权限 changeSet，§10.5）；流程类别字典分类（**已落地**：`DictCategoryService` 对接 dictionary 模块 `workflow_category` 字典 + changelog 幂等种子，§3）；`docs/skills/lambda-fusion-workflow/SKILL.md` 模块文档（待做）；startup 演示业务落地请假样板（按 §10.2 步骤，待做）；角色展开内置实现的评估结论（含通知收件人 `role:`/`org:` 展开所需的 authority-api 扩充） |
+| P2 | 待办通知对接 message（**已落地**：`WorkflowTaskNotifier` 事件消费 + optional 依赖优雅降级，§4.3）；流程自定义表单管理（**已落地**：`la_workflow_form_path` 注册表 + formpath 子域 + `RegistryFormPathService` 设计器下拉 + authority 菜单权限 changeSet，§10.5）；流程类别字典分类（**已落地**：`DictCategoryService` 对接 dictionary 模块 `workflow_category` 字典 + changelog 幂等种子，§3）；startup 演示业务落地请假样板（**已落地**：`com.fusion.startup.leave` 后端 + 前端 `views/workflow/leave/` + `lambda-startup-changelog.xml` 建表与菜单，§10.2）；`docs/skills/lambda-fusion-workflow/SKILL.md` 模块文档（待做）；角色展开内置实现的评估结论（含通知收件人 `role:`/`org:` 展开所需的 authority-api 扩充） |
 | P3 | `flow_form` 跟进；流程数据归档策略；设计器按租户/权限强收敛（若 P1 定稿为宽松放行） |
 
 ## 14. 落地检查清单（PDCA Check）

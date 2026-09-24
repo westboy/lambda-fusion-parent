@@ -745,7 +745,7 @@
          动态携带 id/onlyDesignShow/theme/darkColors/Authorization 参数），故 RES_TYPE=1 普通页面菜单。
          若改用后端 EMBEDDED_PAGE（RES_TYPE=2）直嵌静态页，iframe 地址必须存 RES_URL 列
          （/auth/menus 以 res_url as url 下发 → meta.iframeSrc），URL 列对菜单导航无效（勿用）。 ========== -->
-    <changeSet id="lambda-authority-20260923000001" author="jin">
+    <changeSet id="lambda-authority-202609230000011" author="jin">
         <preConditions onFail="MARK_RAN">
             <and>
                 <tableExists tableName="la_resources"/>
@@ -771,7 +771,7 @@
                    ('WfInst0001', 'WfTop00001', '实例管理', '/workflow/instance/', 1, 1, null, 0, null,
                     'lucide:list-tree', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 5),
                    ('WfDesn0001', 'WfTop00001', '流程设计器', '/workflow/designer/', 1, 1, null, 0, null,
-                    'lucide:pen-tool', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 6);
+                    'lucide:pen-tool', 1, 'WfTop00001', 0, null, null, null, 0, null, null, 6);
         ]]></sql>
     </changeSet>
 
