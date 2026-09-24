@@ -97,7 +97,9 @@ public class InstanceServiceImpl implements InstanceService {
 
     @Override
     public InstanceView detail(Long id) {
-        return toView(requireInstance(id));
+        InstanceView view = toView(requireInstance(id));
+        bizInfoResolver.fill(List.of(view));
+        return view;
     }
 
     @Override
@@ -116,7 +118,9 @@ public class InstanceServiceImpl implements InstanceService {
         Instance instance = requireInstance(id);
         org.dromara.warm.flow.core.dto.FlowCombine combine =
                 EngineCalls.call(() -> defService.getFlowCombine(instance.getDefinitionId()));
-        return new ChartView(combine, toView(instance));
+        InstanceView view = toView(instance);
+        bizInfoResolver.fill(List.of(view));
+        return new ChartView(combine, view);
     }
 
     @Override
