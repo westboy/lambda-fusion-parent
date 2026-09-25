@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 /**
- * 定时任务执行记录：一次执行（定时触发或手动触发）的落库事实，独立于调度器状态（§20.3）。
+ * 定时任务执行记录：一次执行（定时触发或手动触发）的落库事实，独立于调度器状态（工程契约 §20.3）。
  *
  * <p>只增不改的运维日志，无需审计列，故不继承 {@code BaseEntity}（时间已由
  * {@code startedAt/finishedAt} 表达，记录由系统写入无「创建用户」）。

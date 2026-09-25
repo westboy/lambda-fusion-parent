@@ -32,6 +32,29 @@ public interface WorkflowConstants {
      */
     String DICT_TYPE_WORKFLOW_CATEGORY = "workflow_category";
 
+    /**
+     * 通过终态组：2 审批通过 / 3 自动完成 / 8 已完成。
+     * 注意审批通过到达结束节点时实例终态为 8 而非 2（warm-flow 1.8.9 源码核实口径）
+     */
+    static boolean isPassed(String flowStatus) {
+        return "2".equals(flowStatus) || "3".equals(flowStatus) || "8".equals(flowStatus);
+    }
+
+    /**
+     * 退回发起方组：9 退回到发起节点 / 6 撤销（业务通常回草稿、可重提）
+     */
+    static boolean isReturned(String flowStatus) {
+        return "9".equals(flowStatus) || "6".equals(flowStatus);
+    }
+
+    /**
+     * 强制终态组：4 终止 / 5 作废 / 10 失效（业务通常置为驳回/关闭）。
+     * 其余状态值（0 待提交 / 1 审批中 / 7 取回 / 11 拿回 / 12 重启 / 13 暂存）为在途或中间态，业务通常忽略
+     */
+    static boolean isTerminated(String flowStatus) {
+        return "4".equals(flowStatus) || "5".equals(flowStatus) || "10".equals(flowStatus);
+    }
+
     enum Type {
         /**
          * 任务开始办理

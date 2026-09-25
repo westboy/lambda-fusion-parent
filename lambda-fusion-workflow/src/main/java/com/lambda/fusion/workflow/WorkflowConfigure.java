@@ -91,7 +91,7 @@ public class WorkflowConfigure {
     }
 
     /**
-     * 设计器自定义表单路径装配：本模块 la_workflow_form_path 注册表（启用项）→ 设计器下拉（§10.5）。
+     * 设计器自定义表单路径装配：本模块 la_workflow_form_path 注册表（启用项）→ 设计器下拉。
      * 条件注解保护 optional 依赖（UI 插件不在 classpath 时不装配）。
      */
     @Configuration(proxyBeanMethods = false)
@@ -105,7 +105,7 @@ public class WorkflowConfigure {
     }
 
     /**
-     * 待办任务通知装配：ASSIGNMENT 事件 → message-api 站内信（§4.3）。
+     * 待办任务通知装配：ASSIGNMENT 事件 → message-api 站内信。
      * 数据源为 message 模块远程契约：容器已有 Bean（单体中 message 适配器组件）优先，
      * 缺失且 Dubbo 可用时自建引用（check=false），都没有时通知器空转降级。
      * 条件注解保护 optional 依赖（message-api 不在 classpath 时不装配）。

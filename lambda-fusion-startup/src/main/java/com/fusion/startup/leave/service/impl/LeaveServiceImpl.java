@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 请假单服务实现
  *
  * <p>租户过滤与审计填充由框架拦截器/填充器承担，本类不重复处理。
- * 幂等由业务状态机保证：仅草稿可提交（§10.2 ⑤）——同一 businessId 引擎允许多实例
+ * 幂等由业务状态机保证：仅草稿可提交——同一 businessId 引擎允许多实例
  * （驳回重提是合法场景），重复提交被 {@link LeaveErrorCode#LEAVE_STATUS_INVALID} 拦截。
  *
  * @author jin

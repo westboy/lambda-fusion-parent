@@ -10,7 +10,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 流程自定义表单注册表（设计器 form_path 下拉数据源，§10.5）
+ * 流程自定义表单注册表（设计器 form_path 下拉数据源）
  *
  * @author jin
  */

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 流程自定义表单注册表 API（后台维护，§10.5）
+ * 流程自定义表单注册表 API（后台维护）
  *
  * @author jin
  */

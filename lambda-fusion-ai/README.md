@@ -2,8 +2,6 @@
 
 `lambda-fusion-ai` 是 Lambda Fusion 体系的 AI 能力模块，基于 **AgentScope 2.0** 构建，为 Spring Boot 应用提供多智能体应用托管能力：平台（ISV）预置智能体应用，每个应用绑定模型、系统提示词、工具、MCP 服务、知识库与子代理，对外提供运营商隔离的流式对话；WORKSPACE 型应用进一步对齐 AgentScope harness 完整能力（workspace / 技能 / 子代理 / 记忆 / 沙箱 / 自演化）。此外提供应用发布（独立 URL 分发）、聊天附件（上传/预览/按需读取）、HITL 人机协同（工具确认/挂起输入）、定时 Agent 任务与多实例配置失效广播。
 
-> 深度设计文档见 `docs/design/`：[对话运行时](../docs/design/chat-runtime.md)、[应用发布](../docs/design/ai-app-publishing.md)、[媒体生成](../docs/design/media-generation-architecture.md)、[定时 Agent 任务](../docs/design/scheduled-agent-task.md)、[RAG 文档切割](../docs/design/rag-document-chunking.md)、[子代理远程恢复](../docs/design/subagent-remote-agent.md)、[Workspace 存储](../docs/design/agentscope-workspace-storage.md)。本 README 是概览。
-
 ## 能力总览
 
 | 能力 | 包 | 端点 | 说明 |
@@ -114,7 +112,7 @@
 应用字段：`modelId` `imageModelId` `videoModelId` `audioModelId` `systemPrompt` `maxIters` `temperature` `toolsAllow` `toolsDeny` `mcpServerIds` `knowledgeBaseIds` `ragMode` `subAgentIds` `skillsAllow` `skillsDeny` `appType` `selfEvolve` `sandboxBackend` `audience`(B/C/ALL) `ownerId` `enableImageUpload` `enableFileUpload` `enabled` 及发布字段。CRUD 端点 `/v1/ai/apps`（权限 `ai:app:*`）；用户可用应用 `GET /v1/ai/apps/available`（`ai:app:available`，按 audience+角色/owner 过滤，返回含上传开关的安全视图）。`appType` 创建后不可变；其余字段可调，变更前后写配置审计（见下）。**配置审计**：`ai_app_config_audit` append-only 记录 CREATE/UPDATE（旧值快照）/DELETE 三类操作，供人工核对回退，暂无查询端点。
 
 ### 应用发布
-发布状态直接挂在 `ai_app` 行上（`publish_code`/`publish_status`/`published_at`），**不复制配置快照**——运行配置以 `ai_app` 当前行为唯一事实来源，编辑即生效。`PUT /v1/ai/apps/{id}/publication` 发布（幂等，校验应用已启用且模型有效，生成 32 位 `publishCode`），`DELETE` 下线（幂等，保留 publishCode，重发链接不变）。已发布应用对外两个端点：`GET /v1/ai/public/apps/{publishCode}/profile`（匿名，返回裁剪视图 publishCode/name/avatar/description，需 startup 配置 sa-token ignored 放行）与 `GET /v1/ai/public/apps/{publishCode}/access`（登录，复用应用可见性校验返回安全视图）。发布状态不参与后台/普通对话的可见性，仅控制独立 URL 入口。详见 [应用发布设计](../docs/design/ai-app-publishing.md)。
+发布状态直接挂在 `ai_app` 行上（`publish_code`/`publish_status`/`published_at`），**不复制配置快照**——运行配置以 `ai_app` 当前行为唯一事实来源，编辑即生效。`PUT /v1/ai/apps/{id}/publication` 发布（幂等，校验应用已启用且模型有效，生成 32 位 `publishCode`），`DELETE` 下线（幂等，保留 publishCode，重发链接不变）。已发布应用对外两个端点：`GET /v1/ai/public/apps/{publishCode}/profile`（匿名，返回裁剪视图 publishCode/name/avatar/description，需 startup 配置 sa-token ignored 放行）与 `GET /v1/ai/public/apps/{publishCode}/access`（登录，复用应用可见性校验返回安全视图）。发布状态不参与后台/普通对话的可见性，仅控制独立 URL 入口。
 
 ### 对话
 会话与 Run 端点（`/v1/ai/sessions`）：
@@ -134,7 +132,7 @@
 | `POST /v1/ai/sessions/{id}/runs/{runId}/input` | `ai:chat-session:run-input-submit` | HITL 挂起输入提交（SSE） |
 | `POST /v1/ai/sessions/{id}/runs/{runId}/stop` | `ai:chat-session:run-stop` | 停止 Run |
 
-ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输出，数据库快照用于页面恢复，状态仅有 `RUNNING / COMPLETED / STOPPED / FAILED`；AgentScope 的 `ASKING`（工具确认/挂起输入）不复制成业务状态，体现为快照 pendingTools/pendingInputs 与工具状态枚举。本模块不实现节点心跳、租约、远程停止、旧调用接管或全局维护扫描。多实例下若请求未落回执行实例，返回持久化 bootstrap 后关闭 SSE；用户可显式停止旧 Run 并创建新 Run。并发受 `ChatRunCapacityLimiter` 限制（全局 `max-active-runs` + 每用户 `max-active-runs-per-user`，仅本节点）。详见 [对话运行时设计](../docs/design/chat-runtime.md)。
+ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输出，数据库快照用于页面恢复，状态仅有 `RUNNING / COMPLETED / STOPPED / FAILED`；AgentScope 的 `ASKING`（工具确认/挂起输入）不复制成业务状态，体现为快照 pendingTools/pendingInputs 与工具状态枚举。本模块不实现节点心跳、租约、远程停止、旧调用接管或全局维护扫描。多实例下若请求未落回执行实例，返回持久化 bootstrap 后关闭 SSE；用户可显式停止旧 Run 并创建新 Run。并发受 `ChatRunCapacityLimiter` 限制（全局 `max-active-runs` + 每用户 `max-active-runs-per-user`，仅本节点）。
 
 ### 聊天附件
 - 上传 `POST /v1/ai/chat/attachments`（`ai:chat-attachment:upload`，multipart `sessionId`+`file`）：支持图片（jpg/jpeg/png/gif/webp）与文档（pdf/doc/docx/txt/md），受应用级 `enableImageUpload`/`enableFileUpload` 开关校验；另有详情/删除/登录下载（支持 Range）与**签名直链** `/{id}/preview|file?expires=&sig=`（HMAC-SHA256，默认 TTL 1h，OSS 后端 302 到短期预签名地址；Office 原件另存派生 PDF 预览）。
@@ -146,7 +144,6 @@ ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输
 - 对话接口没有媒体专用请求字段或前端创作控件；图片、视频、语音请求均作为普通用户消息进入统一 ReAct 链路，模型依据真实 ToolSchema 自主选择工具和填写参数。
 - `ToolkitAssembler.build(app, includeChatRunTools)` 构建 Web Chat 与 Channel 两套工具集：应用绑定的官方媒体工具（`MediaGenerationBindingResolver` + `MediaToolAdapterRegistry` 解析 IMAGE/VIDEO/AUDIO 绑定）与独立配置的 `qwen_text_to_image`（默认关闭）仅挂载到 Web Chat；`search_chat_attachment`/`read_chat_attachment` 等 ChatRun 专属工具 Channel 不可见（`publish_workspace_file` 因 `@AiTools` 已全局可见）。知识库、本地、媒体和 MCP 等全部已注册来源最后统一受应用 `toolsAllow` / `toolsDeny` 控制。
 - 所有媒体工具统一经 `MaterializingMediaTool` 装饰：结果返回前由 `ToolResultMediaMaterializer` 把 URL/Base64 媒体下载存入平台 AI 文件存储（LOCAL / OSS），客户端接收平台附件 `DataBlock` 和签名预览地址；模型侧结果只保留稳定 attachmentId，不透传供应商文本、metadata、临时 URL 或平台签名 URL。
-- 详见 [媒体生成架构](../docs/design/media-generation-architecture.md)。
 
 ### MCP 服务
 传输 `stdio`/`sse`/`http`/`streamable_http`；`ToolkitAssembler` 按应用装载，单个失败不影响其余；`POST /v1/ai/mcp-servers/{id}/test` 测连通性。
@@ -158,10 +155,9 @@ ChatRun 是 AgentScope 之上的业务状态：本地内存事件用于实时输
 - 诊断端点：`POST /v1/ai/knowledge-bases/{id}/retrieval-test`（`ai:knowledge-base:retrieval-test`，检索探针）与 `POST /v1/ai/knowledge-bases/{id}/indexes/rebuild`（`ai:knowledge-base:index-rebuild`，异步重建索引）。
 - 默认关闭，由 `lambda.fusion.ai.rag.enabled` 开启；关闭时管理 CRUD 仍可用，检索注入不装配。Lucene 由 `lambda.lucene.enabled` 独立控制，索引为本地可重建投影，面向单机部署。
 - 端点：`/v1/ai/knowledge-bases`、`/v1/ai/knowledge-bases/{kbId}/documents`（上传/下载/删除）。
-- 详见 [RAG 文档切割与来源契约](../docs/design/rag-document-chunking.md)。
 
 ### 子代理
-DB 驱动子代理定义（`ai_sub_agent`：`name`/`description`/`prompt`/`modelId`/`steps`/`toolsAllow`/`skillsAllow`/`workspaceMode`，`category=SUB_AGENT`；定时任务复用同表，见下节）。按应用绑定（`ai_app.sub_agent_ids`，仅 WORKSPACE 型），`AgentFactory` 构建期注册为 `SubagentDeclaration`，主 agent 经 harness 子代理体系（`agent_spawn`/`agent_send`）调度，**路由由 LLM 按 description 自主决策**。同名 `workspace/subagents/*.md` 文件覆盖 DB 声明。端点 `/v1/ai/sub-agents`。详见 [子代理远程恢复设计](../docs/design/subagent-remote-agent.md)。
+DB 驱动子代理定义（`ai_sub_agent`：`name`/`description`/`prompt`/`modelId`/`steps`/`toolsAllow`/`skillsAllow`/`workspaceMode`，`category=SUB_AGENT`；定时任务复用同表，见下节）。按应用绑定（`ai_app.sub_agent_ids`，仅 WORKSPACE 型），`AgentFactory` 构建期注册为 `SubagentDeclaration`，主 agent 经 harness 子代理体系（`agent_spawn`/`agent_send`）调度，**路由由 LLM 按 description 自主决策**。同名 `workspace/subagents/*.md` 文件覆盖 DB 声明。端点 `/v1/ai/sub-agents`。
 
 `expose_to_user` 发布事件由 Lambda Fusion 应用层补全应用、租户、用户和父会话信息，不修改 AgentScope 源码。记录中的子 Agent 类型会转换为带应用与租户作用域的内部标识，其他节点据此重建正确的父 Agent，再按其声明恢复子 Agent。直接对话必须通过 `FusionSubagentGateway`，同时校验应用、租户和用户；远程 Workspace 模式下使用同一 `DistributedStore` 的执行锁串行化跨节点请求。
 
@@ -175,8 +171,6 @@ DB 驱动的定时 Agent 任务（`ai_sub_agent` 表 `category=SCHEDULED_TASK` �
 - 手动触发 `POST /{id}/trigger` 同步执行一次（不注册 Quartz）；执行结果写 `ai_scheduled_task_log`（SCHEDULED/MANUAL、SUCCESS/FAILED、耗时、输出/错误摘要），完成后经 Dubbo 调 message 模块给创建人发站内信（成功 info / 失败 important）。
 - 端点 `/v1/ai/scheduled-tasks`（权限 `ai:scheduled-task:*`）：page / get / status（Quartz TriggerState）/ logs/page / add / update / delete / pause / resume / trigger。
 - 配置 `lambda.fusion.ai.schedule.*`（enabled 默认 false / schedulerId / threadPoolSize 默认 4 / datasource 默认 master）。
-
-详见 [定时 Agent 任务设计](../docs/design/scheduled-agent-task.md)。
 
 ### 技能市场
 技能仓库源按部署形态选择：`MYSQL`（默认）/ `POSTGRES`（可读写，admin CRUD）/ `GIT` / `NACOS`（只读 catalog）。`type=NONE` 或扩展未引入时技能市场禁用（WORKSPACE app 仅用 workspace 本地技能）。支持技能包（zip）检查与导入（`SkillPackageReader`）。端点 `/v1/ai/skills`。

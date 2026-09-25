@@ -6,7 +6,7 @@ import com.fusion.startup.leave.model.LeaveSaveCommand;
 import com.lambda.fusion.core.pagination.PageView;
 
 /**
- * 请假单服务（工作流演示业务，docs/design/workflow.md §10.2 五步范式样板）
+ * 请假单服务（工作流演示业务）
  *
  * @author jin
  */
@@ -33,7 +33,7 @@ public interface LeaveService {
     void update(String id, LeaveSaveCommand command);
 
     /**
-     * 提交审批：状态机校验草稿 → 置审批中 → 发起 leave_demo 流程（§10.2 ②）
+     * 提交审批：状态机校验草稿 → 置审批中 → 发起 leave_demo 流程
      */
     void submit(String id);
 

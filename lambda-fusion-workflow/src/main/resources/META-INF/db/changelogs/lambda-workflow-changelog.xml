@@ -428,7 +428,7 @@
         </insert>
     </changeSet>
 
-    <!-- 流程自定义表单注册表：设计器 form_path 下拉数据源，后台维护（§10.5）。
+    <!-- 流程自定义表单注册表：设计器 form_path 下拉数据源，后台维护。
          form_path 存业务前端路由，停用/删除不回溯已发布定义（字符串快照，仅影响新建选择）。 -->
     <changeSet id="lambda-fusion-workflow-202609230002" author="jin">
         <preConditions onFail="MARK_RAN">

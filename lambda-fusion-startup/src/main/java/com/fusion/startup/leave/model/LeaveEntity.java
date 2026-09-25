@@ -10,7 +10,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 请假单（工作流演示业务，docs/design/workflow.md §10.2 五步范式样板）
+ * 请假单（工作流演示业务）
  *
  * @author jin
  */

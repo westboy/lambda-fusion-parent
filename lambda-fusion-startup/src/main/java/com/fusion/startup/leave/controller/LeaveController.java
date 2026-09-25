@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 请假单 API（工作流演示业务）
  *
  * <p>审批操作不在此出口——办理人走 workflow 模块通用审批面（/workflow/task/*），
- * 本控制器只承载业务单据的增删改查与提交（§10.3：不直连 flow_*，不重复审批出口）。
+ * 本控制器只承载业务单据的增删改查与提交（不直连 flow_* 表，不重复审批出口）。
  *
  * @author jin
  */

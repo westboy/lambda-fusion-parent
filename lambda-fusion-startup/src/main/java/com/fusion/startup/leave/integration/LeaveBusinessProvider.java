@@ -12,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * 请假单展示信息解析（§10.2 ③）
+ * 请假单展示信息解析
  *
  * <p>待办/已办/我发起列表的标题列由 workflow 模块 BizInfoResolver 按本 SPI 批量回填；
  * 演示业务无独立详情路由，link 置 null（列表标题不可点击，优雅降级）。

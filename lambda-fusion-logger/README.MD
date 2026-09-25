@@ -2,7 +2,7 @@
 
 Lambda Fusion Logger 是 Lambda Fusion 框架中的操作日志模块，基于 Lambda Cloud 构建。它为 `lambda-cloud-starter-logger` 的 `@OperationLog` 切面提供统一的落库实现（顶替 starter 默认实现），支持异步落库、多存储后端路由（内置 MySQL，预留 KAFKA / ES）、多租户、分布式部署下经 Dubbo 远程落库，并提供操作日志查询 REST API。
 
-## 项目概述
+## 模块概述
 
 starter 的 `@OperationLog` 切面在 AOP finally 中通过 `OperationService` SPI 同步回调日志记录，默认实现并不落库。本模块实现 `OperationLogApi` 契约（继承 `OperationService` SPI）注册为本地 bean 顶掉默认实现，将日志经 `LogStorageResolver` 路由到当前存储后端统一落库，并提供分页查询与模块检索接口。
 

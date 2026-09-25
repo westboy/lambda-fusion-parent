@@ -3,9 +3,9 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
 
-    <!-- 请假演示业务（工作流模块接入样板，docs/design/workflow.md §10.2）。
+    <!-- 请假演示业务（工作流模块接入样板）。
          business_id（即本表 ID）经 flow_instance.business_id 关联流程实例；
-         租户过滤由框架 TenantLineInnerInterceptor 承担，业务代码不写租户处理（§4.2）。
+         租户过滤由框架 TenantLineInnerInterceptor 承担，业务代码不写租户处理。
          菜单/权限 changeSet 亦随本文件走（本模块的表与本模块的菜单同文件交付）；
          文件名取 lambda-additional-changelog.xml：DefaultLiquibaseComparator 保证本文件
          在全部模块 changelog 之后执行，首次启动时 la_resources / la_role_resources
