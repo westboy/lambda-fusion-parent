@@ -1,8 +1,6 @@
 package com.lambda.fusion.ai.schedule;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
-import com.lambda.fusion.ai.AiConstants.SubAgentCategory;
 import com.lambda.fusion.ai.AiConstants.TaskTriggerType;
 import com.lambda.fusion.ai.schedule.service.ScheduledTaskLogService;
 import com.lambda.fusion.ai.subagent.mapper.SubAgentMapper;
@@ -19,18 +17,8 @@ import org.quartz.JobListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 监听共享 Quartz {@code Scheduler} 的定时执行，补齐任务执行期间的租户上下文并记录执行结果。
- * Quartz 定时触发不经过 {@code AgentTaskScheduler.TenantAwareTask}，因此需要在监听器中单独恢复上下文。
- *
- * <p>执行前后分别承担以下职责：
- * <ul>
- *   <li>{@link #jobToBeExecuted} 从 JobDataMap 的 {@code taskName}（格式为 {@code tenantId:name}）
- *   解析租户，使 Agent 工具能够访问对应租户的数据。</li>
- *   <li>{@link #jobWasExecuted} 根据执行异常判断结果并写入 SCHEDULED 日志，最后清理租户上下文。
- *   日志表不含 {@code tenant_id}，写日志本身不依赖租户上下文。</li>
- * </ul>
- *
- * <p>Quartz Job 不暴露 Agent 返回的 {@code Msg}，因此定时执行日志暂不记录输出正文。
+ * 监听共享 Quartz {@code Scheduler} 的定时执行：执行前按 JobDataMap 的 {@code taskName}
+ * （格式 {@code 任务主键:任务名}）恢复租户上下文，执行后写执行日志并通知创建人。
  *
  * @author Jin
  */
@@ -52,7 +40,18 @@ public class AgentExecutionJobListener implements JobListener {
     @Override
     public void jobToBeExecuted(JobExecutionContext context) {
         String taskId = parseTaskId(context);
-        log.debug("taskId:{}", taskId);
+        if (StringUtils.isBlank(taskId)) {
+            return;
+        }
+        try {
+            // 无上下文时按主键系统级读取属受控恢复例外；拿到实体后立即恢复其真实租户。
+            SubAgentEntity task = subAgentMapper.selectById(taskId);
+            if (task != null && StringUtils.isNotBlank(task.getTenantId())) {
+                TenantContextHolder.getInstance().setTenantId(task.getTenantId());
+            }
+        } catch (Exception e) {
+            log.warn("定时任务租户上下文恢复失败: taskId={}", taskId, e);
+        }
     }
 
     @Override
@@ -63,9 +62,9 @@ public class AgentExecutionJobListener implements JobListener {
     @Override
     public void jobWasExecuted(JobExecutionContext context, JobExecutionException jobException) {
         try {
-            String taskName = parseTaskName(context);
             String taskId = parseTaskId(context);
-            if (StringUtils.isBlank(taskName)) {
+            String taskName = parseTaskName(context);
+            if (StringUtils.isBlank(taskId) || StringUtils.isBlank(taskName)) {
                 return;
             }
             boolean success = jobException == null;
@@ -75,7 +74,7 @@ public class AgentExecutionJobListener implements JobListener {
             LocalDateTime startedAt = context.getFireTime() == null
                     ? finishedAt
                     : LocalDateTime.ofInstant(context.getFireTime().toInstant(), ZoneId.systemDefault());
-            SubAgentEntity task = resolveTask(taskId, taskName);
+            SubAgentEntity task = resolveTask(taskId);
 
             scheduledTaskLogService.record(
                     taskId,
@@ -98,9 +97,7 @@ public class AgentExecutionJobListener implements JobListener {
         }
     }
 
-    /**
-     * 从 JobDataMap 的 {@code taskName}（格式为 {@code tenantId:name}）解析租户。
-     */
+    /** 从 JobDataMap 的 {@code taskName}（格式为 {@code 任务主键:任务名}）解析任务主键。 */
     private String parseTaskId(JobExecutionContext context) {
         String taskName = context.getJobDetail().getJobDataMap().getString("taskName");
         if (StringUtils.isBlank(taskName)) {
@@ -110,9 +107,7 @@ public class AgentExecutionJobListener implements JobListener {
         return idx > 0 ? taskName.substring(0, idx) : null;
     }
 
-    /**
-     * 从 JobDataMap 的 {@code taskName}（格式为 {@code tenantId:name}）解析业务任务名。
-     */
+    /** 从 JobDataMap 的 {@code taskName} 解析业务任务名。 */
     private String parseTaskName(JobExecutionContext context) {
         String taskName = context.getJobDetail().getJobDataMap().getString("taskName");
         if (StringUtils.isBlank(taskName)) {
@@ -122,16 +117,12 @@ public class AgentExecutionJobListener implements JobListener {
         return idx > 0 ? taskName.substring(idx + 1) : taskName;
     }
 
-    /**
-     * 按租户和任务名反查定时任务实体；无法解析时返回 null（日志仍可用任务名归因，通知则跳过）。
-     */
-    private SubAgentEntity resolveTask(String id, String taskName) {
+    /** 按主键回源任务实体；无法解析时返回 null（日志仍可用任务名归因，通知则跳过）。 */
+    private SubAgentEntity resolveTask(String taskId) {
         try {
-            return subAgentMapper.selectOne(new LambdaQueryWrapper<SubAgentEntity>()
-                    .eq(SubAgentEntity::getCategory, SubAgentCategory.SCHEDULED_TASK.getCode())
-                    .eq(SubAgentEntity::getName, taskName));
+            return subAgentMapper.selectById(taskId);
         } catch (Exception e) {
-            log.warn("定时任务实体解析失败: taskId={}, name={}", id, taskName);
+            log.warn("定时任务实体解析失败: taskId={}", taskId, e);
             return null;
         }
     }

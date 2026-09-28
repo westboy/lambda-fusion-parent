@@ -1,6 +1,7 @@
 package com.lambda.fusion.ai.runtime.workspace;
 
 import cn.hutool.crypto.digest.MD5;
+import com.lambda.fusion.ai.AiConstants.StateStoreType;
 import com.lambda.fusion.ai.AiConstants.WorkspaceStorageType;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.apps.model.entity.AppEntity;
@@ -170,10 +171,15 @@ public class WorkspaceStorage {
         }
     }
 
+    /** 分布式 Workspace 要求 Agent 状态存储同样跨节点共享，否则 HITL 跨节点确认与渠道记忆会静默失败。 */
     private void validateDistributedStateStore() {
-        String configuredType = aiProperties.getWorkspace().getStorage().getType();
-        if (!WorkspaceStorageType.JDBC.equals(WorkspaceStorageType.of(configuredType))) {
-            throw new IllegalStateException("远程 Workspace 要求分布式 Agent 状态存储，当前 state-store.type=" + configuredType);
+        String configured = aiProperties.getStateStore().getType();
+        StateStoreType stateStoreType = StateStoreType.of(configured);
+        if (stateStoreType != null && stateStoreType.isDistributed()) {
+            return;
         }
+        throw new IllegalStateException(
+                "远程 Workspace 要求分布式 Agent 状态存储（MYSQL/POSTGRES/REDIS/OSS/COS），当前 state-store.type="
+                        + StringUtils.defaultIfBlank(configured, StateStoreType.MEMORY.getCode()));
     }
 }

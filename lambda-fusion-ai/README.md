@@ -185,7 +185,7 @@ DB 驱动的定时 Agent 任务（`ai_sub_agent` 表 `category=SCHEDULED_TASK` �
   - `GET /v1/ai/apps/{id}/workspace/file?tenantId=&path=` 读取
   - `PUT /v1/ai/apps/{id}/workspace/file?tenantId=&path=` 写入
   - `GET /v1/ai/apps/{id}/workspace/audit?tenantId=` 自演化审计记录
-- `workspace.storage.type` 是部署级且不可由应用覆盖：`LOCAL` 保持原本地单节点行为；`MYSQL`/`POSTGRES` 供多节点共享，并要求 `state-store.type` 同时使用分布式后端。切换类型会进入新的存储命名空间，不迁移、复制或删除旧数据。
+- `workspace.storage.type` 是部署级且不可由应用覆盖：`LOCAL` 保持原本地单节点行为；`JDBC` 供多节点共享，并要求 `state-store.type` 同时使用分布式后端（启动期校验，非分布式将拒绝启动）。切换类型会进入新的存储命名空间，不迁移、复制或删除旧数据。
 
 ## 配置
 
@@ -306,7 +306,7 @@ lambda:
 | `audience.{b,c}-roles` | B/C 端角色名列表，用于 app 可见性过滤（下游自定义角色名） |
 | `gateway.enabled` | 是否启用 HarnessGateway（默认 true）；关闭后无轮次串行锁与外部通道能力 |
 | `cluster.invalidation-broadcast` | 多实例下配置变更经 Dubbo broadcast 失效各节点 Agent 缓存（默认 true） |
-| `state-store.type` | Agent 多轮记忆后端；分布式后端（MYSQL/POSTGRES/REDIS/OSS/COS）依赖对应 AgentScope 扩展，缺失回退 MEMORY |
+| `state-store.type` | Agent 多轮记忆后端；分布式后端（MYSQL/POSTGRES/REDIS/OSS/COS）依赖对应 AgentScope 扩展，显式配置但扩展缺失时抛错，不回退 MEMORY |
 | `memory.flush.mode` | WORKSPACE 自演化应用的长期记忆提取策略；默认 THROTTLED，可选 ALWAYS/THROTTLED/NEVER |
 | `memory.flush.min-gap` | THROTTLED 模式最小刷新间隔，默认 10m |
 | `sandbox.*` | 各沙箱后端凭据；对应扩展需在 classpath（ai 模块已 optional 引入） |

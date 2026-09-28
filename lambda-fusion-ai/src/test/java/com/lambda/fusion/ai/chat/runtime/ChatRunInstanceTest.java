@@ -18,11 +18,14 @@ import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
+import com.lambda.fusion.ai.chat.runtime.event.ChatRunEvent;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
+import io.agentscope.core.agui.event.AguiEvent;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.Test;
 class ChatRunInstanceTest {
 
     private ChatRunStateService runService;
+    private ChatRunEventStore eventStore;
     private ScheduledExecutorService scheduler;
     private ChatRunInstance instance;
     private ChatRunEntity run;
@@ -48,6 +52,7 @@ class ChatRunInstanceTest {
     void setUp() {
         runService = mock(ChatRunStateService.class);
         when(runService.loadCurrentOrIdentity(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        eventStore = mock(ChatRunEventStore.class);
         scheduler = mock(ScheduledExecutorService.class);
         when(scheduler.isShutdown()).thenReturn(false);
         when(scheduler.schedule(any(Runnable.class), anyLong(), any()))
@@ -60,7 +65,7 @@ class ChatRunInstanceTest {
         run.setStatus(ChatRunStatus.RUNNING.name());
         instance = new ChatRunInstance(
                 runService,
-                mock(ChatRunEventStore.class),
+                eventStore,
                 new AiProperties(),
                 scheduler,
                 (Runnable task) -> task.run(),
@@ -184,11 +189,46 @@ class ChatRunInstanceTest {
         ChatRunEntity persisted = new ChatRunEntity();
         persisted.setId("run-1");
         persisted.setStatus(ChatRunStatus.STOPPED.name());
+        persisted.setFinishReason("USER_STOP");
+        persisted.setAguiRunId("agui-9");
         when(runService.loadCurrentOrIdentity(run)).thenReturn(persisted);
 
         instance.checkpointNow();
 
         assertThat(run.getStatus()).isEqualTo(ChatRunStatus.STOPPED.name());
+        // 跨节点终态必须回填终态字段并向本节点订阅者补发终态事件、启动缓冲过期，
+        // 否则本地 SSE 订阅者挂到连接超时且事件缓冲永不回收。
+        assertThat(run.getFinishReason()).isEqualTo("USER_STOP");
+        assertThat(run.getAguiRunId()).isEqualTo("agui-9");
+        verify(eventStore)
+                .appendTerminalIfAbsent(
+                        eq("run-1"), eq("agui-9"), any(AguiEvent.RunFinished.class), eq("STOPPED"), eq("USER_STOP"));
+        verify(eventStore).markTerminal(eq("run-1"), any(Duration.class));
+    }
+
+    @Test
+    void shouldRetryExternalTerminalAdoptionWhenLocalPublishFails() {
+        // 终态事件补发失败时不置终态标志、不完成信号，保留脏标记由检查点自驱重试收敛。
+        when(runService.checkpoint(eq(run), any(), anyLong())).thenReturn(false);
+        ChatRunEntity persisted = new ChatRunEntity();
+        persisted.setId("run-1");
+        persisted.setStatus(ChatRunStatus.STOPPED.name());
+        persisted.setFinishReason("USER_STOP");
+        persisted.setAguiRunId("agui-9");
+        when(runService.loadCurrentOrIdentity(run)).thenReturn(persisted);
+        when(eventStore.appendTerminalIfAbsent(any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("event store unavailable"))
+                .thenReturn(new ChatRunEvent(1L, "RUN_FINISHED", "{}"));
+
+        assertThatThrownBy(() -> instance.checkpointNow()).hasMessageContaining("event store unavailable");
+        assertThat(instance.terminalCommittedSignal().toCompletableFuture()).isNotDone();
+
+        instance.checkpointNow();
+
+        assertThat(run.getStatus()).isEqualTo(ChatRunStatus.STOPPED.name());
+        assertThat(instance.terminalCommittedSignal().toCompletableFuture()).isDone();
+        verify(eventStore, times(2)).appendTerminalIfAbsent(any(), any(), any(), any(), any());
+        verify(eventStore).markTerminal(eq("run-1"), any(Duration.class));
     }
 
     @Test
@@ -233,6 +273,9 @@ class ChatRunInstanceTest {
         assertThat(run.getStatus()).isEqualTo(ChatRunStatus.RUNNING.name());
         verify(runService).checkpoint(eq(run), any(), eq(0L));
         verify(runService).checkpoint(eq(run), any(), eq(5L));
+        // 非终态碰撞只刷新版本：不得发布终态事件或设置缓冲过期。
+        verify(eventStore, never()).appendTerminalIfAbsent(any(), any(), any(), any(), any());
+        verify(eventStore, never()).markTerminal(any(), any());
     }
 
     @Test

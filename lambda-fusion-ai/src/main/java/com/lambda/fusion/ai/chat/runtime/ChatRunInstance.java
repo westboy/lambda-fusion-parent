@@ -1003,9 +1003,9 @@ public final class ChatRunInstance {
     }
 
     /**
-     * 快照写入被数据库拒绝后的收敛：运行已被并发提交终态时同步本地终态，并在无活动源流时完成排空信号，
-     * 返回 {@code true}；非终态拒绝视为快照版本碰撞，从数据库刷新版本号、保留脏标记等待重写，返回
-     * {@code false}。
+     * 快照写入被数据库拒绝后的收敛：运行已被并发提交终态时同步本地终态，向本节点订阅者补发终态事件
+     * 并启动缓冲过期，在无活动源流时完成排空信号，返回 {@code true}；非终态拒绝视为快照版本碰撞，
+     * 从数据库刷新版本号、保留脏标记等待重写，返回 {@code false}。
      */
     private boolean adoptExternalTerminal() {
         ChatRunEntity current = runService.loadCurrentOrIdentity(run);
@@ -1014,6 +1014,14 @@ public final class ChatRunInstance {
             persistedSnapshotVersion = current.getSnapshotVersion() == null ? 0L : current.getSnapshotVersion();
             return false;
         }
+        // 终态字段随库内事实回填（含可能被并发推进的 aguiRunId），供本地终态事件正确归因。
+        run.setFinishReason(current.getFinishReason());
+        run.setErrorCode(current.getErrorCode());
+        run.setErrorMessage(current.getErrorMessage());
+        run.setAguiRunId(current.getAguiRunId());
+        // 发布失败直接抛出：terminal 与脏标记保持原状，由检查点自驱重试或调用方收敛兜底，
+        // 避免事件未补发却已完成信号、跳过中断。
+        chatExecutionFinalizer.publishLocalTerminal(run);
         terminal = true;
         checkpointDirty = false;
         terminalCommittedSignal.complete(null);

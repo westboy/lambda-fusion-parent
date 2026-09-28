@@ -593,28 +593,31 @@ public interface AiConstants {
 
     /**
      * Agent 多轮状态的存储类型。MEMORY 和 FILE 适用于单节点；MYSQL、POSTGRES 和 REDIS
-     * 支持多副本共享；OSS 和 COS 使用对象存储持久化。
+     * 支持多副本共享；OSS 和 COS 使用对象存储持久化。{@code distributed} 标记是否可供多实例共享，
+     * 新增类型必须显式抉择，避免节点本地类型被远程 Workspace 等分布式消费方静默接受。
      */
     @Getter
     @AllArgsConstructor
     enum StateStoreType {
-        MEMORY("MEMORY", "进程内（重启丢失）"),
+        MEMORY("MEMORY", "进程内（重启丢失）", false),
 
-        FILE("FILE", "JSON 落盘（单节点，重启不丢）"),
+        FILE("FILE", "JSON 落盘（单节点，重启不丢）", false),
 
-        MYSQL("MYSQL", "MySQL（分布式）"),
+        MYSQL("MYSQL", "MySQL（分布式）", true),
 
-        POSTGRES("POSTGRES", "PostgreSQL（分布式）"),
+        POSTGRES("POSTGRES", "PostgreSQL（分布式）", true),
 
-        REDIS("REDIS", "Redis（分布式）"),
+        REDIS("REDIS", "Redis（分布式）", true),
 
-        OSS("OSS", "对象存储 OSS/S3"),
+        OSS("OSS", "对象存储 OSS/S3", true),
 
-        COS("COS", "腾讯云 COS");
+        COS("COS", "腾讯云 COS", true);
 
         private final String code;
 
         private final String label;
+
+        private final boolean distributed;
 
         public static StateStoreType of(String code) {
             if (code == null) {

@@ -201,11 +201,34 @@ class WorkspaceStorageTest {
                 .hasMessageContaining("未知的 Workspace 存储类型");
     }
 
+    @Test
+    void shouldRejectDistributedWorkspaceWithNodeLocalStateStore() {
+        // JDBC Workspace 配 MEMORY/FILE/未设置的状态存储会在 HITL 跨节点确认时静默失败，启动期必须拦截。
+        assertThatThrownBy(
+                        () -> storage(properties("JDBC", "MEMORY"), List.of()).initialize())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("state-store.type=MEMORY");
+        assertThatThrownBy(() -> storage(properties("JDBC", "FILE"), List.of()).initialize())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("state-store.type=FILE");
+        assertThatThrownBy(() -> storage(properties("JDBC", ""), List.of()).initialize())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("state-store.type=MEMORY");
+        assertThatThrownBy(
+                        () -> storage(properties("JDBC", "UNKNOWN"), List.of()).initialize())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("state-store.type=UNKNOWN");
+    }
+
     private AiProperties properties(String storageType) {
+        return properties(storageType, "MYSQL");
+    }
+
+    private AiProperties properties(String storageType, String stateStoreType) {
         AiProperties properties = new AiProperties();
         properties.getWorkspace().setRoot(tempDir.toString());
         properties.getWorkspace().getStorage().setType(storageType);
-        properties.getStateStore().setType("JDBC");
+        properties.getStateStore().setType(stateStoreType);
         return properties;
     }
 

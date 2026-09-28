@@ -116,6 +116,17 @@ public final class ChatRunFinalizer {
             ChatRunEntity persisted = runService.loadCurrentOrIdentity(run);
             run.setAguiRunId(persisted.getAguiRunId());
         }
+        // 快照版本围栏落败（并发推进）时运行仍非终态：不发布终态事件、不设置缓冲过期。
+        publishLocalTerminal(run);
+    }
+
+    /**
+     * 在当前 JVM 幂等发布终态事件并设置缓冲过期；运行非终态时不动缓冲。
+     * 本节点提交终态与采纳其它节点提交的终态共用同一出口。
+     *
+     * @param run 已同步终态字段的运行实体
+     */
+    public void publishLocalTerminal(ChatRunEntity run) {
         ChatRunStatus actualStatus = ChatRunStatus.valueOf(run.getStatus());
         if (!actualStatus.isTerminal()) {
             // 快照版本围栏落败（并发推进）：不发布终态事件、不设置缓冲过期，运行继续。
