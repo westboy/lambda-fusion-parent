@@ -929,5 +929,79 @@
                    ('ROLE_DEV', 'WfFrmD001', null);
         ]]></sql>
     </changeSet>
+    <!-- ========== 动态表单菜单（顶级独立节点；设计端固定菜单，运行时页按表单在 startup 侧注册） ========== -->
+    <changeSet id="lambda-authority-2026092800010" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_resources"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM la_resources WHERE RES_PATH = '/form'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('FmTop00001', null, '动态表单', '/form', 0, 1, null, 0, null, 'lucide:layout-template', 0, null, 0,
+                    null, null, null, 0, null, null, 210),
+                   ('FmDesign001', 'FmTop00001', '表单设计', '/form/designer/', 1, 1, null, 0, null,
+                    'lucide:form-input', 0, 'FmTop00001', 0, null, null, null, 0, null, null, 1),
+                   ('FmDsgL001', 'FmDesign001', '表单查询', 'form:design:page', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 1),
+                   ('FmDsgD001', 'FmDesign001', '表单详情', 'form:design:detail', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 2),
+                   ('FmDsgA001', 'FmDesign001', '新建表单', 'form:design:add', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 3),
+                   ('FmDsgE001', 'FmDesign001', '保存表单', 'form:design:edit', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 4),
+                   ('FmDsgX001', 'FmDesign001', '删除表单', 'form:design:delete', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 5),
+                   ('FmDsgT001', 'FmDesign001', '选表导列', 'form:design:table', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 6),
+                   ('FmDsgP001', 'FmDesign001', '发布/停用/回滚', 'form:design:publish', 2147483647, 3, null, 0, '',
+                    null, 0, 'FmTop00001-FmDesign001', 0, null, null, null, 0, null, null, 7);
+        ]]></sql>
+    </changeSet>
+
+    <!-- ========== 动态表单设计端菜单角色授权 ========== -->
+    <changeSet id="lambda-authority-2026092800011" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_role_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_role_resources WHERE RESOURCE_ID = 'FmTop00001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'FmTop00001', null),
+                   ('ROLE_SYSTEM', 'FmTop00001', null),
+                   ('ROLE_DEV', 'FmTop00001', null),
+                   ('ROLE_ADMIN', 'FmDesign001', null),
+                   ('ROLE_SYSTEM', 'FmDesign001', null),
+                   ('ROLE_DEV', 'FmDesign001', null),
+                   ('ROLE_ADMIN', 'FmDsgL001', null),
+                   ('ROLE_SYSTEM', 'FmDsgL001', null),
+                   ('ROLE_DEV', 'FmDsgL001', null),
+                   ('ROLE_ADMIN', 'FmDsgD001', null),
+                   ('ROLE_SYSTEM', 'FmDsgD001', null),
+                   ('ROLE_DEV', 'FmDsgD001', null),
+                   ('ROLE_ADMIN', 'FmDsgA001', null),
+                   ('ROLE_SYSTEM', 'FmDsgA001', null),
+                   ('ROLE_DEV', 'FmDsgA001', null),
+                   ('ROLE_ADMIN', 'FmDsgE001', null),
+                   ('ROLE_SYSTEM', 'FmDsgE001', null),
+                   ('ROLE_DEV', 'FmDsgE001', null),
+                   ('ROLE_ADMIN', 'FmDsgX001', null),
+                   ('ROLE_SYSTEM', 'FmDsgX001', null),
+                   ('ROLE_DEV', 'FmDsgX001', null),
+                   ('ROLE_ADMIN', 'FmDsgT001', null),
+                   ('ROLE_SYSTEM', 'FmDsgT001', null),
+                   ('ROLE_DEV', 'FmDsgT001', null),
+                   ('ROLE_ADMIN', 'FmDsgP001', null),
+                   ('ROLE_SYSTEM', 'FmDsgP001', null),
+                   ('ROLE_DEV', 'FmDsgP001', null);
+        ]]></sql>
+    </changeSet>
 
 </databaseChangeLog>

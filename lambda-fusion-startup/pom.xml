@@ -39,6 +39,11 @@
         </dependency>
         <dependency>
             <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-form</artifactId>
+            <version>${project.parent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-fusion-dictionary</artifactId>
             <version>${project.parent.version}</version>
         </dependency>

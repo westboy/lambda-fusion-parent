@@ -1,0 +1,282 @@
+package com.lambda.fusion.form.runtime.service.impl;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.lambda.fusion.core.pagination.PageView;
+import com.lambda.fusion.form.FormConstants;
+import com.lambda.fusion.form.FormProperties;
+import com.lambda.fusion.form.exception.FormBusinessException;
+import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
+import com.lambda.fusion.form.runtime.model.AstCondition;
+import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.support.FormModel;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
+import com.lambda.fusion.form.runtime.support.QueryAstValidator;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+/**
+ * 动态数据读写引擎测试
+ *
+ * <p>重点验证契约 §16 红线：列名取自服务端模型、值全部参数化绑定、
+ * 租户条件不手写（交由框架租户插件在解析层追加）。
+ *
+ * @author Zx
+ */
+@SuppressWarnings("unchecked")
+class DynamicDataServiceImplTest {
+
+    private static final String TABLE = "la_demo_leave";
+
+    private DynamicTableMapper mapper;
+
+    private FormModelProvider modelProvider;
+
+    private DynamicDataServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        mapper = mock(DynamicTableMapper.class);
+        modelProvider = mock(FormModelProvider.class);
+        service = new DynamicDataServiceImpl(mapper, new QueryAstValidator(new FormProperties()), modelProvider);
+    }
+
+    @Test
+    void pageBindsConditionValuesAsParametersAndLeavesTenantToInterceptor() {
+        when(mapper.countBy(eq(TABLE), anyString(), anyMap())).thenReturn(1L);
+        when(mapper.selectList(eq(TABLE), anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(List.of(Map.of("ID", "1")));
+
+        PageView<Map<String, Object>> view = service.page(model(), query(condition("applicant", "like", "张")));
+
+        ArgumentCaptor<String> whereSql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
+        verify(mapper).selectList(eq(TABLE), anyString(), whereSql.capture(), anyString(), params.capture());
+        assertThat(whereSql.getValue()).isEqualTo(" AND APPLICANT LIKE CONCAT('%', #{params.p0}, '%')");
+        assertThat(whereSql.getValue()).doesNotContain("张").doesNotContain(FormConstants.COLUMN_TENANT_ID);
+        assertThat(params.getValue()).containsValue("张");
+        assertThat(view.getTotal()).isEqualTo(1L);
+        assertThat(view.getRecords()).hasSize(1);
+    }
+
+    @Test
+    void pageDefaultsPageSizeAndOrderWhenNoConditions() {
+        when(mapper.countBy(eq(TABLE), isNull(), anyMap())).thenReturn(1L);
+        when(mapper.selectList(eq(TABLE), anyString(), isNull(), anyString(), anyMap()))
+                .thenReturn(List.of());
+
+        service.page(model(), new FormDataPageQuery());
+
+        verify(mapper)
+                .selectList(
+                        eq(TABLE),
+                        eq("ID, APPLICANT, DAYS, REMARK"),
+                        isNull(),
+                        eq(" ORDER BY CREATED_AT DESC, ID DESC LIMIT 20 OFFSET 0"),
+                        anyMap());
+    }
+
+    @Test
+    void pageClampsPageSizeToUpperBound() {
+        when(mapper.countBy(eq(TABLE), isNull(), anyMap())).thenReturn(0L);
+        FormDataPageQuery query = new FormDataPageQuery();
+        query.setPageSize(5000);
+
+        PageView<Map<String, Object>> view = service.page(model(), query);
+
+        assertThat(view.getPageSize()).isEqualTo(500L);
+        assertThat(view.getTotal()).isZero();
+        verify(mapper, never()).selectList(anyString(), anyString(), anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void pageRejectsInOperatorWithScalarValue() {
+        assertErrorCode(
+                () -> service.page(model(), query(condition("applicant", "in", "张三"))),
+                FormErrorCode.INVALID_PARAMETER);
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void pageRejectsBetweenOperatorWithWrongArity() {
+        assertErrorCode(
+                () -> service.page(model(), query(condition("days", "between", List.of(1)))),
+                FormErrorCode.INVALID_PARAMETER);
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void getByIdThrowsWhenRowMissing() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(null);
+
+        assertErrorCode(() -> service.getById(model(), "404"), FormErrorCode.FORM_DATA_NOT_FOUND);
+    }
+
+    @Test
+    void createKeepsMappedFieldsOnlyAndFillsAudit() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("applicant", "张三");
+        payload.put("id", "forged-id");
+        payload.put("unknownColumn", "x");
+
+        String id = service.create(model(), payload);
+
+        ArgumentCaptor<List<String>> columns = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<String>> values = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
+        verify(mapper).insertDynamic(eq(TABLE), columns.capture(), values.capture(), params.capture());
+        assertThat(columns.getValue())
+                .containsExactly("ID", "APPLICANT", "CREATED_BY", "CREATED_AT", "UPDATED_BY", "UPDATED_AT");
+        assertThat(values.getValue()).allSatisfy(value -> assertThat(value).startsWith("#{params."));
+        assertThat(params.getValue()).containsValue("张三").containsValue(id);
+        assertThat(params.getValue()).doesNotContainValue("forged-id").doesNotContainValue("x");
+    }
+
+    @Test
+    void createRejectsBlankRequiredField() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("applicant", "  ");
+
+        assertErrorCode(() -> service.create(model(), payload), FormErrorCode.FORM_DATA_INVALID);
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void updateBindsAssignmentsWithAudit() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+
+        service.update(model(), "1", Map.of("applicant", "张三", "days", 3));
+
+        ArgumentCaptor<String> setSql = ArgumentCaptor.forClass(String.class);
+        verify(mapper).updateDynamic(eq(TABLE), setSql.capture(), anyMap());
+        assertThat(setSql.getValue())
+                .isEqualTo(
+                        "APPLICANT = #{params.p1}, DAYS = #{params.p2}, UPDATED_BY = #{params.p3}, UPDATED_AT = #{params.p4}");
+    }
+
+    @Test
+    void updateRejectsMissingRequiredField() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+
+        assertErrorCode(() -> service.update(model(), "1", Map.of("days", 3)), FormErrorCode.FORM_DATA_INVALID);
+        verify(mapper, never()).updateDynamic(anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void deleteRejectsWhenChildRowsExist() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        when(mapper.countByColumn(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyMap()))
+                .thenReturn(2L);
+
+        assertErrorCode(() -> service.delete(masterSubModel(), "1"), FormErrorCode.FORM_SUB_DELETE_FORBIDDEN);
+        verify(mapper, never()).deleteById(anyString(), anyMap());
+    }
+
+    @Test
+    void deleteRemovesRowWhenNoChildRows() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        when(mapper.countByColumn(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyMap()))
+                .thenReturn(0L);
+
+        service.delete(masterSubModel(), "1");
+
+        ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
+        verify(mapper).deleteById(eq(TABLE), params.capture());
+        assertThat(params.getValue()).containsEntry("id", "1");
+    }
+
+    private static void assertErrorCode(ThrowingCallable callable, FormErrorCode expected) {
+        assertThatThrownBy(callable).isInstanceOf(FormBusinessException.class).satisfies(e -> assertThat(
+                        ((FormBusinessException) e).getCode())
+                .isEqualTo(expected.getCode()));
+    }
+
+    private static FormDataPageQuery query(AstCondition... conditions) {
+        FormDataPageQuery query = new FormDataPageQuery();
+        query.setConditions(new ArrayList<>(List.of(conditions)));
+        return query;
+    }
+
+    private static AstCondition condition(String field, String op, Object value) {
+        AstCondition condition = new AstCondition();
+        condition.setField(field);
+        condition.setOp(op);
+        condition.setValue(value);
+        return condition;
+    }
+
+    private static FormModel model() {
+        return new FormModel(
+                "leave_demo",
+                "请假演示",
+                1L,
+                FormConstants.FORM_TYPE_SINGLE,
+                TABLE,
+                List.of(
+                        field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
+                        field("days", "DAYS", "DECIMAL", true, true, true, "eq", 2),
+                        field("remark", "REMARK", "TEXT", true, true, false, "like", 3)),
+                List.of(),
+                null,
+                null);
+    }
+
+    private static FormModel masterSubModel() {
+        return new FormModel(
+                "leave_demo",
+                "请假演示",
+                1L,
+                FormConstants.FORM_TYPE_MASTER_SUB,
+                TABLE,
+                model().fields(),
+                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", FormConstants.CASCADE_DELETE)),
+                null,
+                null);
+    }
+
+    private static FormModel subModel() {
+        return new FormModel(
+                "leave_item",
+                "请假明细",
+                1L,
+                FormConstants.FORM_TYPE_SINGLE,
+                "la_demo_leave_item",
+                List.of(),
+                List.of(),
+                null,
+                null);
+    }
+
+    private static FormModel.FormField field(
+            String name,
+            String column,
+            String type,
+            boolean nullable,
+            boolean listShow,
+            boolean queryShow,
+            String queryOp,
+            int sort) {
+        return new FormModel.FormField(
+                name, column, type, nullable, null, null, null, "Input", null, listShow, queryShow, queryOp, true,
+                sort);
+    }
+}

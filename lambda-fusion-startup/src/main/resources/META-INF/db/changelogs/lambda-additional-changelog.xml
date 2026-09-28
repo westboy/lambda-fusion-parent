@@ -101,5 +101,95 @@
                    ('ROLE_DEV', 'LvLstD001', null);
         ]]></sql>
     </changeSet>
+    <!-- 动态表单演示业务表（lambda-fusion-form 接入样板）。
+         本表不由任何 Java 实体映射：设计器选表导列 → 发布快照 → 运行时引擎按元数据读写。
+         约定列：ID 主键 + TENANT_ID 租户 + 审计四列（发布校验必备，见设计文档 §5.5）。 -->
+    <changeSet id="lambda-fusion-startup-202609280001" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_demo_leave"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_demo_leave" remarks="请假单（动态表单演示业务）">
+            <column name="ID" type="varchar(32)" remarks="主键（引擎雪花 id）">
+                <constraints primaryKey="true" primaryKeyName="pk_la_demo_leave_id" nullable="false"/>
+            </column>
+            <column name="APPLICANT" type="varchar(64)" remarks="申请人（必填）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="DAYS" type="int" remarks="请假天数（必填）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="LEAVE_TYPE" type="varchar(32)" remarks="请假类型（DICT 字段演示）"/>
+            <column name="REASON" type="varchar(500)" remarks="请假事由"/>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="idx_la_demo_leave_tenant" tableName="la_demo_leave">
+            <column name="TENANT_ID"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- 动态表单演示菜单与按钮权限（挂动态表单顶级菜单 FmTop00001 下）。
+         运行时页每表单一个薄包装页，RES_PATH 决定前端组件路径（/form/runtime/leave_demo/ → views/form/runtime/leave_demo/index.vue）；
+         按钮权限码 form:{formKey}:{action} 与引擎运行时校验一致（设计文档 §10.3）。 -->
+    <changeSet id="lambda-fusion-startup-202609280002" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_resources WHERE ID = 'FmDemo00001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('FmDemo00001', 'FmTop00001', '请假动态表单', '/form/runtime/leave_demo/', 1, 1, null, 0, null,
+                    'lucide:file-spreadsheet', 0, 'FmTop00001', 0, null, null, null, 0, null, null, 2),
+                   ('FmDmlL001', 'FmDemo00001', '数据查询', 'form:leave_demo:page', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDemo00001', 0, null, null, null, 0, null, null, 1),
+                   ('FmDmlA001', 'FmDemo00001', '数据新增', 'form:leave_demo:add', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDemo00001', 0, null, null, null, 0, null, null, 2),
+                   ('FmDmlE001', 'FmDemo00001', '数据编辑', 'form:leave_demo:edit', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDemo00001', 0, null, null, null, 0, null, null, 3),
+                   ('FmDmlX001', 'FmDemo00001', '数据删除', 'form:leave_demo:delete', 2147483647, 3, null, 0, '', null, 0,
+                    'FmTop00001-FmDemo00001', 0, null, null, null, 0, null, null, 4);
+        ]]></sql>
+    </changeSet>
+
+    <!-- 动态表单演示菜单角色授权 -->
+    <changeSet id="lambda-fusion-startup-202609280003" author="jin">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_role_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_role_resources WHERE RESOURCE_ID = 'FmDemo00001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'FmDemo00001', null),
+                   ('ROLE_SYSTEM', 'FmDemo00001', null),
+                   ('ROLE_DEV', 'FmDemo00001', null),
+                   ('ROLE_ADMIN', 'FmDmlL001', null),
+                   ('ROLE_SYSTEM', 'FmDmlL001', null),
+                   ('ROLE_DEV', 'FmDmlL001', null),
+                   ('ROLE_ADMIN', 'FmDmlA001', null),
+                   ('ROLE_SYSTEM', 'FmDmlA001', null),
+                   ('ROLE_DEV', 'FmDmlA001', null),
+                   ('ROLE_ADMIN', 'FmDmlE001', null),
+                   ('ROLE_SYSTEM', 'FmDmlE001', null),
+                   ('ROLE_DEV', 'FmDmlE001', null),
+                   ('ROLE_ADMIN', 'FmDmlX001', null),
+                   ('ROLE_SYSTEM', 'FmDmlX001', null),
+                   ('ROLE_DEV', 'FmDmlX001', null);
+        ]]></sql>
+    </changeSet>
 
 </databaseChangeLog>

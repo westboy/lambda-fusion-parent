@@ -1,0 +1,45 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lambda.cloud</groupId>
+        <artifactId>lambda-fusion-parent</artifactId>
+        <version>2026.1.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>lambda-fusion-form</artifactId>
+
+    <name>lambda-fusion-form</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-mybatis</artifactId>
+        </dependency>
+        <!-- 快照 JSON 序列化（Jackson 3，版本经 BOM 管理） -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-liquibase</artifactId>
+        </dependency>
+        <!-- 操作日志：设计子域写操作留痕，缺失时注解静默失效（starter-logger 可选） -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-logger</artifactId>
+        </dependency>
+        <!-- 元数据缓存失效广播：Dubbo 缺失时降级 TTL（契约 §4.1） -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-dubbo</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

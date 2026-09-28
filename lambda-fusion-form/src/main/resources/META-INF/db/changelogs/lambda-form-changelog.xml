@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog-3.8.xsd">
+
+    <!-- 动态表单元数据四表（设计文档 docs/design/dynamic-form.md §5）。
+         租户过滤由框架 TenantLineInnerInterceptor 承担，业务代码不写租户处理；
+         目标业务表不属本模块 changelog（模块不做运行时建表，契约 §6 合规）。 -->
+
+    <changeSet id="lambda-fusion-form-202609280001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_form_def"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_form_def" remarks="动态表单定义（草稿工作行）">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_form_def_id" nullable="false"/>
+            </column>
+            <column name="FORM_KEY" type="varchar(64)" remarks="表单标识（租户内唯一，URL 与权限码的一部分）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FORM_NAME" type="varchar(128)" remarks="显示名">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FORM_TYPE" type="varchar(16)" remarks="SINGLE 单表 / TREE 左树右表 / MASTER_SUB 主从">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TABLE_NAME" type="varchar(64)" remarks="目标物理表名（changelog 治理下已存在的表）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TREE_CONFIG" type="text" remarks="TREE 类型：树数据源 JSON（字典/自关联字段/另一表单）"/>
+            <column name="FLOW_CODE" type="varchar(64)" remarks="挂接的 warm-flow 流程编码（P2）"/>
+            <column name="STATUS" type="varchar(16)" defaultValue="DRAFT" remarks="DRAFT 草稿 / PUBLISHED 已发布 / DISABLED 停用">
+                <constraints nullable="false"/>
+            </column>
+            <column name="PUBLISHED_VERSION" type="bigint" remarks="对外生效的快照版本号（空=从未发布）"/>
+            <column name="TITLE_TEMPLATE" type="varchar(256)" remarks="流程标题模板（如 {applicant}的{form_name}）"/>
+            <column name="INTERCEPTOR" type="varchar(128)" remarks="FormDataInterceptor bean 名（P2，可空）"/>
+            <column name="VERSION" type="bigint" defaultValueNumeric="0" remarks="乐观锁版本（@Version）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="uk_form_def_key" tableName="la_form_def" unique="true">
+            <column name="TENANT_ID"/>
+            <column name="FORM_KEY"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-form-202609280002" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_form_field"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_form_field" remarks="动态表单字段定义">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_form_field_id" nullable="false"/>
+            </column>
+            <column name="FORM_ID" type="varchar(32)" remarks="归属表单">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FIELD_NAME" type="varchar(64)" remarks="字段标识（前端 vModel）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="COLUMN_NAME" type="varchar(64)" remarks="物理列映射">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FIELD_TYPE" type="varchar(16)" remarks="STRING/TEXT/INT/DECIMAL/DATE/DATETIME/DICT/BOOL/FILE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="NULLABLE" type="tinyint(1)" defaultValueNumeric="1" remarks="可空（1 可空 0 必填）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="DEFAULT_VALUE" type="varchar(512)" remarks="默认值"/>
+            <column name="VALIDATION" type="text" remarks="校验规则 JSON（正则/范围/必填提示）"/>
+            <column name="DICT_TYPE" type="varchar(64)" remarks="DICT 类型的字典编码"/>
+            <column name="UI_COMPONENT" type="varchar(32)" remarks="前端组件名（Input/Select/DatePicker…）"/>
+            <column name="UI_PROPS" type="text" remarks="组件属性 JSON：placeholder/label span/日期格式/查询默认操作符/列宽"/>
+            <column name="LIST_SHOW" type="tinyint(1)" defaultValueNumeric="1" remarks="列表显示">
+                <constraints nullable="false"/>
+            </column>
+            <column name="QUERY_SHOW" type="tinyint(1)" defaultValueNumeric="0" remarks="查询项显示">
+                <constraints nullable="false"/>
+            </column>
+            <column name="QUERY_OP" type="varchar(16)" remarks="查询默认操作符（空则按字段类型取默认）"/>
+            <column name="FORM_SHOW" type="tinyint(1)" defaultValueNumeric="1" remarks="表单显示">
+                <constraints nullable="false"/>
+            </column>
+            <column name="SORT" type="int" defaultValueNumeric="0" remarks="字段顺序">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="uk_form_field_name" tableName="la_form_field" unique="true">
+            <column name="FORM_ID"/>
+            <column name="FIELD_NAME"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-form-202609280003" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_form_relation"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_form_relation" remarks="动态表单主从关系（MASTER_SUB）">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_form_relation_id" nullable="false"/>
+            </column>
+            <column name="FORM_ID" type="varchar(32)" remarks="主表单">
+                <constraints nullable="false"/>
+            </column>
+            <column name="SUB_FORM_KEY" type="varchar(64)" remarks="子表单 formKey（同租户内解析）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="FOREIGN_KEY" type="varchar(64)" remarks="子表外键列">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CASCADE_STRATEGY" type="varchar(16)" defaultValue="CASCADE_DELETE"
+                    remarks="CASCADE_DELETE 级联删除 / FORBID_DELETE 有子表数据禁止删除">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="uk_form_relation_sub" tableName="la_form_relation" unique="true">
+            <column name="FORM_ID"/>
+            <column name="SUB_FORM_KEY"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-form-202609280004" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_form_def_version"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_form_def_version" remarks="动态表单发布快照（不可变）">
+            <column name="ID" type="varchar(32)" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_la_form_def_version_id" nullable="false"/>
+            </column>
+            <column name="FORM_ID" type="varchar(32)" remarks="归属表单">
+                <constraints nullable="false"/>
+            </column>
+            <column name="VERSION" type="bigint" remarks="版本号（表单内单调递增）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="SNAPSHOT_JSON" type="text" remarks="def + fields + relations 全量快照 JSON（不可变）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="CONTENT_MD5" type="varchar(32)" remarks="内容指纹（发布去重）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="PUBLISHED_BY" type="varchar(64)" remarks="发布人">
+                <constraints nullable="false"/>
+            </column>
+            <column name="PUBLISHED_AT" type="datetime" remarks="发布时间">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="uk_form_def_version" tableName="la_form_def_version" unique="true">
+            <column name="FORM_ID"/>
+            <column name="VERSION"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
