@@ -64,11 +64,9 @@ public class FormDefSaveCommand {
     private Long version;
 
     @NotNull(message = "字段列表不能为空")
-    @Valid
     @Schema(description = "字段列表")
-    private List<FormFieldItem> fields = new ArrayList<>();
+    private List<@Valid FormFieldItem> fields = new ArrayList<>();
 
-    @Valid
     @Schema(description = "主从关系列表")
-    private List<FormRelationItem> relations = new ArrayList<>();
+    private List<@Valid FormRelationItem> relations = new ArrayList<>();
 }
