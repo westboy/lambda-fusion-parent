@@ -61,6 +61,18 @@ public class FormDefEntity extends BaseEntity {
     @TableField("INTERCEPTOR")
     private String interceptor;
 
+    /** 保存草稿时同步发布（默认 false） */
+    @TableField("PUBLISH_ON_SAVE")
+    private Boolean publishOnSave;
+
+    /** 逻辑删除列名（空=物理删除）；目标表必须含该列 */
+    @TableField("LOGIC_DELETE_COLUMN")
+    private String logicDeleteColumn;
+
+    /** 列表级配置 JSON：布局/分页/按钮等 */
+    @TableField("LIST_CONFIG")
+    private String listConfig;
+
     /** 乐观锁版本（@Version） */
     @Version
     @TableField("VERSION")

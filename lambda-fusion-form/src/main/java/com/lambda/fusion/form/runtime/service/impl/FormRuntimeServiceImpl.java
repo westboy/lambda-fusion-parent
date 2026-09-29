@@ -41,6 +41,8 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
         view.setFormName(model.formName());
         view.setFormType(model.formType());
         view.setVersion(model.version());
+        view.setLogicDeleteColumn(model.logicDeleteColumn());
+        view.setListConfig(toListConfig(model.listConfig()));
         view.setTreeConfig(model.treeConfig());
         List<FormSchemaView.FieldSchema> fields = new ArrayList<>();
         model.fields().forEach(field -> fields.add(toFieldSchema(field)));
@@ -81,6 +83,25 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
         dynamicDataService.delete(modelProvider.require(formKey), id);
     }
 
+    private FormSchemaView.ListConfig toListConfig(FormModel.ListConfig config) {
+        FormSchemaView.ListConfig view = new FormSchemaView.ListConfig();
+        view.setLayout(config.layout());
+        view.setPageSizes(config.pageSizes());
+        view.setAdvancedQuery(config.advancedQuery());
+        view.setFullQuery(config.fullQuery());
+        view.setShowSeq(config.showSeq());
+        view.setButtons(config.buttons().stream()
+                .map(b -> {
+                    FormSchemaView.ButtonConfig item = new FormSchemaView.ButtonConfig();
+                    item.setAction(b.action());
+                    item.setShow(b.show());
+                    item.setLabel(b.label());
+                    return item;
+                })
+                .toList());
+        return view;
+    }
+
     private FormSchemaView.FieldSchema toFieldSchema(FormModel.FormField field) {
         FormSchemaView.FieldSchema schema = new FormSchemaView.FieldSchema();
         schema.setName(field.name());
@@ -88,14 +109,20 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
         schema.setType(field.type());
         schema.setNullable(field.nullable());
         schema.setDefaultValue(field.defaultValue());
-        schema.setValidation(field.validation());
         schema.setDictType(field.dictType());
-        schema.setComponent(field.uiComponent());
-        schema.setProps(field.uiProps());
-        schema.setListShow(field.listShow());
-        schema.setQueryShow(field.queryShow());
-        schema.setQueryOp(field.queryOp());
-        schema.setFormShow(field.formShow());
+        schema.setQueryShow(field.query().show());
+        schema.setQueryOp(field.query().op());
+        schema.setQueryDefaultValue(field.query().defaultValue());
+        schema.setListShow(field.list().show());
+        schema.setWidth(field.list().width());
+        schema.setAlign(field.list().align());
+        schema.setFormat(field.list().format());
+        schema.setFormShow(field.form().show());
+        schema.setComponent(field.form().component());
+        schema.setProps(field.form().props());
+        schema.setRules(field.form().rules());
+        schema.setReadonly(field.form().readonly());
+        schema.setPersisted(field.persisted());
         schema.setSort(field.sort());
         return schema;
     }

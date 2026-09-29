@@ -1,6 +1,6 @@
 # 动态表单（lambda-fusion-form）设计
 
-> 状态：P0 已实施（2026-09-28）；P1 起待开发，分期见 §15
+> 状态：P0 已实施（2026-09-28）；P1 设计器三步化已实施（2026-09-29，§4.9）；其余 P1 起待开发，分期见 §15
 > 实施记录：`lambda-fusion-form` 模块 + `lambda-form-changelog.xml` 四表 + 管理端 8 个前端文件 + startup 演示表 `la_demo_leave`；与本文的偏差已在 §4.4、§9、§10、§15 就地标注
 > 相关阅读：`.rule/engineering-contract.md`（§3 自动配置、§5 多租户、§6 Liquibase、§9 Entity/Service、§10 包结构、§16 安全、§19 特性开关、§20 最小充分设计）、`.rule/package-structure.md`、`docs/design/workflow.md`（流程集成范式 §10.2）
 > 技术基线：Java 21 / Spring Boot 4.1.1 / MyBatis-Plus 3.5.17 / warm-flow 1.8.9 / vben 5.6 + tdesign
@@ -98,13 +98,17 @@
 ```text
 FormModel = {
   formKey, formName, version, formType, tableName,   // 物理映射（服务端私有）
-  fields: [ { name, column, type, nullable, defaultValue, validation, dictType,
-              uiComponent, uiProps, listShow, queryShow, queryOp, formShow, sort } ],
+  fields: [ { name, column, type, nullable, defaultValue, dictType, sort,
+              query: { show, op, defaultValue },      // 查询区配置（op 为归一后生效值）
+              list:  { show, width, align, format },  // 列表列配置
+              form:  { show, component, props, rules, readonly } } ],  // 表单与详情配置
   relations: [ { subFormKey, foreignKey, cascadeStrategy } ],
   tree: { sourceType, parentColumn, nodeColumn, dictType, filterColumn },  // TREE 类型
   treeConfig                                          // 设计端原始 JSON，透传给前端
 }
 ```
+
+字段显示配置按「查询区 / 列表列 / 表单详情」三段归组（设计器三步化的数据模型，§4.9），平铺开关列已收敛为三个 JSON 配置列（§5.2）。
 
 查询/排序白名单不另存副本：`QueryAstValidator` 直接按 `fields` 的 `queryShow`（条件字段）与 `listShow`（排序列）派生，避免白名单与字段定义两份事实（契约 §20.3）。`tree` 的 `dictType` 字段已建模但 P0 编译期只接受 `sourceType=SELF`，其他来源抛 `FORM_TABLE_INVALID`（§4.4）。
 
@@ -189,6 +193,20 @@ public interface FormDataInterceptor {
 - 发布/回滚/停用均为"一行指针更新 + 缓存失效"（跨节点广播 P2），无 DDL、无字节码，集群不存在"结构已变、缓存未刷新"的窗口；
 - 目标表结构演进走正常部署（§2.2）；目标表字段下架须先停用引用它的表单。
 
+### 4.9 设计器三步化与字段配置块（P1，2026-09-29 实施）
+
+设计器从"单页字段大表（平铺开关列）"演进为**三步向导**，每步只面对一类决策：
+
+| 步骤 | 内容 | 写哪段配置 |
+| --- | --- | --- |
+| ① 基础与数据 | 表单信息、选表导列（标识/列名/类型/可空/默认值/字典）、主从关系、树配置 | 字段数据层列 |
+| ② 列表设计 | 查询条件（开关/操作符/默认值）、表格列（开关/列宽/对齐/格式化） | `QUERY_CONFIG` / `LIST_CONFIG` |
+| ③ 表单与详情 | 组件选择、组件属性 JSON、校验规则（required/max/min/pattern/message）、字段级只读 | `FORM_CONFIG` |
+
+数据模型：字段显示配置归组为三个 JSON 配置块（§4.2 / §5.2），运行时 `/schema` 展平下发（§8.3）。`readonly=true` 的字段在**表单中禁用**（详情页天然只读，合一设计不单独维护详情视图）。
+
+校验两道：草稿保存期 `FieldConfigs` 解析 JSON 文本做**键白名单 + 值域**校验（拒绝未知键，防拼写静默失效）；快照编译期 `FormModelCompiler` 对照快照对象再校验（防篡改）。`component` 只校验标识符白名单不锁枚举（前端组件集演进不受后端版本钳制）。
+
 ## 5. 元数据表结构（changelog 治理）
 
 四张表走 `lambda-form-changelog.xml`（契约 §6.1），changeSet 带 `preConditions onFail="MARK_RAN"`；列名大写（同 `la_workflow_form_path` 惯例），均含 `TENANT_ID varchar(64)` 与审计四列（`CREATED_BY varchar(32)` / `CREATED_AT datetime` / `UPDATED_BY varchar(32)` / `UPDATED_AT datetime`）。
@@ -225,11 +243,10 @@ public interface FormDataInterceptor {
 | `FIELD_TYPE` | varchar(16) NN | `STRING/TEXT/INT/DECIMAL/DATE/DATETIME/DICT/BOOL/FILE` |
 | `NULLABLE` | tinyint NN | 可空 |
 | `DEFAULT_VALUE` | varchar(512) | 默认值 |
-| `VALIDATION` | text | 校验规则 JSON（正则/范围/必填提示） |
 | `DICT_TYPE` | varchar(64) | DICT 类型的字典编码（lambda-fusion-dictionary） |
-| `UI_COMPONENT` | varchar(32) | 前端组件名（`Input`/`Select`/`DatePicker`…） |
-| `UI_PROPS` | text | 组件属性 JSON：placeholder、label span、日期格式、查询默认操作符、列宽 |
-| `LIST_SHOW` / `QUERY_SHOW` / `FORM_SHOW` | tinyint NN | 三视图显隐 |
+| `QUERY_CONFIG` | json | 查询区配置 `{show, op, defaultValue}` |
+| `LIST_CONFIG` | json | 列表列配置 `{show, width, align, format}` |
+| `FORM_CONFIG` | json | 表单与详情配置 `{show, component, props, rules, readonly}` |
 | `SORT` | int NN | 字段顺序 |
 
 唯一键 `uk_form_field_name (FORM_ID, FIELD_NAME)`。`FILE` 类型值 = lambda-fusion-oss 附件 id（单值存 id，多值存 id JSON 数组）。
@@ -374,16 +391,18 @@ Controller 只编排（契约 §9.3），每个端点先 `StpUtil.checkPermissio
 {
   "formKey": "leave_demo", "formName": "请假演示", "formType": "TREE", "version": 3,
   "fields": [
-    { "name": "reason", "label": "事由", "type": "STRING", "component": "Input",
-      "props": "{\"placeholder\":\"请输入\"}", "validation": "{\"required\":true,\"max\":200}",
-      "nullable": false, "listShow": true, "queryShow": true, "queryOp": "like", "formShow": true, "sort": 1 }
+    { "name": "reason", "label": "事由", "type": "STRING", "nullable": false, "sort": 1,
+      "queryShow": true, "queryOp": "like", "queryDefaultValue": null,
+      "listShow": true, "width": 200, "align": "left", "format": null,
+      "formShow": true, "component": "Input", "props": { "placeholder": "请输入" },
+      "rules": { "required": true, "max": 200 }, "readonly": false }
   ],
   "treeConfig": "{\"sourceType\":\"SELF\",\"parentColumn\":\"PARENT_ID\",\"nodeColumn\":\"NAME\"}",
   "permissions": { "add": true, "edit": true, "delete": false }
 }
 ```
 
-`validation` / `props` / `treeConfig` 为设计端原样存储的 JSON **字符串**（前端 `JSON.parse` 后使用），服务端不解释其内容。`label` P0 直接取字段标识（`la_form_field` 无显示名列；若要展示列注释或自定义中文名，需补 `LABEL` 列，属后续增强）。
+三段配置在快照内是**结构化对象**（服务端已做键白名单与值域校验：op ∈ 操作符白名单、width 1-500、align ∈ left/center/right、format ∈ date/datetime/dict、component 走标识符白名单），前端直接使用不再 `JSON.parse`；`treeConfig` 仍为设计端原样存储的 JSON 字符串。`label` P0 直接取字段标识（`la_form_field` 无显示名列；若要展示列注释或自定义中文名，需补 `LABEL` 列，属后续增强）。
 
 `permissions` 由服务端按当前用户逐 action 解析（`StpUtil.hasPermission`，action ∈ `add/edit/delete`；`page` 是访问本页的前提，已在 Controller 入口校验，故不下发），前端只按布尔渲染按钮，不自行拼权限码。
 
@@ -484,6 +503,7 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | P0 ✅ 已实施 | 模块骨架（pom + 三件套 + imports + 前缀登记）；`lambda-form-changelog.xml` 四表；design 子域（草稿 CRUD + 选表导列 + 发布/停用/回滚/版本历史）；runtime 子域（快照编译 + TTL 缓存 + AST 白名单 + 单表 CRUD + 权限/租户/审计 + 自关联树直接子节点）；前端引擎组件 + 设计器；startup 演示表 `la_demo_leave` 与菜单 | 模块 `mvn test` 36 项通过（AST 白名单 10 + 编译 14 + 动态数据 12）；`mvn compile` 过 Spotless/SpotBugs；演示流程见 §17 未勾选项 |
+| P1 ◐ 部分实施（2026-09-29） | 设计器三步化（§4.9）：字段显示配置归组为 `QUERY_CONFIG`/`LIST_CONFIG`/`FORM_CONFIG` 三个 JSON 配置列（键白名单 + 值域两道校验），设计器改三步向导（基础与数据 / 列表设计 / 表单与详情），列表列宽/对齐/格式化、查询默认值、字段级只读、校验规则表单化 | 模块 `mvn test` 51 项通过（新增配置解析校验 9 + 编译配置块 5）；前端 `vue-tsc` form 目录零错误 |
 | P1 | TREE 左树右表（含列表页子孙过滤 + `maxTreeDescendants`）；MASTER_SUB 主从写入与两段式级联查询、`CASCADE_DELETE` | 左树右表与主从演示 |
 | P2 | warm-flow 集成（§11 五步 + 办理页消费端）+ Dubbo 跨节点失效广播 + `FormDataInterceptor` SPI | 动态表单走通审批闭环 |
 | P3 | 代码生成毕业路径（含新表 changelog 生成）+ 版本导入导出 | 生成源码编译进模块 |

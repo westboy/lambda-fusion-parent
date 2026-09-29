@@ -14,6 +14,7 @@ import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedConditio
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedSort;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -154,6 +155,8 @@ class QueryAstValidatorTest {
                 3L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave",
+                null,
+                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 List.of(
                         field("applicant", "APPLICANT", "STRING", true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", false, true, "eq", 2),
@@ -166,6 +169,16 @@ class QueryAstValidatorTest {
     private static FormModel.FormField field(
             String name, String column, String type, boolean listShow, boolean queryShow, String queryOp, int sort) {
         return new FormModel.FormField(
-                name, column, type, true, null, null, null, "Input", null, listShow, queryShow, queryOp, true, sort);
+                name,
+                column,
+                type,
+                true,
+                null,
+                null,
+                sort,
+                true,
+                new FormModel.QueryConf(queryShow, queryOp, null),
+                new FormModel.ListConf(listShow, null, null, null, null, false, null, 0),
+                new FormModel.FormConf(true, "Input", Map.of(), Map.of(), false));
     }
 }

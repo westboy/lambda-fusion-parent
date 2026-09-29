@@ -18,6 +18,7 @@ import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormDefSnapshot;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.SnapshotJson;
@@ -35,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 表单发布服务实现
@@ -58,6 +60,7 @@ public class FormPublishServiceImpl implements FormPublishService {
     private final TableMetadataReader tableMetadataReader;
     private final FormModelProvider modelProvider;
     private final SnapshotJson snapshotJson;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -206,6 +209,9 @@ public class FormPublishServiceImpl implements FormPublishService {
         snapshot.setFlowCode(def.getFlowCode());
         snapshot.setTitleTemplate(def.getTitleTemplate());
         snapshot.setInterceptor(def.getInterceptor());
+        snapshot.setPublishOnSave(def.getPublishOnSave());
+        snapshot.setLogicDeleteColumn(def.getLogicDeleteColumn());
+        snapshot.setListConfig(FieldConfigs.toListConfig(objectMapper, def.getListConfig()));
         snapshot.setFields(fields.stream()
                 .map(field -> {
                     FormDefSnapshot.Field item = new FormDefSnapshot.Field();
@@ -214,14 +220,11 @@ public class FormPublishServiceImpl implements FormPublishService {
                     item.setFieldType(field.getFieldType());
                     item.setNullable(!Boolean.FALSE.equals(field.getNullable()));
                     item.setDefaultValue(field.getDefaultValue());
-                    item.setValidation(field.getValidation());
                     item.setDictType(field.getDictType());
-                    item.setUiComponent(field.getUiComponent());
-                    item.setUiProps(field.getUiProps());
-                    item.setListShow(!Boolean.FALSE.equals(field.getListShow()));
-                    item.setQueryShow(Boolean.TRUE.equals(field.getQueryShow()));
-                    item.setQueryOp(field.getQueryOp());
-                    item.setFormShow(!Boolean.FALSE.equals(field.getFormShow()));
+                    item.setPersisted(!Boolean.FALSE.equals(field.getPersisted()));
+                    item.setQuery(FieldConfigs.toQueryConf(objectMapper, field.getQueryConfig()));
+                    item.setList(FieldConfigs.toListConf(objectMapper, field.getListConfig()));
+                    item.setForm(FieldConfigs.toFormConf(objectMapper, field.getFormConfig()));
                     item.setSort(field.getSort());
                     return item;
                 })

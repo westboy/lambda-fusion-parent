@@ -142,6 +142,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
+        String logicDeleteColumn = model.logicDeleteColumn();
+        if (logicDeleteColumn != null && !logicDeleteColumn.isBlank()) {
+            List<String> assignments = new ArrayList<>();
+            assignments.add(logicDeleteColumn + " = 1");
+            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+            dynamicTableMapper.updateDynamic(model.tableName(), String.join(", ", assignments), params);
+            return;
+        }
         dynamicTableMapper.deleteById(model.tableName(), params);
     }
 
@@ -187,6 +196,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> source = data == null ? Map.of() : data;
         Map<String, Object> row = new LinkedHashMap<>();
         for (FormField field : model.fields()) {
+            if (!field.persisted()) {
+                continue;
+            }
             Object value = lookup(source, field.name());
             if (value == null && create && StringUtils.hasText(field.defaultValue())) {
                 value = field.defaultValue();

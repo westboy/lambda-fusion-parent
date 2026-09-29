@@ -34,6 +34,12 @@ public class FormSchemaView {
     @Schema(description = "TREE 类型树配置（原样透传设计端 treeConfig）")
     private String treeConfig;
 
+    @Schema(description = "逻辑删除列名（空=物理删除）")
+    private String logicDeleteColumn;
+
+    @Schema(description = "列表级配置：布局/分页/按钮等")
+    private ListConfig listConfig = new ListConfig();
+
     @Schema(description = "当前用户按钮权限：add/edit/delete")
     private Map<String, Boolean> permissions = new LinkedHashMap<>();
 
@@ -59,31 +65,92 @@ public class FormSchemaView {
         @Schema(description = "默认值")
         private String defaultValue;
 
-        @Schema(description = "校验规则 JSON")
-        private String validation;
-
         @Schema(description = "字典编码")
         private String dictType;
-
-        @Schema(description = "前端组件名")
-        private String component;
-
-        @Schema(description = "组件属性 JSON")
-        private String props;
-
-        @Schema(description = "列表显示")
-        private Boolean listShow;
 
         @Schema(description = "查询项显示")
         private Boolean queryShow;
 
-        @Schema(description = "查询默认操作符")
+        @Schema(description = "查询生效操作符")
         private String queryOp;
 
-        @Schema(description = "表单显示")
+        @Schema(description = "查询栏默认值")
+        private String queryDefaultValue;
+
+        @Schema(description = "列表显示")
+        private Boolean listShow;
+
+        @Schema(description = "列宽（px，可空）")
+        private Integer width;
+
+        @Schema(description = "列对齐（left/center/right，可空）")
+        private String align;
+
+        @Schema(description = "列格式化（date/datetime/dict，可空按类型推断）")
+        private String format;
+
+        @Schema(description = "表单/详情显示")
         private Boolean formShow;
+
+        @Schema(description = "前端组件名（可空按类型取默认）")
+        private String component;
+
+        @Schema(description = "组件属性")
+        private Map<String, Object> props;
+
+        @Schema(description = "校验规则")
+        private Map<String, Object> rules;
+
+        @Schema(description = "表单中只读（详情天然只读）")
+        private Boolean readonly;
+
+        @Schema(description = "是否落库（false=不入库/纯展示或计算字段）")
+        private Boolean persisted;
 
         @Schema(description = "顺序")
         private Integer sort;
+    }
+
+    /**
+     * 列表级配置
+     */
+    @Data
+    @Schema(description = "列表级配置")
+    public static class ListConfig {
+
+        @Schema(description = "布局 NORMAL / TREE_LEFT / TREE_GRID")
+        private String layout;
+
+        @Schema(description = "分页条数选项")
+        private List<Integer> pageSizes;
+
+        @Schema(description = "高级查询开关")
+        private Boolean advancedQuery;
+
+        @Schema(description = "全量查询开关")
+        private Boolean fullQuery;
+
+        @Schema(description = "显示序号列")
+        private Boolean showSeq;
+
+        @Schema(description = "操作按钮显隐与文案")
+        private List<ButtonConfig> buttons;
+    }
+
+    /**
+     * 列表按钮配置
+     */
+    @Data
+    @Schema(description = "列表按钮配置")
+    public static class ButtonConfig {
+
+        @Schema(description = "动作 add/edit/delete/export/import/batchDelete")
+        private String action;
+
+        @Schema(description = "默认显示（仍需叠加用户权限）")
+        private Boolean show;
+
+        @Schema(description = "文案")
+        private String label;
     }
 }

@@ -2,6 +2,7 @@ package com.lambda.fusion.form.runtime.support;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 编译后的表单模型（不可变，运行时的唯一事实来源）
@@ -23,6 +24,8 @@ public record FormModel(
         long version,
         String formType,
         String tableName,
+        String logicDeleteColumn,
+        ListConfig listConfig,
         List<FormField> fields,
         List<FormRelation> relations,
         TreeConfig tree,
@@ -36,15 +39,12 @@ public record FormModel(
      * @param type 字段类型
      * @param nullable 可空
      * @param defaultValue 默认值
-     * @param validation 校验规则 JSON
      * @param dictType 字典编码
-     * @param uiComponent 前端组件名
-     * @param uiProps 组件属性 JSON
-     * @param listShow 列表显示
-     * @param queryShow 查询项显示
-     * @param queryOp 查询默认操作符
-     * @param formShow 表单显示
      * @param sort 顺序
+     * @param persisted 是否落库
+     * @param query 查询区配置
+     * @param list 列表列配置
+     * @param form 表单与详情配置
      */
     public record FormField(
             String name,
@@ -52,21 +52,98 @@ public record FormModel(
             String type,
             boolean nullable,
             String defaultValue,
-            String validation,
             String dictType,
-            String uiComponent,
-            String uiProps,
-            boolean listShow,
-            boolean queryShow,
-            String queryOp,
-            boolean formShow,
-            int sort) {
+            int sort,
+            boolean persisted,
+            QueryConf query,
+            ListConf list,
+            FormConf form) {
 
         /** 是否允许出现在查询白名单 */
         public boolean queryable() {
-            return queryShow;
+            return query.show();
+        }
+
+        /** 是否允许出现在列表与排序白名单 */
+        public boolean listVisible() {
+            return list.show();
         }
     }
+
+    /**
+     * 查询区配置（op 为编译期归一后的生效操作符）
+     *
+     * @param show 查询项显示
+     * @param op 生效操作符
+     * @param defaultValue 查询栏默认值
+     */
+    public record QueryConf(boolean show, String op, String defaultValue) {}
+
+    /**
+     * 列表列配置
+     *
+     * @param show 列显示
+     * @param width 列宽（px，可空取组件默认）
+     * @param align 对齐（left/center/right，可空取默认）
+     * @param format 展示格式化（date/datetime/dict，可空按字段类型推断）
+     * @param frozen 冻结（left/right，可空）
+     * @param summary 参与合计
+     * @param defaultSort 默认排序方向（asc/desc）
+     * @param sortOrder 默认排序优先级
+     */
+    public record ListConf(
+            boolean show,
+            Integer width,
+            String align,
+            String format,
+            String frozen,
+            boolean summary,
+            String defaultSort,
+            int sortOrder) {}
+
+    /**
+     * 列表级配置
+     *
+     * @param layout 布局 NORMAL / TREE_LEFT / TREE_GRID
+     * @param pageSizes 分页条数选项
+     * @param advancedQuery 高级查询开关
+     * @param fullQuery 全量查询开关
+     * @param showSeq 显示序号列
+     * @param buttons 按钮显隐与文案
+     */
+    public record ListConfig(
+            String layout,
+            List<Integer> pageSizes,
+            boolean advancedQuery,
+            boolean fullQuery,
+            boolean showSeq,
+            List<ButtonConfig> buttons) {
+
+        public List<Integer> pageSizes() {
+            return pageSizes == null || pageSizes.isEmpty() ? List.of(20, 50, 100, 500) : pageSizes;
+        }
+    }
+
+    /**
+     * 列表按钮配置
+     *
+     * @param action 动作标识 add/edit/delete/export/import/batchDelete
+     * @param show 默认显示（仍需叠加用户权限）
+     * @param label 文案
+     */
+    public record ButtonConfig(String action, boolean show, String label) {}
+
+    /**
+     * 表单与详情配置
+     *
+     * @param show 表单/详情显示
+     * @param component 前端组件名（可空按类型取默认）
+     * @param props 组件属性
+     * @param rules 校验规则
+     * @param readonly 表单中只读（详情天然只读）
+     */
+    public record FormConf(
+            boolean show, String component, Map<String, Object> props, Map<String, Object> rules, boolean readonly) {}
 
     /**
      * 主从关系

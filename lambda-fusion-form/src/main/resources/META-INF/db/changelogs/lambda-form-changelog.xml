@@ -182,4 +182,42 @@
         </createIndex>
     </changeSet>
 
+    <!-- 字段显示配置三段化（设计器三步化 P1）：平铺显示列收敛为 query/list/form 三个 JSON 配置列 -->
+    <changeSet id="lambda-fusion-form-202609290001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_field"/>
+        </preConditions>
+        <dropColumn tableName="la_form_field">
+            <column name="VALIDATION"/>
+            <column name="UI_COMPONENT"/>
+            <column name="UI_PROPS"/>
+            <column name="LIST_SHOW"/>
+            <column name="QUERY_SHOW"/>
+            <column name="QUERY_OP"/>
+            <column name="FORM_SHOW"/>
+        </dropColumn>
+        <addColumn tableName="la_form_field">
+            <column name="QUERY_CONFIG" type="json" remarks="查询区配置 JSON：{show, op, defaultValue}"/>
+            <column name="LIST_CONFIG" type="json" remarks="列表列配置 JSON：{show, width, align, format}"/>
+            <column name="FORM_CONFIG" type="json" remarks="表单与详情配置 JSON：{show, component, props, rules, readonly}"/>
+            <column name="PERSISTED" type="tinyint(1)" defaultValueNumeric="1" remarks="是否落库（1 落库 0 纯展示）">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- 设计器升级：基础设置扩展（保存即发布、逻辑删除列、列表级配置） -->
+    <changeSet id="lambda-fusion-form-202609300001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column name="PUBLISH_ON_SAVE" type="tinyint(1)" defaultValueNumeric="0" remarks="保存草稿时同步发布（默认 false）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="LOGIC_DELETE_COLUMN" type="varchar(64)" remarks="逻辑删除列名（空=物理删除）；目标表必须含该列"/>
+            <column name="LIST_CONFIG" type="json" remarks="列表级配置 JSON：布局/分页/按钮等"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

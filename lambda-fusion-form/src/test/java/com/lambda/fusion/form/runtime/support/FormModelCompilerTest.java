@@ -56,19 +56,19 @@ class FormModelCompilerTest {
 
         FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
 
-        assertThat(model.fields()).extracting(FormModel.FormField::queryOp).containsExactly("like", "like", "eq");
+        assertThat(model.fields()).extracting(field -> field.query().op()).containsExactly("like", "like", "eq");
     }
 
     @Test
     void keepsExplicitQueryOperator() {
         FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
-        field.setQueryOp("ge");
+        field.getQuery().setOp("ge");
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
         snapshot.setFields(List.of(field));
 
         FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
 
-        assertThat(model.fields().get(0).queryOp()).isEqualTo("ge");
+        assertThat(model.fields().get(0).query().op()).isEqualTo("ge");
     }
 
     @Test
@@ -91,7 +91,7 @@ class FormModelCompilerTest {
     @Test
     void rejectsQueryOperatorOutsideWhitelist() {
         FormDefSnapshot.Field field = field("applicant", "applicant", "STRING", 1);
-        field.setQueryOp("regexp");
+        field.getQuery().setOp("regexp");
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
         snapshot.setFields(List.of(field));
 
@@ -198,6 +198,72 @@ class FormModelCompilerTest {
         assertThat(model.relations().get(0).subFormKey()).isEqualTo("leave_item");
         assertThat(model.relations().get(0).foreignKey()).isEqualTo("LEAVE_ID");
         assertThat(model.relations().get(0).cascadeStrategy()).isEqualTo(FormConstants.CASCADE_DELETE);
+    }
+
+    @Test
+    void compilesFieldConfigsWithDefaults() {
+        FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
+        field.getQuery().setShow(Boolean.TRUE);
+        field.getQuery().setDefaultValue("3");
+        field.getList().setWidth(120);
+        field.getList().setAlign("center");
+        field.getForm().setComponent("InputNumber");
+        field.getForm().setReadonly(Boolean.TRUE);
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field));
+
+        FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
+        FormModel.FormField compiled = model.fields().get(0);
+
+        assertThat(compiled.query().show()).isTrue();
+        assertThat(compiled.query().defaultValue()).isEqualTo("3");
+        assertThat(compiled.list().show()).isTrue();
+        assertThat(compiled.list().width()).isEqualTo(120);
+        assertThat(compiled.list().align()).isEqualTo("center");
+        assertThat(compiled.list().format()).isNull();
+        assertThat(compiled.form().component()).isEqualTo("InputNumber");
+        assertThat(compiled.form().readonly()).isTrue();
+        assertThat(compiled.form().props()).isEmpty();
+    }
+
+    @Test
+    void rejectsListWidthOutOfRange() {
+        FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
+        field.getList().setWidth(600);
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field));
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsIllegalListAlign() {
+        FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
+        field.getList().setAlign("middle");
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field));
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsIllegalListFormat() {
+        FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
+        field.getList().setFormat("currency");
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field));
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsNonIdentifierFormComponent() {
+        FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
+        field.getForm().setComponent("Input onclick=alert(1)");
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field));
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
     }
 
     private static void assertErrorCode(ThrowingCallable callable, FormErrorCode expected) {

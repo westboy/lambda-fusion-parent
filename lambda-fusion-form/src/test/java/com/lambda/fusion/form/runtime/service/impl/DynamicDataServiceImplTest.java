@@ -231,6 +231,8 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 TABLE,
+                null,
+                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 List.of(
                         field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", true, true, true, "eq", 2),
@@ -247,6 +249,8 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_MASTER_SUB,
                 TABLE,
+                null,
+                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 model().fields(),
                 List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", FormConstants.CASCADE_DELETE)),
                 null,
@@ -260,6 +264,8 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave_item",
+                null,
+                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 List.of(),
                 List.of(),
                 null,
@@ -276,7 +282,16 @@ class DynamicDataServiceImplTest {
             String queryOp,
             int sort) {
         return new FormModel.FormField(
-                name, column, type, nullable, null, null, null, "Input", null, listShow, queryShow, queryOp, true,
-                sort);
+                name,
+                column,
+                type,
+                nullable,
+                null,
+                null,
+                sort,
+                true,
+                new FormModel.QueryConf(queryShow, queryOp, null),
+                new FormModel.ListConf(listShow, null, null, null, null, false, null, 0),
+                new FormModel.FormConf(true, "Input", Map.of(), Map.of(), false));
     }
 }

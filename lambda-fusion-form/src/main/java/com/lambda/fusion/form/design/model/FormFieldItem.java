@@ -43,29 +43,20 @@ public class FormFieldItem extends BaseVO<FormFieldEntity> {
     @Schema(description = "默认值")
     private String defaultValue;
 
-    @Schema(description = "校验规则 JSON")
-    private String validation;
-
     @Schema(description = "DICT 类型的字典编码")
     private String dictType;
 
-    @Schema(description = "前端组件名")
-    private String uiComponent;
+    @Schema(description = "查询区配置 JSON：{show, op, defaultValue}")
+    private String queryConfig;
 
-    @Schema(description = "组件属性 JSON")
-    private String uiProps;
+    @Schema(description = "列表列配置 JSON：{show, width, align, format}")
+    private String listConfig;
 
-    @Schema(description = "列表显示（默认 true）")
-    private Boolean listShow = Boolean.TRUE;
+    @Schema(description = "表单与详情配置 JSON：{show, component, props, rules, readonly}")
+    private String formConfig;
 
-    @Schema(description = "查询项显示（默认 false）")
-    private Boolean queryShow = Boolean.FALSE;
-
-    @Schema(description = "查询默认操作符（eq/ne/like/in/between/ge/le/isNull/isNotNull，空则按类型取默认）")
-    private String queryOp;
-
-    @Schema(description = "表单显示（默认 true）")
-    private Boolean formShow = Boolean.TRUE;
+    @Schema(description = "是否落库（默认 true；false=不入库/纯展示或计算字段）")
+    private Boolean persisted = Boolean.TRUE;
 
     @Schema(description = "字段顺序")
     private Integer sort = 0;

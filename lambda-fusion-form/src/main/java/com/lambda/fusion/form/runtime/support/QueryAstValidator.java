@@ -55,7 +55,7 @@ public class QueryAstValidator {
         }
         List<FormDataPageQuery.SortItem> sorts = query.getSorts() == null ? List.of() : query.getSorts();
         Map<String, FormModel.FormField> sortable = model.fields().stream()
-                .filter(FormModel.FormField::listShow)
+                .filter(FormModel.FormField::listVisible)
                 .collect(Collectors.toMap(FormModel.FormField::name, Function.identity()));
         for (FormDataPageQuery.SortItem sort : sorts) {
             if (sort.field() == null || !sortable.containsKey(sort.field())) {

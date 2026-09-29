@@ -43,34 +43,25 @@ public class FormFieldEntity extends BaseEntity {
     @TableField("DEFAULT_VALUE")
     private String defaultValue;
 
-    /** 校验规则 JSON（正则/范围/必填提示） */
-    @TableField("VALIDATION")
-    private String validation;
-
     /** DICT 类型的字典编码 */
     @TableField("DICT_TYPE")
     private String dictType;
 
-    /** 前端组件名（Input/Select/DatePicker…） */
-    @TableField("UI_COMPONENT")
-    private String uiComponent;
+    /** 查询区配置 JSON：{show, op, defaultValue} */
+    @TableField("QUERY_CONFIG")
+    private String queryConfig;
 
-    /** 组件属性 JSON */
-    @TableField("UI_PROPS")
-    private String uiProps;
+    /** 列表列配置 JSON：{show, width, align, format} */
+    @TableField("LIST_CONFIG")
+    private String listConfig;
 
-    @TableField("LIST_SHOW")
-    private Boolean listShow;
+    /** 表单与详情配置 JSON：{show, component, props, rules, readonly} */
+    @TableField("FORM_CONFIG")
+    private String formConfig;
 
-    @TableField("QUERY_SHOW")
-    private Boolean queryShow;
-
-    /** 查询默认操作符（空则按字段类型取默认） */
-    @TableField("QUERY_OP")
-    private String queryOp;
-
-    @TableField("FORM_SHOW")
-    private Boolean formShow;
+    /** 是否落库（0=不入库/纯展示或计算字段；写入时剔除，展示时保留） */
+    @TableField("PERSISTED")
+    private Boolean persisted;
 
     @TableField("SORT")
     private Integer sort;

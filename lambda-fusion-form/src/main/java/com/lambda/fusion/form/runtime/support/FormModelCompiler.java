@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,21 +64,26 @@ public class FormModelCompiler {
                     || !columns.add(field.getColumnName().toUpperCase(Locale.ROOT))) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字段标识或列名重复：" + field.getFieldName());
             }
+            FormDefSnapshot.QueryConf query =
+                    field.getQuery() == null ? new FormDefSnapshot.QueryConf() : field.getQuery();
+            FormDefSnapshot.ListConf list = field.getList() == null ? new FormDefSnapshot.ListConf() : field.getList();
+            FormDefSnapshot.FormConf formConf =
+                    field.getForm() == null ? new FormDefSnapshot.FormConf() : field.getForm();
             fields.add(new FormField(
                     field.getFieldName(),
                     field.getColumnName().toUpperCase(Locale.ROOT),
                     type,
                     Boolean.TRUE.equals(field.getNullable()),
                     field.getDefaultValue(),
-                    field.getValidation(),
                     field.getDictType(),
-                    field.getUiComponent(),
-                    field.getUiProps(),
-                    Boolean.TRUE.equals(field.getListShow()),
-                    Boolean.TRUE.equals(field.getQueryShow()),
-                    resolveQueryOp(field),
-                    Boolean.TRUE.equals(field.getFormShow()),
-                    field.getSort() == null ? 0 : field.getSort()));
+                    field.getSort() == null ? 0 : field.getSort(),
+                    !Boolean.FALSE.equals(field.getPersisted()),
+                    new FormModel.QueryConf(
+                            Boolean.TRUE.equals(query.getShow()),
+                            resolveQueryOp(type, query.getOp()),
+                            query.getDefaultValue()),
+                    compileListConf(list),
+                    compileFormConf(formConf)));
         }
         fields.sort(Comparator.comparingInt(FormField::sort));
         List<FormRelation> relations = new ArrayList<>();
@@ -96,12 +102,17 @@ public class FormModelCompiler {
                             : relation.getCascadeStrategy()));
         }
         TreeConfig tree = compileTree(snapshot, fields);
+        validateLogicDeleteColumn(snapshot, fields);
         return new FormModel(
                 snapshot.getFormKey(),
                 snapshot.getFormName(),
                 version,
                 snapshot.getFormType(),
                 snapshot.getTableName(),
+                snapshot.getLogicDeleteColumn() == null
+                        ? null
+                        : snapshot.getLogicDeleteColumn().toUpperCase(Locale.ROOT),
+                compileListConfig(snapshot.getListConfig()),
                 fields,
                 relations,
                 tree,
@@ -145,11 +156,101 @@ public class FormModelCompiler {
                 tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT));
     }
 
-    private String resolveQueryOp(FormDefSnapshot.Field field) {
-        String op = field.getQueryOp();
+    /** 列表配置编译：列宽范围、对齐与格式化枚举、冻结方向、排序方向 */
+    private FormModel.ListConf compileListConf(FormDefSnapshot.ListConf list) {
+        if (list.getWidth() != null
+                && (list.getWidth() < FieldConfigs.MIN_WIDTH || list.getWidth() > FieldConfigs.MAX_WIDTH)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列宽非法：" + list.getWidth());
+        }
+        if (list.getAlign() != null && !FieldConfigs.ALIGNS.contains(list.getAlign())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列对齐非法：" + list.getAlign());
+        }
+        if (list.getFormat() != null && !FieldConfigs.FORMATS.contains(list.getFormat())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列格式化非法：" + list.getFormat());
+        }
+        if (list.getFrozen() != null && !"left".equals(list.getFrozen()) && !"right".equals(list.getFrozen())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "冻结方向非法：" + list.getFrozen());
+        }
+        if (list.getDefaultSort() != null
+                && !"asc".equals(list.getDefaultSort())
+                && !"desc".equals(list.getDefaultSort())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "排序方向非法：" + list.getDefaultSort());
+        }
+        return new FormModel.ListConf(
+                !Boolean.FALSE.equals(list.getShow()),
+                list.getWidth(),
+                list.getAlign(),
+                list.getFormat(),
+                list.getFrozen(),
+                Boolean.TRUE.equals(list.getSummary()),
+                list.getDefaultSort(),
+                list.getSortOrder() == null ? 0 : list.getSortOrder());
+    }
+
+    /** 列表级配置编译（缺省归一） */
+    private FormModel.ListConfig compileListConfig(FormDefSnapshot.ListConfig config) {
+        if (config == null) {
+            return new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of());
+        }
+        String layout = config.getLayout() == null ? "NORMAL" : config.getLayout();
+        if (!Set.of("NORMAL", "TREE_LEFT", "TREE_GRID").contains(layout)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列表布局非法：" + layout);
+        }
+        List<Integer> pageSizes =
+                config.getPageSizes() == null || config.getPageSizes().isEmpty()
+                        ? List.of(20, 50, 100, 500)
+                        : List.copyOf(config.getPageSizes());
+        List<FormModel.ButtonConfig> buttons = (config.getButtons() == null
+                        ? List.<FormDefSnapshot.ButtonConfig>of()
+                        : config.getButtons())
+                .stream()
+                        .map(b -> new FormModel.ButtonConfig(
+                                b.getAction() == null ? "" : b.getAction(),
+                                !Boolean.FALSE.equals(b.getShow()),
+                                b.getLabel()))
+                        .toList();
+        return new FormModel.ListConfig(
+                layout,
+                pageSizes,
+                Boolean.TRUE.equals(config.getAdvancedQuery()),
+                Boolean.TRUE.equals(config.getFullQuery()),
+                !Boolean.FALSE.equals(config.getShowSeq()),
+                buttons);
+    }
+
+    /** 逻辑删除列：如配置，必须是已映射字段的列 */
+    private void validateLogicDeleteColumn(FormDefSnapshot snapshot, List<FormField> fields) {
+        String column = snapshot.getLogicDeleteColumn();
+        if (column == null || column.isBlank()) {
+            return;
+        }
+        if (!FormConstants.isIdentifier(column)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "逻辑删除列非法：" + column);
+        }
+        String upper = column.toUpperCase(Locale.ROOT);
+        boolean mapped = fields.stream().anyMatch(f -> f.column().equals(upper));
+        if (!mapped) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "逻辑删除列未映射字段：" + column);
+        }
+    }
+
+    /** 表单与详情配置编译：组件名走标识符白名单（快照被篡改时在此拦截） */
+    private FormModel.FormConf compileFormConf(FormDefSnapshot.FormConf formConf) {
+        String component = formConf.getComponent();
+        if (component != null && !component.isBlank() && !FormConstants.isIdentifier(component)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表单组件名非法：" + component);
+        }
+        return new FormModel.FormConf(
+                !Boolean.FALSE.equals(formConf.getShow()),
+                component == null || component.isBlank() ? null : component,
+                formConf.getProps() == null ? Map.of() : Map.copyOf(formConf.getProps()),
+                formConf.getRules() == null ? Map.of() : Map.copyOf(formConf.getRules()),
+                Boolean.TRUE.equals(formConf.getReadonly()));
+    }
+
+    /** 查询操作符归一：显式值走白名单，缺省按字段类型取 like/eq */
+    private String resolveQueryOp(String type, String op) {
         if (op == null || op.isBlank()) {
-            // 文本类默认 like，其余默认 eq
-            String type = field.getFieldType();
             return "STRING".equals(type) || "TEXT".equals(type) ? "like" : "eq";
         }
         if (!FormConstants.QUERY_OPERATORS.contains(op)) {

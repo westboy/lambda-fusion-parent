@@ -20,15 +20,23 @@ import com.lambda.fusion.form.design.model.FormFieldItem;
 import com.lambda.fusion.form.design.model.FormRelationItem;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.design.service.FormDesignService;
+import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.support.FieldConfigs;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 表单草稿设计服务实现
@@ -41,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressFBWarnings("EI_EXPOSE_REP2")
 public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, FormDefView, FormDefMapper>
         implements FormDesignService {
 
@@ -48,6 +57,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private final FormRelationMapper formRelationMapper;
     private final FormDefVersionMapper formDefVersionMapper;
     private final TableMetadataReader tableMetadataReader;
+    private final ObjectMapper objectMapper;
+    private final FormPublishService formPublishService;
 
     @Override
     public PageView<FormDefView> page(FormDefPage page) {
@@ -82,6 +93,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setStatus(FormConstants.STATUS_DRAFT);
         save(def);
         replaceChildren(def.getId(), command);
+        if (Boolean.TRUE.equals(command.getPublishOnSave())) {
+            formPublishService.publish(def.getId());
+        }
         return def.getId();
     }
 
@@ -99,6 +113,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         }
         replaceChildren(id, command);
+        if (Boolean.TRUE.equals(command.getPublishOnSave())) {
+            formPublishService.publish(id);
+        }
     }
 
     @Override
@@ -137,14 +154,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             entity.setFieldType(item.getFieldType().toUpperCase(Locale.ROOT));
             entity.setNullable(!Boolean.FALSE.equals(item.getNullable()));
             entity.setDefaultValue(item.getDefaultValue());
-            entity.setValidation(item.getValidation());
             entity.setDictType(item.getDictType());
-            entity.setUiComponent(item.getUiComponent());
-            entity.setUiProps(item.getUiProps());
-            entity.setListShow(!Boolean.FALSE.equals(item.getListShow()));
-            entity.setQueryShow(Boolean.TRUE.equals(item.getQueryShow()));
-            entity.setQueryOp(item.getQueryOp());
-            entity.setFormShow(!Boolean.FALSE.equals(item.getFormShow()));
+            entity.setQueryConfig(item.getQueryConfig());
+            entity.setListConfig(item.getListConfig());
+            entity.setFormConfig(item.getFormConfig());
+            entity.setPersisted(!Boolean.FALSE.equals(item.getPersisted()));
             entity.setSort(item.getSort() == null ? Integer.valueOf(0) : item.getSort());
             formFieldMapper.insert(entity);
         }
@@ -194,12 +208,23 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             if (!FormConstants.isIdentifier(item.getColumnName())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "列名非法：" + item.getColumnName());
             }
-            if (item.getQueryOp() != null
-                    && !item.getQueryOp().isBlank()
-                    && !FormConstants.QUERY_OPERATORS.contains(item.getQueryOp())) {
-                throw new FormBusinessException(FormErrorCode.FORM_QUERY_OPERATOR_UNSUPPORTED, item.getQueryOp());
+            FieldConfigs.validate(objectMapper, item.getQueryConfig(), item.getListConfig(), item.getFormConfig());
+        }
+        if (command.getLogicDeleteColumn() != null
+                && !command.getLogicDeleteColumn().isBlank()) {
+            if (!FormConstants.isIdentifier(command.getLogicDeleteColumn())) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "逻辑删除列非法：" + command.getLogicDeleteColumn());
+            }
+            String logicDelete = command.getLogicDeleteColumn();
+            boolean mapped = command.getFields().stream()
+                    .anyMatch(item -> item.getColumnName().equalsIgnoreCase(logicDelete));
+            if (!mapped) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "逻辑删除列未映射字段：" + command.getLogicDeleteColumn());
             }
         }
+        validateListConfig(command.getListConfig());
         for (FormRelationItem item : command.getRelations()) {
             if (!FormConstants.CASCADE_DELETE.equals(item.getCascadeStrategy())
                     && !FormConstants.FORBID_DELETE.equals(item.getCascadeStrategy())) {
@@ -238,5 +263,30 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setTreeConfig(command.getTreeConfig());
         def.setFlowCode(command.getFlowCode());
         def.setTitleTemplate(command.getTitleTemplate());
+        def.setPublishOnSave(command.getPublishOnSave());
+        def.setLogicDeleteColumn(command.getLogicDeleteColumn());
+        def.setListConfig(command.getListConfig());
+    }
+
+    /** 列表级配置 JSON 的顶层键白名单校验 */
+    private void validateListConfig(String json) {
+        if (json == null || json.isBlank()) {
+            return;
+        }
+        final JsonNode node;
+        try {
+            node = objectMapper.readTree(json);
+        } catch (JacksonException e) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "listConfig 不是合法 JSON");
+        }
+        if (!node.isObject()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "listConfig 必须是 JSON 对象");
+        }
+        Set<String> allowed = Set.of("layout", "pageSizes", "advancedQuery", "fullQuery", "showSeq", "buttons");
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
+            if (!allowed.contains(entry.getKey())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "listConfig 存在非法键：" + entry.getKey());
+            }
+        }
     }
 }

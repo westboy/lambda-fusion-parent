@@ -50,6 +50,16 @@ public class FormDefSaveCommand {
     @Schema(description = "流程标题模板")
     private String titleTemplate;
 
+    @Size(max = 64, message = "逻辑删除列名不能超过 64 字符")
+    @Schema(description = "逻辑删除列名（空=物理删除）；目标表必须含该列")
+    private String logicDeleteColumn;
+
+    @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
+    private String listConfig;
+
+    @Schema(description = "保存时同步发布（默认 false）")
+    private Boolean publishOnSave;
+
     @Schema(description = "乐观锁版本（更新时必传，新建忽略）")
     private Long version;
 

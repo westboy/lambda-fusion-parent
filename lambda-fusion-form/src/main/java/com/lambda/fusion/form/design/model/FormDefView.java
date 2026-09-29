@@ -54,6 +54,15 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "FormDataInterceptor bean 名（P2，可空）")
     private String interceptor;
 
+    @Schema(description = "保存时同步发布（默认 false）")
+    private Boolean publishOnSave;
+
+    @Schema(description = "逻辑删除列名（空=物理删除）")
+    private String logicDeleteColumn;
+
+    @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
+    private String listConfig;
+
     @Schema(description = "乐观锁版本")
     private Long version;
 
