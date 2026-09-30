@@ -57,6 +57,9 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "保存时同步发布（默认 false）")
     private Boolean publishOnSave;
 
+    @Schema(description = "跳过契约列校验与填充（默认 false）")
+    private Boolean skipContractColumns;
+
     @Schema(description = "逻辑删除列名（空=物理删除）")
     private String logicDeleteColumn;
 

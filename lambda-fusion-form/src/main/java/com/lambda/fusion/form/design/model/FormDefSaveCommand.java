@@ -60,6 +60,9 @@ public class FormDefSaveCommand {
     @Schema(description = "保存时同步发布（默认 false）")
     private Boolean publishOnSave;
 
+    @Schema(description = "跳过契约列校验与填充（默认 false；缺 TENANT_ID 时需同步配置 tenant.ignore-tables）")
+    private Boolean skipContractColumns;
+
     @Schema(description = "乐观锁版本（更新时必传，新建忽略）")
     private Long version;
 

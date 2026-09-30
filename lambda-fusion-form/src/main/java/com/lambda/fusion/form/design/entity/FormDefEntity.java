@@ -65,6 +65,10 @@ public class FormDefEntity extends BaseEntity {
     @TableField("PUBLISH_ON_SAVE")
     private Boolean publishOnSave;
 
+    /** 跳过契约列校验与填充（TENANT_ID + 审计四列）；缺 TENANT_ID 时需同步配置 tenant.ignore-tables */
+    @TableField("SKIP_CONTRACT_COLUMNS")
+    private Boolean skipContractColumns;
+
     /** 逻辑删除列名（空=物理删除）；目标表必须含该列 */
     @TableField("LOGIC_DELETE_COLUMN")
     private String logicDeleteColumn;

@@ -37,6 +37,9 @@ public class FormDefSnapshot {
     /** 保存时同步发布（默认 false） */
     private Boolean publishOnSave = Boolean.FALSE;
 
+    /** 跳过契约列校验与填充（默认 false） */
+    private Boolean skipContractColumns = Boolean.FALSE;
+
     /** 逻辑删除列名（空=物理删除） */
     private String logicDeleteColumn;
 

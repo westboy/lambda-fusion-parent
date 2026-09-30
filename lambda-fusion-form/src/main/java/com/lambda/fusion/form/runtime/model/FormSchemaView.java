@@ -37,6 +37,9 @@ public class FormSchemaView {
     @Schema(description = "逻辑删除列名（空=物理删除）")
     private String logicDeleteColumn;
 
+    @Schema(description = "跳过契约列校验与填充（TENANT_ID + 审计四列）")
+    private Boolean skipContractColumns;
+
     @Schema(description = "列表级配置：布局/分页/按钮等")
     private ListConfig listConfig = new ListConfig();
 

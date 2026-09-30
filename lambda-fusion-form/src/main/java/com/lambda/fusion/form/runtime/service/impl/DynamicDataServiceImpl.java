@@ -111,7 +111,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             columns.add(column);
             values.add(bind("p" + params.size(), value, params));
         });
-        fillAudit(columns, values, params, true);
+        if (!model.skipContractColumns()) {
+            fillAudit(columns, values, params, true);
+        }
         dynamicTableMapper.insertDynamic(model.tableName(), columns, values, params);
         return id;
     }
@@ -125,8 +127,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
         row.forEach((column, value) -> assignments.add(column + " = " + bind("p" + params.size(), value, params)));
-        assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
-        assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+        if (!model.skipContractColumns()) {
+            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+        }
         dynamicTableMapper.updateDynamic(model.tableName(), String.join(", ", assignments), params);
     }
 
@@ -146,8 +150,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (logicDeleteColumn != null && !logicDeleteColumn.isBlank()) {
             List<String> assignments = new ArrayList<>();
             assignments.add(logicDeleteColumn + " = 1");
-            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
-            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+            if (!model.skipContractColumns()) {
+                assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+                assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+            }
             dynamicTableMapper.updateDynamic(model.tableName(), String.join(", ", assignments), params);
             return;
         }

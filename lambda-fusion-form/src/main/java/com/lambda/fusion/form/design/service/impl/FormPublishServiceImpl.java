@@ -142,7 +142,8 @@ public class FormPublishServiceImpl implements FormPublishService {
     }
 
     /**
-     * 发布校验（设计文档 §5.5）：表存在、ID/租户/审计列齐备、字段列存在且类型兼容
+     * 发布校验（设计文档 §5.5）：表存在、ID/租户/审计列齐备、字段列存在且类型兼容；
+     * skipContractColumns 为 true 时跳过租户与审计列校验（系统级共享表）
      */
     private void validateTargetTable(FormDefEntity def, List<FormFieldEntity> fields) {
         String tableName = def.getTableName();
@@ -155,12 +156,15 @@ public class FormPublishServiceImpl implements FormPublishService {
         if (!columns.containsKey(FormConstants.COLUMN_ID)) {
             missing.add(FormConstants.COLUMN_ID);
         }
-        if (!columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
+        boolean skipContract = Boolean.TRUE.equals(def.getSkipContractColumns());
+        if (!skipContract && !columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
             missing.add(FormConstants.COLUMN_TENANT_ID);
         }
-        FormConstants.AUDIT_COLUMNS.stream()
-                .filter(column -> !columns.containsKey(column))
-                .forEach(missing::add);
+        if (!skipContract) {
+            FormConstants.AUDIT_COLUMNS.stream()
+                    .filter(column -> !columns.containsKey(column))
+                    .forEach(missing::add);
+        }
         for (FormFieldEntity field : fields) {
             TableColumnView column = columns.get(field.getColumnName().toUpperCase(Locale.ROOT));
             if (column == null) {
@@ -210,6 +214,7 @@ public class FormPublishServiceImpl implements FormPublishService {
         snapshot.setTitleTemplate(def.getTitleTemplate());
         snapshot.setInterceptor(def.getInterceptor());
         snapshot.setPublishOnSave(def.getPublishOnSave());
+        snapshot.setSkipContractColumns(def.getSkipContractColumns());
         snapshot.setLogicDeleteColumn(def.getLogicDeleteColumn());
         snapshot.setListConfig(FieldConfigs.toListConfig(objectMapper, def.getListConfig()));
         snapshot.setFields(fields.stream()

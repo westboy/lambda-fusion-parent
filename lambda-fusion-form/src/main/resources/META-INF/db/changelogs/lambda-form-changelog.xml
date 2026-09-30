@@ -7,7 +7,7 @@
          租户过滤由框架 TenantLineInnerInterceptor 承担，业务代码不写租户处理；
          目标业务表不属本模块 changelog（模块不做运行时建表，契约 §6 合规）。 -->
 
-    <changeSet id="lambda-fusion-form-202609280001" author="Zx">
+    <changeSet id="lambda-fusion-form-2026092800010" author="Zx">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="la_form_def"/>
@@ -52,7 +52,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-fusion-form-202609280002" author="Zx">
+    <changeSet id="lambda-fusion-form-2026092800020" author="Zx">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="la_form_field"/>
@@ -107,7 +107,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-fusion-form-202609280003" author="Zx">
+    <changeSet id="lambda-fusion-form-2026092800030" author="Zx">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="la_form_relation"/>
@@ -142,7 +142,7 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="lambda-fusion-form-202609280004" author="Zx">
+    <changeSet id="lambda-fusion-form-2026092800040" author="Zx">
         <preConditions onFail="MARK_RAN">
             <not>
                 <tableExists tableName="la_form_def_version"/>
@@ -182,8 +182,7 @@
         </createIndex>
     </changeSet>
 
-    <!-- 字段显示配置三段化（设计器三步化 P1）：平铺显示列收敛为 query/list/form 三个 JSON 配置列 -->
-    <changeSet id="lambda-fusion-form-202609290001" author="Zx">
+    <changeSet id="lambda-fusion-form-20260929000100" author="Zx">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_form_field"/>
         </preConditions>
@@ -206,8 +205,7 @@
         </addColumn>
     </changeSet>
 
-    <!-- 设计器升级：基础设置扩展（保存即发布、逻辑删除列、列表级配置） -->
-    <changeSet id="lambda-fusion-form-202609300001" author="Zx">
+    <changeSet id="lambda-fusion-form-2026093000010" author="Zx">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_form_def"/>
         </preConditions>
@@ -217,6 +215,19 @@
             </column>
             <column name="LOGIC_DELETE_COLUMN" type="varchar(64)" remarks="逻辑删除列名（空=物理删除）；目标表必须含该列"/>
             <column name="LIST_CONFIG" type="json" remarks="列表级配置 JSON：布局/分页/按钮等"/>
+        </addColumn>
+    </changeSet>
+
+    <!-- 契约列豁免开关：跳过 TENANT_ID 与审计四列校验/填充（系统级共享表用） -->
+    <changeSet id="lambda-fusion-form-202609300002" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column name="SKIP_CONTRACT_COLUMNS" type="tinyint(1)" defaultValueNumeric="0"
+                    remarks="跳过契约列校验与填充（TENANT_ID + 审计四列）；缺 TENANT_ID 时需同步配置 tenant.ignore-tables">
+                <constraints nullable="false"/>
+            </column>
         </addColumn>
     </changeSet>
 

@@ -264,6 +264,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setFlowCode(command.getFlowCode());
         def.setTitleTemplate(command.getTitleTemplate());
         def.setPublishOnSave(command.getPublishOnSave());
+        def.setSkipContractColumns(command.getSkipContractColumns());
         def.setLogicDeleteColumn(command.getLogicDeleteColumn());
         def.setListConfig(command.getListConfig());
     }

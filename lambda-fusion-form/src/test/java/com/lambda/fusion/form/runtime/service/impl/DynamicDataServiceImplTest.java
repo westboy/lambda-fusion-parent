@@ -231,6 +231,7 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 TABLE,
+                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 List.of(
@@ -249,6 +250,7 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_MASTER_SUB,
                 TABLE,
+                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 model().fields(),
@@ -264,6 +266,7 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave_item",
+                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 List.of(),
