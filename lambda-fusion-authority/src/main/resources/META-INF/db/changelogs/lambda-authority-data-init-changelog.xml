@@ -658,8 +658,8 @@
             ]]></sql>
     </changeSet>
 
-    <!-- ========== AI 工作台菜单（顶级独立节点，原前端静态路由落库） ========== -->
-    <changeSet id="lambda-authority-2026091000010" author="zx">
+    <!-- ========== AI 工作台菜单========== -->
+    <changeSet id="lambda-authority-20260910000101" author="zx">
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_resources"/>
             <sqlCheck expectedResult="0">
@@ -674,7 +674,7 @@
                                       BUSINESS_EXPAND, ORDER_NO)
             values ('AiTop0001', null, 'AI 工作台', '/ai', 0, 1, null, 0, null, 'lucide:brain', 0, null, 0, null, null,
                     null, 1, null, null, 200),
-                   ('AiApp0001', 'AiTop0001', '智能管理', '/ai/apps/', 1, 1, null, 0, null, 'lucide:bot', 0, 'AiTop0001',
+                   ('AiApp0001', 'AiTop0001', '智能应用', '/ai/apps/', 1, 1, null, 0, null, 'lucide:bot', 0, 'AiTop0001',
                     0, null, null, null, 0, null, null, 1),
                    ('AiChat001', 'AiTop0001', '对话体验', '/ai/chat/', 1, 1, null, 0, null, 'lucide:message-square', 0,
                     'AiTop0001', 0, null, null, null, 0, null, null, 2),
