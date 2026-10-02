@@ -37,6 +37,17 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Reactor 内的可选集成依赖由父工程统一版本；对外消费仍由 fusion BOM 管理。 -->
+            <dependency>
+                <groupId>com.lambda.cloud</groupId>
+                <artifactId>lambda-fusion-authority</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.lambda.cloud</groupId>
+                <artifactId>lambda-fusion-permission-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.lambda.cloud</groupId>
                 <artifactId>lambda-cloud-starter-dependencies</artifactId>

@@ -14,6 +14,7 @@ import com.lambda.fusion.authority.AuthorityConstants;
 import com.lambda.fusion.authority.exception.AuthorityBusinessException;
 import com.lambda.fusion.authority.resource.model.Resource;
 import com.lambda.fusion.authority.resource.service.ResourceService;
+import com.lambda.fusion.authority.resource.support.AuthorizationCache;
 import com.lambda.fusion.authority.role.mapper.AccessPermissionMapper;
 import com.lambda.fusion.authority.role.mapper.RoleGroupMapper;
 import com.lambda.fusion.authority.role.mapper.RoleMapper;
@@ -58,6 +59,7 @@ public class RoleServiceImpl implements RoleService {
     private final UserRoleMapper userRoleMapper;
 
     private final AccessPermissionMapper accessPermissionMapper;
+    private final AuthorizationCache authorizationCache;
 
     private @NonNull Set<String> getExcludes(UserDetails userDetails) {
         Set<String> excludes = Sets.newHashSet();
@@ -242,11 +244,6 @@ public class RoleServiceImpl implements RoleService {
         return TreeBuilder.build(permissions);
     }
 
-    @Caching(
-            evict = {
-                @CacheEvict(value = "ResourceOwners", allEntries = true),
-                @CacheEvict(value = "auth:permission", allEntries = true)
-            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void grantRolePermission(String authority, String resourceId, int status, UserDetails userDetails) {
@@ -287,6 +284,7 @@ public class RoleServiceImpl implements RoleService {
             }
             roleMapper.batchSaveAuthorization(list);
         }
+        authorizationCache.evictAfterCommit();
     }
 
     private @NonNull Resource getResource(String authority, String resourceId, UserDetails userDetails) {
@@ -317,11 +315,6 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @Caching(
-            evict = {
-                @CacheEvict(value = "ResourceOwners", allEntries = true),
-                @CacheEvict(value = "auth:permission", allEntries = true)
-            })
     public void revokeRolePermission(String authority, String resourceId, UserDetails userDetails) {
         Resource resource = getResource(authority, resourceId, userDetails);
 
@@ -350,6 +343,7 @@ public class RoleServiceImpl implements RoleService {
                 }
             }
         }
+        authorizationCache.evictAfterCommit();
     }
 
     @Override

@@ -597,4 +597,15 @@
 
     <include file="lambda-authority-data-init-changelog.xml" relativeToChangelogFile="true"/>
 
+    <!-- 路径占用检查与树变更共用固定行锁，避免并发发布产生重复入口；不承载任何资源或授权状态。 -->
+    <changeSet id="lambda-authority-202610010002" author="Zx">
+        <createTable tableName="la_resource_tree_lock">
+            <column name="ID" type="varchar(16)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+        </createTable>
+        <insert tableName="la_resource_tree_lock">
+            <column name="ID" value="tree"/>
+        </insert>
+    </changeSet>
 </databaseChangeLog>

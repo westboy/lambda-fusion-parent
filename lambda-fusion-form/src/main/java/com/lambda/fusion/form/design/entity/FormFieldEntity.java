@@ -28,6 +28,9 @@ public class FormFieldEntity extends BaseEntity {
     @TableField("FIELD_NAME")
     private String fieldName;
 
+    @TableField("FIELD_LABEL")
+    private String label;
+
     /** 物理列映射 */
     @TableField("COLUMN_NAME")
     private String columnName;

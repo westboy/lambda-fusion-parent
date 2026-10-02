@@ -60,10 +60,12 @@ public interface DynamicTableMapper {
     /**
      * 按主键查询单条（租户条件由拦截器追加）
      */
-    @Select("SELECT ${selectColumns} FROM ${tableName} WHERE ID = #{params.id}")
+    @Select("<script>SELECT ${selectColumns} FROM ${tableName} WHERE ID = #{params.id}"
+            + "<if test=\"whereSql != null\">${whereSql}</if></script>")
     Map<String, Object> selectById(
             @Param("tableName") String tableName,
             @Param("selectColumns") String selectColumns,
+            @Param("whereSql") String whereSql,
             @Param("params") Map<String, Object> params);
 
     /**
@@ -96,25 +98,22 @@ public interface DynamicTableMapper {
             """
             <script>
             UPDATE ${tableName} SET ${setSql} WHERE ID = #{params.id}
+            <if test="whereSql != null">${whereSql}</if>
             </script>
             """)
     int updateDynamic(
             @Param("tableName") String tableName,
             @Param("setSql") String setSql,
+            @Param("whereSql") String whereSql,
             @Param("params") Map<String, Object> params);
 
     /**
      * 按主键删除（租户条件由拦截器追加）
      */
-    @Delete("DELETE FROM ${tableName} WHERE ID = #{params.id}")
-    int deleteById(@Param("tableName") String tableName, @Param("params") Map<String, Object> params);
-
-    /**
-     * 列值计数（子表外键存在性等，租户条件由拦截器追加）
-     */
-    @Select("SELECT COUNT(1) FROM ${tableName} WHERE ${column} = #{params.value}")
-    long countByColumn(
+    @Delete("<script>DELETE FROM ${tableName} WHERE ID = #{params.id}"
+            + "<if test=\"whereSql != null\">${whereSql}</if></script>")
+    int deleteById(
             @Param("tableName") String tableName,
-            @Param("column") String column,
+            @Param("whereSql") String whereSql,
             @Param("params") Map<String, Object> params);
 }

@@ -8,10 +8,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * 表单模型读穿缓存
+ * 不可变发布快照的编译结果缓存
  *
- * <p>key = tenantId + formKey，值为已编译的 {@link FormModel}；版本变化由调用方传入新模型替换。
- * 无 Dubbo 环境下失效经 TTL 降级（契约 §4.1），发布/停用/回滚时本节点主动清除。
+ * <p>key 为数据库表单 ID；命中时必须同时匹配调用方已核对的生效版本。
+ * 状态不由缓存判断，旧请求回填旧版本最多导致再次编译，不会作为新版本返回。
  *
  * @author Zx
  */
@@ -24,35 +24,31 @@ public class FormModelCache {
 
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
 
-    public FormModel get(String tenantId, String formKey) {
-        Entry entry = cache.get(key(tenantId, formKey));
+    public FormModel get(String formId, long version) {
+        Entry entry = cache.get(formId);
         if (entry == null) {
             return null;
         }
         if (System.currentTimeMillis() > entry.expiresAt()) {
-            cache.remove(key(tenantId, formKey));
+            cache.remove(formId, entry);
             return null;
         }
-        return entry.model();
+        return entry.model().version() == version ? entry.model() : null;
     }
 
-    public void put(String tenantId, String formKey, FormModel model) {
-        cache.put(key(tenantId, formKey), new Entry(model, System.currentTimeMillis() + ttlMillis()));
+    public void put(String formId, FormModel model) {
+        cache.put(formId, new Entry(model, System.currentTimeMillis() + ttlMillis()));
     }
 
     /**
      * 清除指定表单缓存（发布/停用/回滚后调用）
      */
-    public void evict(String tenantId, String formKey) {
-        cache.remove(key(tenantId, formKey));
+    public void evict(String formId) {
+        cache.remove(formId);
     }
 
     private long ttlMillis() {
         return Math.max(1, properties.getCacheTtlSeconds()) * 1000L;
-    }
-
-    private String key(String tenantId, String formKey) {
-        return (tenantId == null ? "" : tenantId) + ':' + formKey;
     }
 
     private record Entry(FormModel model, long expiresAt) {}

@@ -57,7 +57,7 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "保存时同步发布（默认 false）")
     private Boolean publishOnSave;
 
-    @Schema(description = "跳过契约列校验与填充（默认 false）")
+    @Schema(description = "跳过审计列要求与填充（默认 false；不豁免实际租户插件策略）")
     private Boolean skipContractColumns;
 
     @Schema(description = "逻辑删除列名（空=物理删除）")
@@ -65,6 +65,11 @@ public class FormDefView extends BaseVO<FormDefEntity> {
 
     @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
     private String listConfig;
+
+    @Schema(description = "表单与详情共享布局 JSON")
+    private String formLayout;
+
+    private String routeResourceId;
 
     @Schema(description = "乐观锁版本")
     private Long version;

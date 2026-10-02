@@ -1,5 +1,6 @@
 package com.lambda.fusion.form;
 
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -26,6 +27,11 @@ public final class FormConstants {
 
     /** 运行时权限码模板：form:{formKey}:{action} */
     public static final String RUNTIME_PERMISSION_TEMPLATE = "form:%s:%s";
+
+    /** design 已用于管理接口命名空间，不能成为业务表单标识。 */
+    public static boolean isFormKey(String value) {
+        return isIdentifier(value) && !"design".equalsIgnoreCase(value);
+    }
 
     /** 表单类型 */
     public static final String FORM_TYPE_SINGLE = "SINGLE";
@@ -58,6 +64,17 @@ public final class FormConstants {
 
     /** 主键列名（目标表约定） */
     public static final String COLUMN_ID = "ID";
+
+    /** 系统列由引擎与框架维护，不允许作为业务字段映射。 */
+    public static boolean isSystemColumn(String column) {
+        if (column == null) {
+            return false;
+        }
+        String normalized = column.toUpperCase(Locale.ROOT);
+        return COLUMN_ID.equals(normalized)
+                || COLUMN_TENANT_ID.equals(normalized)
+                || AUDIT_COLUMNS.contains(normalized);
+    }
 
     /** 级联策略 */
     public static final String CASCADE_DELETE = "CASCADE_DELETE";

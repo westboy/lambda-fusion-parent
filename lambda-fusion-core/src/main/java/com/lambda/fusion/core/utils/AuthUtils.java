@@ -2,11 +2,27 @@ package com.lambda.fusion.core.utils;
 
 import cn.hutool.core.util.StrUtil;
 import com.lambda.cloud.core.utils.OperatorUtils;
+import com.lambda.cloud.core.utils.StpLogicUtils;
+import com.lambda.fusion.core.FusionConstants;
 import com.lambda.fusion.core.identity.UserDetails;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
 public class AuthUtils {
+
+    /** 非 MVC 调用的权限校验，沿用 Cloud 拦截器的活跃登录类型与开发者豁免策略。 */
+    public static void checkPermission(String permission) {
+        var logic = StpLogicUtils.getActiveStpLogic();
+        if (!logic.hasRole(FusionConstants.ROLE_DEV)) {
+            logic.checkPermission(permission);
+        }
+    }
+
+    /** 权限展示与服务端校验使用相同口径，不依赖开发者拥有逐项授权记录。 */
+    public static boolean hasPermission(String permission) {
+        var logic = StpLogicUtils.getActiveStpLogic();
+        return logic.hasRole(FusionConstants.ROLE_DEV) || logic.hasPermission(permission);
+    }
 
     public static UserDetails getUser() {
         return OperatorUtils.getLoginUser(UserDetails.class);

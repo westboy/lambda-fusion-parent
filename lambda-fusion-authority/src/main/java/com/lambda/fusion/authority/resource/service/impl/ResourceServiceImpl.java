@@ -3,18 +3,22 @@ package com.lambda.fusion.authority.resource.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.IdUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.lambda.fusion.authority.AuthorityConstants;
 import com.lambda.fusion.authority.authentication.model.MenuQuery;
 import com.lambda.fusion.authority.exception.AuthorityBusinessException;
+import com.lambda.fusion.authority.exception.AuthorityErrorCode;
 import com.lambda.fusion.authority.resource.mapper.ResourceMapper;
 import com.lambda.fusion.authority.resource.model.CreateResource;
 import com.lambda.fusion.authority.resource.model.MoveResource;
 import com.lambda.fusion.authority.resource.model.Resource;
 import com.lambda.fusion.authority.resource.model.ResourceTree;
+import com.lambda.fusion.authority.resource.model.entity.ResourceEntity;
 import com.lambda.fusion.authority.resource.service.ResourceService;
+import com.lambda.fusion.authority.resource.support.AuthorizationCache;
 import com.lambda.fusion.authority.role.mapper.RoleMapper;
 import com.lambda.fusion.authority.role.model.UserAuthority;
 import com.lambda.fusion.core.FusionConstants;
@@ -33,6 +37,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.NonNull;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
@@ -43,6 +48,7 @@ public class ResourceServiceImpl implements ResourceService {
     private final RoleMapper roleMapper;
     private final ResourceMapper resourceMapper;
     protected final TreeDataFilter treeDataFilter;
+    private final AuthorizationCache authorizationCache;
 
     @Override
     public List<Resource> getAllResources() {
@@ -107,7 +113,9 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Resource addResource(CreateResource createResource) {
+        lockResourceTree();
         Resource resource = createResource.toEntity();
+        requireFreePath(resource);
         int type = createResource.getResType();
         String id = IdUtil.getSnowflakeNextIdStr();
         if (type == 0) {
@@ -169,12 +177,14 @@ public class ResourceServiceImpl implements ResourceService {
         }
 
         changeResourceOrdered(directChildren);
+        authorizationCache.evictAfterCommit();
         return resourceMapper.getResourceById(resource.getId());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteResource(String id) {
+        lockResourceTree();
         if (id == null) {
             throw AuthorityBusinessException.invalidParameter("资源ID不能为空");
         }
@@ -186,16 +196,19 @@ public class ResourceServiceImpl implements ResourceService {
         List<Resource> children = queryAvailableChildren(resource);
         children.addFirst(resource);
         Set<String> ids = children.stream().map(Resource::getId).collect(Collectors.toSet());
-        resourceMapper.deleteResource(ids);
+        resourceMapper.deleteApiBindings(ids);
         resourceMapper.deleteRolesResource(ids);
+        resourceMapper.deleteResource(ids);
 
         List<ResourceTree> children2 = resourceMapper.getDirectChildren(resource.getParentId());
         changeResourceOrdered(children2);
+        authorizationCache.evictAfterCommit();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Resource updateResource(Resource updateResource) {
+        lockResourceTree();
         if (updateResource == null) {
             throw AuthorityBusinessException.invalidParameter("资源信息不能为空");
         }
@@ -206,6 +219,9 @@ public class ResourceServiceImpl implements ResourceService {
         if (source == null) {
             throw AuthorityBusinessException.resourceNotFound(updateResource.getId());
         }
+        if (updateResource.getResMode() == null) updateResource.setResMode(source.getResMode());
+        if (updateResource.getResType() == null) updateResource.setResType(source.getResType());
+        requireFreePath(updateResource);
         // 更新时只更新属性，不改变上下级关系，因此parentKeys也无须变化
         updateResource.setResLevel(source.getResLevel());
         updateResource.setParentKeys(source.getParentKeys());
@@ -215,7 +231,7 @@ public class ResourceServiceImpl implements ResourceService {
         }
         boolean orderChanged = !source.getOrderNo().equals(updateResource.getOrderNo());
         boolean typeChanged = !source.getResType().equals(updateResource.getResType());
-        boolean hiddenChanged = source.getHidden().equals(updateResource.getHidden());
+        boolean hiddenChanged = !Objects.equals(source.getHidden(), updateResource.getHidden());
         if (typeChanged) {
             if (Objects.equals(updateResource.getResType(), AuthorityConstants.MenuType.BUTTON.getCode())) {
                 updateResource.setResLevel(Integer.MAX_VALUE);
@@ -233,7 +249,9 @@ public class ResourceServiceImpl implements ResourceService {
         resourceMapper.updateResource(source);
 
         if (orderChanged) {
-            List<ResourceTree> directChildren = resourceMapper.getDirectChildren(source.getParentId());
+            List<Resource> directChildren = new ArrayList<>(resourceMapper.getDirectChildren(source.getParentId()));
+            directChildren.removeIf(item -> source.getId().equals(item.getId()));
+            directChildren.add(Math.max(0, Math.min(updateResource.getOrderNo() - 1, directChildren.size())), source);
             changeResourceOrdered(directChildren);
         }
         if (hiddenChanged) {
@@ -242,6 +260,7 @@ public class ResourceServiceImpl implements ResourceService {
                 resourceMapper.updateResourceIsHidden(directChildren, updateResource.getHidden());
             }
         }
+        authorizationCache.evictAfterCommit();
         return source;
     }
 
@@ -297,6 +316,7 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void move(@NotNull MoveResource parameter) {
+        lockResourceTree();
         String id = parameter.getId();
         String tid = parameter.getTid();
         int type = parameter.getType();
@@ -341,6 +361,34 @@ public class ResourceServiceImpl implements ResourceService {
         if (!peer) {
             List<ResourceTree> children = resourceMapper.getDirectChildren(pid0);
             changeResourceOrdered(children);
+        }
+        authorizationCache.evictAfterCommit();
+    }
+
+    private void requireFreePath(Resource resource) {
+        if (Objects.equals(resource.getResType(), AuthorityConstants.MenuType.BUTTON.getCode())
+                || StringUtils.isBlank(resource.getResPath())) return;
+        String path = resource.getResPath().trim().replaceAll("/+", "/");
+        if (path.length() > 1) path = StringUtils.removeEnd(path, "/");
+        final String normalized = path;
+        boolean occupied = resourceMapper
+                .selectList(new LambdaQueryWrapper<ResourceEntity>()
+                        .eq(ResourceEntity::getResMode, resource.getResMode())
+                        .ne(ResourceEntity::getResType, AuthorityConstants.MenuType.BUTTON.getCode())
+                        .ne(resource.getId() != null, ResourceEntity::getId, resource.getId())
+                        .isNotNull(ResourceEntity::getResPath))
+                .stream()
+                .anyMatch(
+                        other -> StringUtils.removeEnd(other.getResPath().trim().replaceAll("/+", "/"), "/")
+                                .equalsIgnoreCase(StringUtils.removeEnd(normalized, "/")));
+        if (occupied) throw new AuthorityBusinessException(AuthorityErrorCode.RESOURCE_PATH_CONFLICT, path);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockResourceTree() {
+        if (resourceMapper.lockResourceTree() == null) {
+            throw AuthorityBusinessException.operationNotSupported("资源管理尚未初始化");
         }
     }
 
@@ -492,7 +540,7 @@ public class ResourceServiceImpl implements ResourceService {
     /**
      * 改变资源列表顺序
      */
-    private void changeResourceOrdered(List<ResourceTree> treeList) {
+    private void changeResourceOrdered(List<? extends Resource> treeList) {
         List<Resource> changed = new ArrayList<>(treeList.size());
         int n = 1;
         for (Resource item : treeList) {

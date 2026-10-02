@@ -158,6 +158,7 @@ class QueryAstValidatorTest {
                 false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", false, true, "eq", 2),
@@ -170,6 +171,7 @@ class QueryAstValidatorTest {
     private static FormModel.FormField field(
             String name, String column, String type, boolean listShow, boolean queryShow, String queryOp, int sort) {
         return new FormModel.FormField(
+                name,
                 name,
                 column,
                 type,

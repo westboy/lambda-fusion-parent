@@ -231,4 +231,23 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-fusion-form-202609300003" author="Zx">
+        <preConditions onFail="HALT">
+            <tableExists tableName="la_form_def"/>
+            <tableExists tableName="la_form_field"/>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column name="FORM_LAYOUT" type="json" remarks="表单详情共享布局：columns、items(field/span)"/>
+        </addColumn>
+        <addColumn tableName="la_form_field">
+            <column name="FIELD_LABEL" type="varchar(128)" remarks="业务显示名"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-form-202610010001" author="Zx">
+        <addColumn tableName="la_form_def">
+            <column name="ROUTE_RESOURCE_ID" type="varchar(32)" remarks="受本表单管理的 authority 菜单资源 ID"/>
+        </addColumn>
+        <addUniqueConstraint tableName="la_form_def" columnNames="ROUTE_RESOURCE_ID" constraintName="uk_form_route_resource"/>
+    </changeSet>
 </databaseChangeLog>

@@ -83,6 +83,10 @@ lambda:
     enabled: ${AI_LUCENE_ENABLED:true}
     directory: ${AI_LUCENE_DIRECTORY:${user.home}/.agentscope/fusion/rag/lucene}
   fusion:
+    form:
+      # 仅开放专用动态表单演示表；新增业务表须显式加入清单。
+      allowed-tables:
+        - la_demo_leave
     permission:
       server:
         auth-token: 111

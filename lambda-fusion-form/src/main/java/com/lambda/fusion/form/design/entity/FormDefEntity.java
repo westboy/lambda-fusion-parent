@@ -1,5 +1,6 @@
 package com.lambda.fusion.form.design.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -65,7 +66,7 @@ public class FormDefEntity extends BaseEntity {
     @TableField("PUBLISH_ON_SAVE")
     private Boolean publishOnSave;
 
-    /** 跳过契约列校验与填充（TENANT_ID + 审计四列）；缺 TENANT_ID 时需同步配置 tenant.ignore-tables */
+    /** 跳过审计列要求与填充；租户列仍须符合实际插件的过滤/共享策略。 */
     @TableField("SKIP_CONTRACT_COLUMNS")
     private Boolean skipContractColumns;
 
@@ -76,6 +77,14 @@ public class FormDefEntity extends BaseEntity {
     /** 列表级配置 JSON：布局/分页/按钮等 */
     @TableField("LIST_CONFIG")
     private String listConfig;
+
+    /** 表单与详情共享布局 JSON：列数、字段顺序与占列。 */
+    @TableField("FORM_LAYOUT")
+    private String formLayout;
+
+    /** 当前管理的菜单资源；菜单配置本身以 authority 资源为唯一事实来源。 */
+    @TableField(value = "ROUTE_RESOURCE_ID", updateStrategy = FieldStrategy.ALWAYS)
+    private String routeResourceId;
 
     /** 乐观锁版本（@Version） */
     @Version

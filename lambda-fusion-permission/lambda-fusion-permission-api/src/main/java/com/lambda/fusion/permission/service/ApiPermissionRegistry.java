@@ -13,6 +13,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public class ApiPermissionRegistry {
+    private final List<ApiPermissionProvider> providers;
+
+    public ApiPermissionRegistry(List<ApiPermissionProvider> providers) {
+        this.providers = List.copyOf(providers);
+    }
+
     private final AtomicReference<List<ApiPermissionMetadata>> localApis = new AtomicReference<>(List.of());
 
     private final Map<String, List<ApiPermissionMetadata>> reportedApis = new ConcurrentHashMap<>();
@@ -45,7 +51,9 @@ public class ApiPermissionRegistry {
     }
 
     public List<ApiPermissionMetadata> getLocalApis() {
-        return localApis.get();
+        List<ApiPermissionMetadata> result = new ArrayList<>(localApis.get());
+        providers.forEach(provider -> result.addAll(provider.getApis()));
+        return List.copyOf(result);
     }
 
     public void updateReport(PermissionPushRequest request) {
@@ -62,21 +70,21 @@ public class ApiPermissionRegistry {
             return List.of();
         }
         List<ApiPermissionMetadata> reported = reportedApis.get(application);
-        if (reported != null) {
-            return reported;
-        }
-        List<ApiPermissionMetadata> local = localApis.get();
-        if (local.isEmpty()) {
-            return List.of();
-        }
-        return local.stream()
+        List<ApiPermissionMetadata> result = new ArrayList<>(
+                reported != null
+                        ? reported
+                        : localApis.get().stream()
+                                .filter(api -> application.equals(api.getApplication()))
+                                .toList());
+        providers.forEach(provider -> provider.getApis().stream()
                 .filter(api -> application.equals(api.getApplication()))
-                .collect(Collectors.toList());
+                .forEach(result::add));
+        return List.copyOf(result);
     }
 
     public List<String> getApplications() {
         LinkedHashSet<String> applications = new LinkedHashSet<>(reportedApis.keySet());
-        localApis.get().stream()
+        getLocalApis().stream()
                 .map(ApiPermissionMetadata::getApplication)
                 .filter(application -> application != null && !application.isBlank())
                 .forEach(applications::add);

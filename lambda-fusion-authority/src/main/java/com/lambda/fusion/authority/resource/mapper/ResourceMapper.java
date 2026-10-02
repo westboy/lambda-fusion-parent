@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
  * 资源服务数据持久层接口
@@ -22,6 +24,16 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 @InterceptorIgnore(tenantLine = "true")
 public interface ResourceMapper extends BaseMapper<ResourceEntity> {
+    /** 资源为全局管理元数据；使用不可被菜单管理删除的固定锁行串行化路径检查和写入。 */
+    @Select("SELECT ID FROM la_resource_tree_lock WHERE ID = 'tree' FOR UPDATE")
+    String lockResourceTree();
+
+    @Delete({
+        "<script>DELETE FROM la_api_resources WHERE resource_id IN",
+        "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+        "</script>"
+    })
+    void deleteApiBindings(@Param("ids") Set<String> ids);
     /**
      * 根据操作用户查询所有下级(直接下级和间接下级)的信息
      *

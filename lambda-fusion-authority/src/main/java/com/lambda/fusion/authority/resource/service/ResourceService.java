@@ -10,6 +10,8 @@ import java.util.List;
 import org.jspecify.annotations.NonNull;
 
 public interface ResourceService {
+    /** 管理事务内锁定资源树；归属和路径检查必须与后续变更处于同一锁边界。 */
+    void lockResourceTree();
     /**
      * 查询资源列表
      */

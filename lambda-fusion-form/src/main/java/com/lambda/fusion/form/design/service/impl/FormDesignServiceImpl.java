@@ -25,10 +25,13 @@ import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.support.FieldConfigs;
+import com.lambda.fusion.form.runtime.support.FormLayouts;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -105,8 +108,16 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         FormDefEntity def = requireExists(id);
         validate(command);
         requireKeyFree(command.getFormKey(), id);
-        if (command.getVersion() != null && !command.getVersion().equals(def.getVersion())) {
+        if (command.getVersion() == null) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "更新必须携带草稿版本");
+        }
+        if (!command.getVersion().equals(def.getVersion())) {
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
+        }
+        if (!Objects.equals(def.getFormKey(), command.getFormKey())
+                || !Objects.equals(def.getFormType(), command.getFormType())
+                || !Objects.equals(def.getTableName(), command.getTableName())) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单标识、类型和目标表创建后不可修改");
         }
         apply(def, command);
         if (!updateById(def)) {
@@ -122,6 +133,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     @Transactional(rollbackFor = Exception.class)
     public void remove(String id) {
         FormDefEntity def = requireExists(id);
+        if (def.getRouteResourceId() != null) {
+            throw new FormBusinessException(FormErrorCode.FORM_ROUTE_EXISTS);
+        }
         if (FormConstants.STATUS_PUBLISHED.equals(def.getStatus())) {
             throw new FormBusinessException(FormErrorCode.FORM_DELETE_FORBIDDEN);
         }
@@ -150,6 +164,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             FormFieldEntity entity = new FormFieldEntity();
             entity.setFormId(formId);
             entity.setFieldName(item.getFieldName());
+            entity.setLabel(item.getLabel());
             entity.setColumnName(item.getColumnName().toUpperCase(Locale.ROOT));
             entity.setFieldType(item.getFieldType().toUpperCase(Locale.ROOT));
             entity.setNullable(!Boolean.FALSE.equals(item.getNullable()));
@@ -174,11 +189,17 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     }
 
     private void validate(FormDefSaveCommand command) {
+        if ("design".equalsIgnoreCase(command.getFormKey())) {
+            throw new FormBusinessException(FormErrorCode.FORM_KEY_RESERVED);
+        }
         if (!FormConstants.FORM_TYPES.contains(command.getFormType())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单类型非法：" + command.getFormType());
         }
         if (!FormConstants.isIdentifier(command.getTableName())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表名非法：" + command.getTableName());
+        }
+        if (tableMetadataReader.isExcluded(command.getTableName())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表未开放动态读写：" + command.getTableName());
         }
         if (FormConstants.FORM_TYPE_TREE.equals(command.getFormType())
                 && (command.getTreeConfig() == null || command.getTreeConfig().isBlank())) {
@@ -208,6 +229,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             if (!FormConstants.isIdentifier(item.getColumnName())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "列名非法：" + item.getColumnName());
             }
+            if (FormConstants.isSystemColumn(item.getColumnName()) || "id".equalsIgnoreCase(item.getFieldName())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "禁止映射系统字段：" + item.getColumnName());
+            }
             FieldConfigs.validate(objectMapper, item.getQueryConfig(), item.getListConfig(), item.getFormConfig());
         }
         if (command.getLogicDeleteColumn() != null
@@ -225,6 +249,13 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             }
         }
         validateListConfig(command.getListConfig());
+        var layout = FormLayouts.compile(
+                FormLayouts.read(objectMapper, command.getFormLayout()),
+                command.getFields().stream()
+                        .sorted(Comparator.comparingInt(field -> field.getSort() == null ? 0 : field.getSort()))
+                        .map(FormFieldItem::getFieldName)
+                        .toList());
+        command.setFormLayout(objectMapper.writeValueAsString(layout));
         for (FormRelationItem item : command.getRelations()) {
             if (!FormConstants.CASCADE_DELETE.equals(item.getCascadeStrategy())
                     && !FormConstants.FORBID_DELETE.equals(item.getCascadeStrategy())) {
@@ -267,6 +298,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setSkipContractColumns(command.getSkipContractColumns());
         def.setLogicDeleteColumn(command.getLogicDeleteColumn());
         def.setListConfig(command.getListConfig());
+        def.setFormLayout(command.getFormLayout());
     }
 
     /** 列表级配置 JSON 的顶层键白名单校验 */

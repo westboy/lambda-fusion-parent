@@ -34,4 +34,19 @@ public class TableColumnView {
 
     @Schema(description = "列长度（数值型为精度）")
     private Integer length;
+
+    @Schema(description = "JDBC 类型编码")
+    private Integer jdbcType;
+
+    @Schema(description = "小数位数，日期时间列为秒的小数精度")
+    private Integer scale;
+
+    @Schema(description = "数据库默认值表达式；不在应用层执行")
+    private String defaultValue;
+
+    @Schema(description = "是否自增列")
+    private Boolean autoIncrement;
+
+    @Schema(description = "是否数据库生成列")
+    private Boolean generated;
 }

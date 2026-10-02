@@ -1,5 +1,6 @@
 package com.lambda.fusion.form;
 
+import java.util.List;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,8 +19,19 @@ public class FormProperties {
     /** 总开关 */
     private boolean enabled = true;
 
-    /** 无 Dubbo 时元数据缓存 TTL（秒）降级 */
+    /** 不可变快照编译结果缓存 TTL（秒）；状态与生效版本每次从数据库核对 */
     private long cacheTtlSeconds = 300;
+
+    /** 允许动态读写的物理表名（精确匹配），默认不开放任何业务表。 */
+    private List<String> allowedTables = List.of();
+
+    public List<String> getAllowedTables() {
+        return List.copyOf(allowedTables);
+    }
+
+    public void setAllowedTables(List<String> allowedTables) {
+        this.allowedTables = allowedTables == null ? List.of() : List.copyOf(allowedTables);
+    }
 
     /** 查询条件数上限 */
     private int maxConditionCount = 20;
@@ -30,8 +42,13 @@ public class FormProperties {
     /** 选表导列与发布校验的表名排除正则（元数据表自身与 Liquibase 系统表默认不可映射） */
     private String tableExcludePattern = "la_form_.*|databasechangelog.*|qrtz_.*";
 
-    /** 表名排除正则编译缓存 */
-    public Pattern tableExclude() {
-        return Pattern.compile(tableExcludePattern, Pattern.CASE_INSENSITIVE);
+    /** 设计、发布与运行共同使用的目标表边界。 */
+    public boolean allowsTable(String tableName) {
+        return FormConstants.isIdentifier(tableName)
+                && allowedTables != null
+                && allowedTables.contains(tableName)
+                && !Pattern.compile(tableExcludePattern, Pattern.CASE_INSENSITIVE)
+                        .matcher(tableName)
+                        .matches();
     }
 }

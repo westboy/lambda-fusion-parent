@@ -1,0 +1,79 @@
+package com.lambda.fusion.form.runtime.assembler;
+
+import com.lambda.fusion.form.runtime.model.FormSchemaView;
+import com.lambda.fusion.form.runtime.support.FormModel;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.stereotype.Component;
+
+/** 已编译模型的唯一渲染协议出口，供运行页和设计预览共用。 */
+@Component
+public class FormSchemaAssembler {
+    public FormSchemaView assemble(FormModel model) {
+        FormSchemaView view = new FormSchemaView();
+        view.setFormKey(model.formKey());
+        view.setFormName(model.formName());
+        view.setFormType(model.formType());
+        view.setVersion(model.version());
+        view.setSkipContractColumns(model.skipContractColumns());
+        view.setLogicDeleteColumn(model.logicDeleteColumn());
+        view.setListConfig(toListConfig(model.listConfig()));
+        view.setTreeConfig(model.treeConfig());
+        view.setFormLayout(model.formLayout());
+        List<FormSchemaView.FieldSchema> fields = new ArrayList<>();
+        model.fields().forEach(field -> {
+            FormSchemaView.FieldSchema schema = toFieldSchema(field);
+            if (field.column().equals(model.logicDeleteColumn())) {
+                schema.setFormShow(false);
+                schema.setReadonly(true);
+            }
+            fields.add(schema);
+        });
+        view.setFields(fields);
+        return view;
+    }
+
+    private FormSchemaView.ListConfig toListConfig(FormModel.ListConfig config) {
+        FormSchemaView.ListConfig view = new FormSchemaView.ListConfig();
+        view.setLayout(config.layout());
+        view.setPageSizes(config.pageSizes());
+        view.setAdvancedQuery(config.advancedQuery());
+        view.setFullQuery(config.fullQuery());
+        view.setShowSeq(config.showSeq());
+        view.setButtons(config.buttons().stream()
+                .map(b -> {
+                    FormSchemaView.ButtonConfig item = new FormSchemaView.ButtonConfig();
+                    item.setAction(b.action());
+                    item.setShow(b.show());
+                    item.setLabel(b.label());
+                    return item;
+                })
+                .toList());
+        return view;
+    }
+
+    private FormSchemaView.FieldSchema toFieldSchema(FormModel.FormField field) {
+        FormSchemaView.FieldSchema schema = new FormSchemaView.FieldSchema();
+        schema.setName(field.name());
+        schema.setLabel(field.label());
+        schema.setType(field.type());
+        schema.setNullable(field.nullable());
+        schema.setDefaultValue(field.defaultValue());
+        schema.setDictType(field.dictType());
+        schema.setQueryShow(field.query().show());
+        schema.setQueryOp(field.query().op());
+        schema.setQueryDefaultValue(field.query().defaultValue());
+        schema.setListShow(field.list().show());
+        schema.setWidth(field.list().width());
+        schema.setAlign(field.list().align());
+        schema.setFormat(field.list().format());
+        schema.setFormShow(field.form().show());
+        schema.setComponent(field.form().component());
+        schema.setProps(field.form().props());
+        schema.setRules(field.form().rules());
+        schema.setReadonly(field.form().readonly());
+        schema.setPersisted(field.persisted());
+        schema.setSort(field.sort());
+        return schema;
+    }
+}

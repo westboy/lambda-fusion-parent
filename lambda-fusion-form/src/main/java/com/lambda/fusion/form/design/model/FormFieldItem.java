@@ -27,6 +27,10 @@ public class FormFieldItem extends BaseVO<FormFieldEntity> {
     @Schema(description = "字段标识（前端 vModel）")
     private String fieldName;
 
+    @Size(max = 128, message = "字段显示名不能超过 128 字符")
+    @Schema(description = "业务显示名")
+    private String label;
+
     @NotBlank(message = "列名不能为空")
     @Size(max = 64, message = "列名不能超过 64 字符")
     @Pattern(regexp = "^[A-Za-z][A-Za-z0-9_]*$", message = "列名只能由字母、数字、下划线组成且以字母开头")

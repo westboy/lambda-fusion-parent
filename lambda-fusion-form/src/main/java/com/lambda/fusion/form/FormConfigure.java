@@ -1,10 +1,25 @@
 package com.lambda.fusion.form;
 
+import com.lambda.fusion.authority.resource.service.PermissionService;
+import com.lambda.fusion.authority.resource.service.ResourceService;
+import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
+import com.lambda.fusion.form.design.adapter.FormRouteGateway;
+import com.lambda.fusion.form.design.mapper.FormDefMapper;
+import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
+import com.lambda.fusion.permission.service.ApiPermissionProvider;
+import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Form 模块装配类
@@ -19,4 +34,27 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(FormProperties.class)
 @ComponentScan(basePackageClasses = FormConfigure.class)
 @MapperScan(basePackages = "com.lambda.fusion.form.**.mapper")
-public class FormConfigure {}
+public class FormConfigure {
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(ResourceService.class)
+    @ConditionalOnBean({ResourceService.class, PermissionService.class})
+    static class AuthorityIntegration {
+        @Bean
+        FormRouteGateway formRouteGateway(ResourceService resources, PermissionService permissions, ObjectMapper json) {
+            return new AuthorityFormRouteGateway(resources, permissions, json);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(ApiPermissionRegistry.class)
+    @ConditionalOnBean(ApiPermissionRegistry.class)
+    static class PermissionIntegration {
+        @Bean
+        ApiPermissionProvider formApiPermissionProvider(
+                FormDefMapper forms, ObjectProvider<RequestMappingHandlerMapping> mappings, Environment environment) {
+            return new FormApiPermissionProvider(
+                    forms, mappings, environment.getProperty("spring.application.name", "unknown-app"));
+        }
+    }
+}

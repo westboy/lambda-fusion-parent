@@ -1,6 +1,6 @@
 # 动态表单（lambda-fusion-form）设计
 
-> 状态：P0 已实施（2026-09-28）；P1 设计器三步化已实施（2026-09-29，§4.9）；其余 P1 起待开发，分期见 §15
+> 状态：P0 与第一批数据正确性整改已完成；已实现 Vben 画布、单表契约、独立发布路由及统一权限接入。2026-10-02 预览已接入后端数据引擎，查询和增删改查操作真实业务表，详见[审计与整改记录](dynamic-form-audit-20260930.md)。
 > 实施记录：`lambda-fusion-form` 模块 + `lambda-form-changelog.xml` 四表 + 管理端 8 个前端文件 + startup 演示表 `la_demo_leave`；与本文的偏差已在 §4.4、§9、§10、§15 就地标注
 > 相关阅读：`.rule/engineering-contract.md`（§3 自动配置、§5 多租户、§6 Liquibase、§9 Entity/Service、§10 包结构、§16 安全、§19 特性开关、§20 最小充分设计）、`.rule/package-structure.md`、`docs/design/workflow.md`（流程集成范式 §10.2）
 > 技术基线：Java 21 / Spring Boot 4.1.1 / MyBatis-Plus 3.5.17 / warm-flow 1.8.9 / vben 5.6 + tdesign
@@ -36,7 +36,7 @@
 
 本模块不做运行时建表，契约 §6 无需修订：
 
-- 表单目标表必须是经 Liquibase changelog 治理预建的物理表（携带 `tenant_id` 与审计四列），发布时校验列存在性与类型兼容（§5.5）；
+- 表单目标表必须是经 Liquibase changelog 治理预建、且在 `allowed-tables` 中显式开放的物理表（携带 `tenant_id` 与审计四列），发布时校验列存在性与类型兼容（§5.5）；
 - 设计器只做"字段映射 + UI/查询/校验配置"，不产生 DDL；
 - 新表诉求走毕业路径：元数据 → 生成源码 + changelog → 正常评审部署。
 
@@ -44,7 +44,7 @@
 
 - 不做运行时建表/DDL（§2.2）；
 - 不做运行期字节码动态 Bean（§2.1）；
-- 不做拖拽式画布设计器（表格化编辑起步）；
+- 首版采用表格化配置；2026-10-01 已接入 Vben 拖拽画布、共享栅格布局与当前设计/草稿/版本预览，见 §10.2；
 - 不做动态多表 JOIN 查询（两段式替代，§4.4）；
 - 不做导入导出/批量操作（待真实诉求再评估）；
 - 不做表单事件脚本与自定义前端按钮（非标逻辑走 §4.7 SPI 或毕业路径）；
@@ -72,7 +72,7 @@
 │ ┌───────────────────────┐  └───────────────────────────────────────────────┘ │
 │ │ integration/ 集成子域   │  FormDataInterceptor SPI / warm-flow 桥接（P2）    │ │
 │ └───────────────────────┘                                                    │
-│  缓存：快照读穿缓存 + TTL；跨节点 Dubbo broadcast 失效为 P2（§4.2）             │
+│  缓存：逐次核对 DB 状态/版本，按表单 ID 复用匹配版本的编译结果（§4.2）          │
 └──────────────┬───────────────────────────────┬───────────────────────────────┘
                ▼                               ▼
    元数据表 la_form_*（changelog 治理）   业务表 la_*（既有物理表，changelog 治理）
@@ -84,12 +84,14 @@
 
 草稿与发布物分离，是低代码语义的底线（已发布版本持续可用，草稿随便改）：
 
-- `la_form_def` 是**草稿工作行**：设计器就地编辑 def/field/relation 三表，`@Version` 乐观锁防并发覆盖；`published_version` 指针标识对外生效的快照版本（空 = 从未发布）；
+- `la_form_def` 是**草稿工作行**：设计器就地编辑 def/field/relation 三表，更新必须携带 version，`@Version` 乐观锁防并发覆盖；formKey、formType、tableName 创建后不可修改；`published_version` 指针标识对外生效的快照版本（空 = 从未发布）；
 - `la_form_def_version` 是**不可变发布快照**：发布时把 def+fields+relations 序列化为一份全量 JSON 写入，版本号单调递增；快照永不修改；
-- **发布**：单事务内完成发布校验（§5.5）→ 快照内容 MD5 去重（与当前生效快照一致则拒绝）→ 写快照 → 拨指针；事务提交后广播失效（跨节点广播 P2，P0 为节点内 `evict`）；
-- **回滚**：`published_version` 回指历史快照 + 失效，一行更新，无快照增删；
+- **发布**：服务入口校验发布权限 → 读取已保存草稿并生成快照 → MD5 去重 → 编译及目标表校验（§5.5）→ 乐观锁竞争生效指针 → 插入不可变快照；指针和快照在同一事务内提交，失败整笔回滚，并发失败者返回草稿冲突；提交后清除本节点编译缓存；
+- **回滚**：校验发布权限，重新编译指定快照并检查当前目标表约束，再将 `published_version` 回指历史版本；提交后失效，无快照增删；
 - **停用**：`status` 置 `DISABLED` + 失效，运行时拒绝该表单全部数据请求；
 - 运行时只读快照（§4.2），草稿永不对外生效。
+
+版本发布保留上述职责，不隐式创建菜单或授予角色权限。独立“发布路由”负责通用页面挂载和资源管理；设计与版本预览独立于发布和路由挂载。当前处于开发阶段，不实现旧配置、旧快照格式或历史数据迁移兼容。
 
 ### 4.2 表单模型编译与缓存
 
@@ -112,12 +114,13 @@ FormModel = {
 
 查询/排序白名单不另存副本：`QueryAstValidator` 直接按 `fields` 的 `queryShow`（条件字段）与 `listShow`（排序列）派生，避免白名单与字段定义两份事实（契约 §20.3）。`tree` 的 `dictType` 字段已建模但 P0 编译期只接受 `sourceType=SELF`，其他来源抛 `FORM_TABLE_INVALID`（§4.4）。
 
-- 缓存 key = `{tenantId, formKey}`，值为当前 `published_version` 对应的 `FormModel`；读穿加载，版本变化即 key 内值替换；
-- 失效：发布/停用/回滚后本节点立即失效；跨节点经 Dubbo broadcast 通知各节点（P2，AI 模块 `DubboInvalidationConfiguration` 同模式），在此之前由 TTL（`lambda.fusion.form.cache-ttl-seconds`）兜底（契约 §4.1 优雅降级）；
-- 草稿工作行不进缓存——TTL 降级节点也只会编译到已发布快照，半成品草稿污染运行时的窗口不存在；
-- `FormModel` 不可变，读取全程无锁。
+- 每次 `FormModelProvider.require` 经框架租户 Mapper 查询当前定义，检查停用、生效指针和目标表允许清单；DB 是状态与生效版本的唯一事实来源；
+- 缓存 key = 数据库表单 ID，只有缓存模型版本与本次查得的 `published_version` 相同才命中；同名但不同租户的表单不会共用条目；
+- 发布/停用/回滚在事务提交后清除本节点条目。旧请求晚到回填旧版本时，下次请求因版本不匹配重新编译，不会将旧模型作为新版本使用；
+- TTL（`lambda.fusion.form.cache-ttl-seconds`）只控制编译结果的复用时间，状态和版本正确性不依赖 TTL 或广播；草稿字段不进入运行模型缓存；
+- 模型字段和关系列表、组件属性和规则外层 Map 为只读视图；嵌套配置按只读方式消费。
 
-**P0 实施现状**：缓存为节点内 `ConcurrentHashMap` + TTL（`cacheTtlSeconds` 到期即重编译），发布/停用/回滚后本节点立即 `evict`；Dubbo 跨节点广播为 P2（§15），在此之前多节点部署存在 TTL 窗口（§13 R4）。
+**当前边界**：节点内采用 `ConcurrentHashMap` + TTL，尚无容量上限或主动清理。各节点逐次查 DB，无需广播才能识别已提交的停用和版本切换；已经取得模型的在途操作不会被强制取消。目标表结构变更仍需正常部署和处理在途请求（§13 R4）。
 
 ### 4.3 查询 AST 白名单（安全红线，契约 §16）
 
@@ -131,7 +134,9 @@ FormModel = {
 }
 ```
 
-`field` 一律是**字段标识**（前端 vModel），物理列名只在服务端解析；`between` 的 value 为长度 2 数组、`in` 为数组、`isNull/isNotNull` 忽略 value。
+`field` 一律是**字段标识**（前端 vModel），物理列名只在服务端解析；`between` 的 value 为长度 2 且端点非空的数组（0 有效），`in` 为非空、无 null 元素的数组且逐元素绑定参数，`isNull/isNotNull` 忽略 value。前端为空值操作提供显式选择，数字区间采用双输入组件，IN 支持多选或逗号分隔输入。LIKE 的完整模式值直接参数绑定。
+
+列表、详情和树节点统一投影为 `{id, 字段标识: 值}`，保留 null 键，屏蔽 JDBC 驱动列名大小写差异。默认排序使用 `CREATED_AT DESC, ID DESC`；`skipContractColumns=true` 时使用 `ID DESC`。
 
 三层白名单（全部对照 `FormModel` 服务端校验）：
 
@@ -160,16 +165,23 @@ FormModel = {
 - 列表页的"选树节点过滤全部子孙"未实现，`maxTreeDescendants` 与 `FORM_TREE_DESCENDANT_LIMIT`(18123) 为 P1 生效项；树来源 P0 只支持 `SELF` 自关联（`DICT` 等来源在编译期即拒绝）；
 - 上述三项随 P1 一并交付，届时 §4.4 全部条款生效。
 
-### 4.5 审计字段填充
+### 4.5 系统字段与逻辑删除
 
 `GlobalMetaObjectHandler` 只覆盖实体路径，通用引擎的 Map 投影不经过它——这是本模块唯一的手工点。写路径在 `DynamicDataServiceImpl#fillAudit` 内联填充 `CREATED_BY/CREATED_AT/UPDATED_BY/UPDATED_AT`（经 `AuthUtils.getSafeUsername()` 取当前身份，无登录上下文时退化为匿名），目标表的审计四列在发布校验时强制存在（§5.5）。
 
+ID、TENANT_ID、审计四列及对外字段名 `id` 不允许作为普通业务字段映射；保存、快照编译和写入归一均校验。租户归属继续由框架插件处理。
+
+配置逻辑删除列时，该列必须映射为 INT/BOOL，统一 0 有效、1 已删除。新增由引擎初始化，普通编辑忽略用户对该列的写入，编辑 Schema 隐藏该字段。分页计数、列表、详情、树、更新、删除和子表引用检查统一限定有效记录；写入检查影响行数，已不存在的记录不能返回成功。
+
 ### 4.6 权限模型与权限码约定
 
-- 运行时数据接口：`StpUtil.checkPermission("form:{formKey}:{action}")` 编程式检查（action ∈ `page/add/edit/delete`），替代注解（路径参数运行期才知，注解不适用）；
-- 设计接口：固定权限码 `form:design:*`，与既有管理端页面同构；
-- 权限项作为 authority 资源注册，与菜单/按钮同构；P0 手工注册（§10.3），`/schema` 端点返回服务端已解析的按钮权限集，前端据此渲染操作列；
-- 菜单挂载：每个表单一个薄包装页（路由组件由菜单 `RES_PATH` 推导，见 §10.1），包装页只声明 `formKey`，渲染逻辑全在共享引擎组件内。
+- 运行时数据接口：通用端点用 `@FormPermission(FormAction)` 声明操作，`FormPermissionHandler` 实现 Sa-Token 的 `SaAnnotationHandlerInterface`，由 `SaBeanInject` 注册至统一注解鉴权链，从 MVC 已解析的 formKey 得到 `form:{formKey}:{action}`；action 为 `page/add/edit/delete`，不再另注册表单 MVC 鉴权拦截器；
+- 设计接口：固定权限码 `form:design:*`，用标准 `@SaCheckPermission` 声明，由 `lambda-cloud-processor` 编译生成 `META-INF/permissions/api-permissions.json`，再经 `LocalPermissionLoader` 进入 `ApiPermissionRegistry`；预览独立使用 `form:design:preview`，详情权限不替代预览权限；
+- `design` 为管理权限保留标识，草稿保存、模型编译和运行入口均拒绝业务表单占用，避免业务接口授权扩大为设计管理权；
+- 请求由 Cloud `SaTokenInterceptor` 统一处理登录及 `ROLE_DEV` 豁免。预览、路由 Service 不再重复执行接口权限注解对应的裸 `StpUtil` 检查。发布/停用/回滚及菜单适配器的跨能力内部调用经 `AuthUtils.checkPermission` 校验，使用框架活跃登录类型并沿用开发者豁免；保存即发布仍要求发布权，拒绝时回滚同一事务中的草稿变更；
+- 动态按钮资源码为 `form-ui:{formKey}:{action}`，与接口权限码分开，避免登录权限合并按钮标识时绕过接口绑定；路由发布通过 `PermissionService.bind` 绑定 `la_api_resources`，授权与撤销复用 RoleService 和提交后缓存刷新；
+- `FormApiPermissionProvider` 从当前租户已发布定义和实际 MVC 映射生成七个接口的目录，补充进 `ApiPermissionRegistry` 的本地查询；静态扫描目录仍然保留，不依赖编译期枚举 formKey。当前不把动态租户目录推送到全局静态上报；
+- `/schema` 经 `AuthUtils.hasPermission` 返回操作权限，开发者不依赖逐项授权记录；前端统一 `useAccess().hasAccessByCodes` 同样豁免精确的 `ROLE_DEV`。该豁免不改变租户隔离、表允许清单、发布状态或数据校验。普通用户通过菜单与接口绑定、角色授权取得对应权限，挂载不自动授权。
 
 ### 4.7 扩展点 SPI（P2）
 
@@ -190,7 +202,7 @@ public interface FormDataInterceptor {
 ### 4.8 集群部署
 
 - 元数据为 DB 单一事实来源（契约 §20.3），各节点只缓存已发布快照（§4.2）；
-- 发布/回滚/停用均为"一行指针更新 + 缓存失效"（跨节点广播 P2），无 DDL、无字节码，集群不存在"结构已变、缓存未刷新"的窗口；
+- 发布/回滚/停用提交后，各节点下一次运行模型读取均核对 DB 状态与版本；本节点提交后清缓存用于释放编译结果，正确性不依赖跨节点广播；
 - 目标表结构演进走正常部署（§2.2）；目标表字段下架须先停用引用它的表单。
 
 ### 4.9 设计器三步化与字段配置块（P1，2026-09-29 实施）
@@ -217,6 +229,7 @@ public interface FormDataInterceptor {
 | --- | --- | --- |
 | `ID` | varchar(32) PK | 主键 |
 | `FORM_KEY` | varchar(64) NN | 表单标识，URL 与权限码的一部分 |
+| `ROUTE_RESOURCE_ID` | varchar(32) nullable UK | 受此表单管理的菜单资源 ID；路由配置以 authority 资源为准，不进入发布快照 |
 | `FORM_NAME` | varchar(128) NN | 显示名 |
 | `FORM_TYPE` | varchar(16) NN | `SINGLE` / `TREE` / `MASTER_SUB` |
 | `TABLE_NAME` | varchar(64) NN | 目标物理表名（§5.5 约束） |
@@ -277,11 +290,19 @@ public interface FormDataInterceptor {
 
 ### 5.5 目标物理表约束
 
-`la_form_def.table_name` 必须指向 Liquibase 治理下已存在的物理表，发布时校验：
+`la_form_def.table_name` 必须指向 Liquibase 治理下已存在、支持事务的专用业务表。当前运行 SQL 以 MySQL 为支持范围，H2 MySQL 模式用于自动化测试；未声明其它数据库方言可用。发布、回滚、启用及写入统一经 `TargetTableContract` 重新读取并检查物理契约：
 
-1. 表存在，且未命中 `lambda.fusion.form.table-exclude-pattern` 的表（元数据表自身、Liquibase/Quartz 系统表等）不可映射；
-2. 每个 `column_name` 在表中存在且类型与 `field_type` 兼容（`INT`↔`DECIMAL` 放宽、`TEXT` 可映射 `STRING` 列、`DICT`/`FILE` 可映射字符/整型列）；
-3. 必含 `ID`、`tenant_id` 与审计四列；挂流程的表另需 `flow_status` / `flow_instance_id`（由该表所属模块的 changelog 定义，随 P2 一并纳入发布校验，§11）。
+1. 表存在、名称满足标识符规则、在 `lambda.fusion.form.allowed-tables` 中精确匹配且未命中 `table-exclude-pattern`；模块默认允许清单为空，startup 仅开放 `la_demo_leave`；
+2. 元数据限定当前连接的 catalog/schema，转义 JDBC 模式字符并复核返回的表名；真实主键必须为单列 `ID`，不可自增或生成。ID 至少容纳 19 位雪花值，支持长度至少 19 的字符列、BIGINT、DECIMAL(p≥19,0)；查询结果中的 `id` 始终为字符串。
+3. 每个映射都必须有真实物理列。STRING/TEXT/FILE 仅映射文本列，JSON/ENUM/SET 不作为普通文本开放；DICT 支持文本或整数列；INT 支持整数或精确小数列，DECIMAL 只支持 DECIMAL/NUMERIC，不映射整数或近似浮点列；BOOL 支持布尔、单 bit 或 TINYINT；DATE/DATETIME 匹配日期/日期时间列，不将 YEAR 当作 DATE。写入还检查文本容量、整数范围、小数精度与小数秒精度，不截断或四舍五入。
+4. 引擎写入列不可自增或生成；未赋值的物理 NOT NULL 列必须有数据库默认值或由数据库生成。可清空字段不可映射 NOT NULL 列。无法输入的必填字段（隐藏或控件只读）必须有表单默认值或数据库默认值。`persisted=false` 表示读取现有列但不写入，支持数据库生成列，尚不提供脱离物理列的计算字段；导列自动将自增/生成列设为不提交、只读。
+5. 使用 **SqlSessionFactory 中实际启用的租户拦截器** 判断策略，不另写租户 SQL 或复制 ignore-tables 配置。正常契约要求租户插件过滤目标表、字符串 `TENANT_ID` 列至少 32 字符及审计四列（操作人列至少 32 字符、时间列为 DATETIME/TIMESTAMP）。`skipContractColumns=true` 仅跳过审计要求与填充，不能绕过实际租户过滤；被过滤的表仍须有 TENANT_ID。显式共享表必须同时跳过契约、被实际插件忽略（或未启用插件）且无 TENANT_ID。启用租户插件时，缺失当前租户上下文一律拒绝动态数据访问。
+
+表单默认值保持文本存储协议，但编译时即做类型和规则检查，发布时再检查列容量；新增转换为布尔、整数、BigDecimal 或日期时间后绑定。未提交且无表单默认值的字段可交给数据库默认值，SQL 表达式只由数据库执行；映射字段的实际默认值在新增事务内回读校验，违反规则则回滚。显式 null 不触发任何默认值；更新未提交字段保持原值。
+
+`FormFieldValidator` 在服务端执行 `required/min/max/pattern`，并拒绝未知规则、无效正则、错误规则类型与倒置范围。min/max 对文本表示 UTF-16 长度（与前端一致），对数字表示数值范围；物理列容量另按 JDBC 元数据检查。日期采用严格 ISO 解析，DATETIME 也接受空格分隔的日期时间。正则由 Java Pattern 执行，设计器应使用前后端共通语法。可空文本可显式清空，必填文本拒绝全空白。
+
+物理元数据不复制到快照或长期缓存。数据库默认表达式、唯一键、外键、CHECK、触发器、字符集及数据库时间范围仍以目标数据库为准；本契约不替代专用业务服务、字典成员校验或文件引用协议。`readonly/formShow/listShow` 属于展示配置，不是字段级权限。挂流程表的流程列仍随 P2 一并接入校验（§11）。
 
 毕业路径为新表单建表时，生成表沿用 `la_df_` 前缀约定，经正常 changelog 与评审落地。
 
@@ -340,7 +361,8 @@ com.lambda.fusion.form
 | tools.jackson.core:jackson-databind | 必需 | 快照 JSON 序列化（Jackson 3，版本经 BOM） |
 | lambda-cloud-starter-liquibase | 必需 | `lambda-form-changelog.xml` 聚合执行 |
 | lambda-cloud-starter-logger | 必需 | 设计子域写操作留痕（`@OperationLog`） |
-| lambda-cloud-starter-dubbo | 可选 | P2 跨节点失效广播；缺失时 TTL 降级（契约 §4.1） |
+| lambda-cloud-starter-dubbo | 可选（现有声明，未使用） | 不承担当前状态/版本正确性；缓存核对见 §4.2 |
+| com.h2database:h2 | 仅 test | 真实 Mapper、租户插件和事务集成测试；版本沿用 BOM，不改变运行数据库 |
 
 P0 未引入 oss / workflow / dictionary 依赖：FILE 字段只存附件 id（读写由前端经 oss 接口完成）、warm-flow 桥接与字典翻译（前端 `useDict` 已覆盖）分别在 P2 / 无需后端介入。
 
@@ -357,6 +379,10 @@ P0 未引入 oss / workflow / dictionary 依赖：FILE 字段只存附件 id（�
 | 方法与路径 | 权限码 | 说明 |
 | --- | --- | --- |
 | `GET /v1/form-design/page` | `form:design:page` | 表单分页（草稿行 + 生效版本号） |
+| `POST /v1/form-design/routes` | `form:design:page` | 当前页表单的实际挂载状态，按租户验证 ID 归属 |
+| `GET /v1/form-design/{id}/route` | `form:design:route` | 挂载能力与现有配置 |
+| `PUT /v1/form-design/{id}/route` | `form:design:route` + 既有资源管理权限 | 创建或更新菜单和四项接口权限绑定，不改发布版本、不自动授权角色 |
+| `DELETE /v1/form-design/{id}/route` | `form:design:route` + 既有资源删除/解绑权限 | 撤销本表单拥有的入口；保留草稿、历史和当前生效版本 |
 | `GET /v1/form-design/{id}` | `form:design:detail` | 草稿详情（def + fields + relations） |
 | `POST /v1/form-design` | `form:design:add` | 新建草稿 |
 | `PUT /v1/form-design/{id}` | `form:design:edit` | 保存草稿（`@Version` 乐观锁） |
@@ -378,10 +404,10 @@ P0 未引入 oss / workflow / dictionary 依赖：FILE 字段只存附件 id（�
 | `GET /v1/form/{formKey}/tree` | `form:{formKey}:page` | TREE 树数据：按 `parentValue` 取直接子节点（P0 仅自关联树，子孙过滤见 §4.4） |
 | `GET /v1/form/{formKey}/{id}` | `form:{formKey}:page` | 详情（主从含子表为 P1） |
 | `POST /v1/form/{formKey}` | `form:{formKey}:add` | 新增（主从事务写入为 P1） |
-| `PUT /v1/form/{formKey}/{id}` | `form:{formKey}:edit` | 编辑（全量替换语义：非空字段必须一并提交） |
+| `PUT /v1/form/{formKey}/{id}` | `form:{formKey}:edit` | 部分更新：未提交字段保持原值，显式 null 清空可空字段；无可写项拒绝 |
 | `DELETE /v1/form/{formKey}/{id}` | `form:{formKey}:delete` | 删除（按级联策略，P0 一律拒绝有子表数据的记录） |
 
-Controller 只编排（契约 §9.3），每个端点先 `StpUtil.checkPermission`；出参分页统一 `PageView`（契约 §8.2），行形态为按元数据裁剪的 `Map` 投影；表单不存在/未发布/已停用分别抛 `FORM_NOT_FOUND`/`FORM_NOT_PUBLISHED`/`FORM_DISABLED`。
+Controller 只编排（契约 §9.3），权限在 Cloud 统一注解鉴权链中检查；出参分页统一 `PageView`（契约 §8.2），行形态为按元数据裁剪的 `Map` 投影；表单不存在/未发布/已停用分别抛 `FORM_NOT_FOUND`/`FORM_NOT_PUBLISHED`/`FORM_DISABLED`。
 
 ### 8.3 渲染元数据契约（前端消费）
 
@@ -402,19 +428,44 @@ Controller 只编排（契约 §9.3），每个端点先 `StpUtil.checkPermissio
 }
 ```
 
-三段配置在快照内是**结构化对象**（服务端已做键白名单与值域校验：op ∈ 操作符白名单、width 1-500、align ∈ left/center/right、format ∈ date/datetime/dict、component 走标识符白名单），前端直接使用不再 `JSON.parse`；`treeConfig` 仍为设计端原样存储的 JSON 字符串。`label` P0 直接取字段标识（`la_form_field` 无显示名列；若要展示列注释或自定义中文名，需补 `LABEL` 列，属后续增强）。
+三段配置在快照内是**结构化对象**（服务端已做键白名单与值域校验：op ∈ 操作符白名单、width 1-500、align ∈ left/center/right、format ∈ date/datetime/dict、component 走标识符白名单），前端直接使用不再 `JSON.parse`；`treeConfig` 仍为设计端原样存储的 JSON 字符串。`label` 保存于 `la_form_field.FIELD_LABEL`，导列默认使用列注释，缺省时取字段标识。`formLayout` 在草稿中以 JSON 文本保存，在快照与 Schema 中是 `{ columns, items: [{ field, span }] }`，列数为 1～4，字段引用唯一且必须存在，占列不超过全局列数。
 
-`permissions` 由服务端按当前用户逐 action 解析（`StpUtil.hasPermission`，action ∈ `add/edit/delete`；`page` 是访问本页的前提，已在 Controller 入口校验，故不下发），前端只按布尔渲染按钮，不自行拼权限码。
+`permissions` 由服务端按当前用户逐 action 解析（`AuthUtils.hasPermission`，action ∈ `page/add/edit/delete`），与框架开发者豁免保持一致；`page` 同时是访问 Schema 的前提，在统一注解鉴权链中检查。前端按布尔值渲染运行操作，不用路由管理权限替代数据接口权限。
+
+设计预览使用独立的 `form:design:preview` 权限点，元数据与数据端点均由编译期处理器收集并进入现有 permission-api 目录。数据操作在服务端解析真实 formKey 后，继续经 `AuthUtils` 校验 `form:{formKey}:page/add/edit/delete`；提交未保存设计还需 `form:design:add/edit`。开发者沿用统一 `ROLE_DEV` 豁免，租户过滤、状态及数据校验仍执行。仅有预览权限可查看配置，不能读写业务数据。
+
+预览打开完整运行页面，查询、分页、排序、新增、编辑、删除和详情通过后端读写目标业务表，关闭后数据仍保留。预览不要求已发布版本或已挂载路由，也不自动保存设计或发布版本。历史预览使用指定版本的字段模型访问当前业务数据，不代表历史数据快照。
+
+每次数据请求明确携带 `FormPreviewSource`，不依赖服务端会话或前端模拟数据：
+
+| 来源 | source 内容 | 后端约束 |
+| --- | --- | --- |
+| 已保存草稿 | `{formId, draftVersion}` | 由当前租户 Mapper 读取草稿；修订号必须匹配元数据预览返回的 `draftVersion` |
+| 历史版本 | `{formId, version}` | 先校验当前租户表单归属，再读取指定不可变快照 |
+| 当前设计 | `{formId?, design}` | 新表单需新增设计权且 formKey 未被占用；已有表单需编辑设计权、匹配 design.version，且不可改变表单标识、目标表和类型 |
+
+数据端点统一位于 `/v1/form-design/preview/data`：
+
+| 方法与路径 | 请求体 | 返回 |
+| --- | --- | --- |
+| `POST /page` | `{source, query}`，query 复用 `FormDataPageQuery` | `PageView`，records 的键为字段标识 |
+| `POST /{recordId}/detail` | `source` | 单条记录 |
+| `POST` | `{source, data}` | 新增记录 ID |
+| `PUT /{recordId}` | `{source, data}` | 保存结果 |
+| `DELETE /{recordId}` | `source` | 删除结果 |
+
+`POST /v1/form-design/preview` 的元数据请求也使用 source 包装。预览复用 `DynamicDataService`，每次操作检查目标表允许清单、物理契约及实际租户插件，写入复用字段规则、事务、默认值与删除语义。配置已变更时返回草稿冲突，须重新打开预览；已停用表单不允许预览数据读写。
 
 ## 9. 配置项定稿
 
 | key | 默认 | 说明 |
 | --- | --- | --- |
 | `lambda.fusion.form.enabled` | `true` | 总开关（契约 §19） |
-| `lambda.fusion.form.cache-ttl-seconds` | `300` | 元数据缓存 TTL（P0 为唯一失效兜底，Dubbo 广播 P2 生效，§4.2） |
+| `lambda.fusion.form.cache-ttl-seconds` | `300` | 快照编译结果 TTL；状态和生效版本每次查 DB（§4.2） |
+| `lambda.fusion.form.allowed-tables` | `[]` | 允许动态读写的物理表名，精确匹配、默认拒绝；startup 仅配置 `la_demo_leave` |
 | `lambda.fusion.form.max-condition-count` | `20` | AST 条件数上限（§4.3） |
 | `lambda.fusion.form.tree.max-descendants` | `500` | 树子孙 id 集上限（P1 生效，P0 未实现子孙过滤，§4.4） |
-| `lambda.fusion.form.table-exclude-pattern` | `la_form_.*\|databasechangelog.*\|qrtz_.*` | 选表导列与发布校验的表名排除正则，大小写不敏感（§5.5） |
+| `lambda.fusion.form.table-exclude-pattern` | `la_form_.*\|databasechangelog.*\|qrtz_.*` | 对允许清单追加的排除规则，大小写不敏感；设计、发布和运行共同检查（§5.5） |
 
 ## 10. 前端设计
 
@@ -428,25 +479,33 @@ packages/system-ui/src/
     ├── components/form-runtime.vue      通用运行时引擎：查询栏 + 列表 + 操作列 + 弹窗/抽屉装配
     ├── components/form-data-dialog.vue  新增/编辑弹窗（按 formShow 字段生成表单）
     ├── components/form-data-detail.vue  详情抽屉（只读，按 formShow 字段渲染）
-    ├── runtime/<formKey>/index.vue      每表单薄包装页：<FormRuntime form-key="..." />
-    └── designer/{index.vue,form-def-editor.vue}
+    ├── components/form-layout-renderer.vue 新增/编辑/详情与预览共用的布局渲染器
+    ├── form-layout.ts                   画布、表单、详情共用的字段顺序与占列
+    ├── runtime/index.vue                通用页面：显式 meta.formKey；切换表单重建运行组件
+    ├── runtime/leave_demo/index.vue     原有演示包装页
+    └── designer/                       三步设计器、form-layout-designer.vue 画布、form-preview-dialog.vue 预览
 ```
 
 引擎组件按 `formKey` 拉 `/schema` → 生成查询栏 schema（`buildSearchSchema`）与 `VxeTableGridOptions.columns`（`buildColumns`）→ 复用 `useVbenForm` / `useVbenVxeGrid`（`adapter/` 已全局封装，组件名经 `adapter/component.ts` 解析）；字典列经 `useDict` 翻译，日期/布尔经 `displayText` 格式化；操作列按 `permissions` 布尔渲染。
 
-**薄包装页不可省**：路由组件路径由菜单 `RES_PATH` 推导（`normalizeViewPath` + `pageMap` glob），一个路径只能对应一个 `.vue` 文件，因此"新增一个动态表单"= 设计端建表单 + 建菜单行 + 落一个三行的包装页（`formKey` 也可省略——组件缺省取路由末段）。
+**通用挂载**：菜单 `RES_PATH` 只承担访问路径；`EXPAND` 中明确声明 `{ "component": "/form/runtime/index", "meta": { "formKey": "leave", "formId": "..." } }`。`MenuRouteAssembler` 读取组件与参数，以资源 ID 生成稳定路由名称；显示名仍在 meta.title。运行页按当前租户的 formKey 读取生效快照，切换 formKey 会重建 Schema、查询和编辑状态；“刷新表单”重新读取版本与布局。`BUSINESS_EXPAND` 保存归属标记，供挂载管理验证，不靠路径或名称猜测归属。
 
 TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组件只渲染列表/查询/CRUD，`formType=TREE` 表单同样按列表渲染。
 
 ### 10.2 表单设计器
 
 - 起点是"选表导列"：`/tables` 选目标物理表 → `/tables/{table}/columns` 读列元数据一键生成字段草稿（`fieldName` 由列名转小驼峰、`columnName`/`fieldType` 自动带入），契约列（`ID`/`TENANT_ID`/审计四列）自动跳过，已存在的列不重复导入；
-- 字段表格化编辑：标识/列名/类型/必填/三视图显隐/查询算子/字典/组件/排序，行内增删；
-- `TREE` 类型展示 `treeConfig` JSON 编辑框，`MASTER_SUB` 类型展示主从关系行编辑；
-- 列表页承载发布/停用/回滚/版本历史（`/versions`）与可复制权限码（`form:{formKey}:page/add/edit/delete`）；
-- 本期不做拖拽画布，表格化编辑即可（契约 §20.1 最小充分）。
+- 基础页编辑字段标识、显示名、列映射、类型、可空、默认值、字典、落库与排序；列表页编辑查询与实际支持的列配置、按钮文案，预览中的列表共用运行页；
+- 表单与详情页是较大的三栏工作区：字段区拖入/点击添加，中央显示真实 Vben 控件并支持拖动排序/上下移动/移除，右侧配置标签、组件、提示、默认值、只读、必填及类型对应规则，JSON 仅作为高级属性入口；
+- 表单与详情共享 1～4 列栅格与逐字段占列，默认两列且每字段占一列。`FORM_LAYOUT` 从草稿保存、不可变快照到运行 Schema 全程使用同一结构；改名同步引用、删除映射清理引用、缩小列数收窄占列；
+- 当前设计、草稿列表、历史版本分别调用 `POST /v1/form-design/preview`、`GET /{id}/preview`、`GET /{id}/versions/{version}/preview`。配置经正式编译和统一 Schema 组装；全屏运行页携带该来源调用预览数据端点，按后端权限与按钮配置提供新增、编辑、删除和详情；
+- 预览与正式页面共用 `FormRuntime`、编辑弹窗、详情抽屉及 Vben 字段校验；原前端 `FormPreviewData` 模拟引擎已移除。查询、排序和分页由数据库执行；保存成功才关闭弹窗并重新查询，末页删除后回到有效页。刷新和关闭重开都读取已持久化数据，页面明确提示保存和删除真实生效；
+- 当前设计使用深拷贝固定本次预览模型，不自动保存草稿；异步校验后核对提交上下文，关闭或切换来源时丢弃尚未发出的提交和过期回填。已经发出的成功数据写入不会因关闭窗口撤销。文件字段完整上传协议仍属于未实现范围；
+- 设计器提供保存草稿与保存并发布；自动发布仍由服务端在保存事务内校验发布权限。显式保存并发布不改变长期的自动发布配置，发布失败时准确提示草稿已保存；
+- 列表页分别展示版本与实际挂载状态，提供发布/停用/启用/回滚/版本历史、发布或管理路由、撤销入口、进入页面及独立角色授权；启用原生效快照不新增版本；
+- 新建仅开放 `SINGLE` 与 `NORMAL`，不开放未兑现的树/主从/文件/高级查询/导入导出等选择；按钮动作去重。完整能力边界与验证见 [审计报告](dynamic-form-audit-20260930.md) 的第二阶段批次。
 
-### 10.3 菜单与权限注册（P0 手工）
+### 10.3 菜单、接口权限与角色授权
 
 菜单/按钮权限仍是 authority 资源，走 changelog 预置（与既有静态页同流程）。P0 已登记：
 
@@ -454,8 +513,14 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 | --- | --- | --- |
 | `lambda-authority-2026092800010/11` | `FmTop00001` + `FmDesign001` | 顶层"动态表单" + "表单设计"页（`/form/designer/` → `views/form/designer/index.vue`），按钮 `form:design:page/detail/add/edit/delete/table/publish`，授予 `ROLE_ADMIN`/`ROLE_SYSTEM`/`ROLE_DEV` |
 | `lambda-fusion-startup-202609280002/03` | `FmDemo00001` | 演示表单"请假动态表单"（`/form/runtime/leave_demo/` → `views/form/runtime/leave_demo/index.vue`），按钮 `form:leave_demo:page/add/edit/delete` |
+| `lambda-authority-2026093000012` | `FmDsgV001` | 新增 `form:design:preview` 设计预览权限资源；通过现有角色管理明确授权，不自动扩大角色权限 |
+| `lambda-authority-202610010001` | `FmDsgR001` | 新增 `form:design:route` 路由管理资源，仍须同时具备既有资源 CRUD、绑定/解绑及必要的移动权限；不自动授权角色 |
 
-新增动态表单时按同构补三条：菜单行（`RES_PATH` 指向该表单的运行时路径）+ 四个按钮权限码 + 角色授权。发布/版本切换时按 diff 自动注册/回收按钮权限留后续（m1 `publishResource`/`changeResource` 已有先例，§14）。
+独立“发布路由”通过 `FormRouteGateway` 的本地 authority 实现创建或更新一个菜单与四个操作资源，并绑定对应接口权限。首次挂载要求已有可用发布版本；表单行锁保证重复操作复用同一绑定，资源树固定锁行保证路径检查、归属检查与写入处于同一事务边界，冲突返回明确错误。资源上挂入其它功能的子资源后，本功能拒绝覆盖或级联撤销。
+
+角色授权是另一个操作：明确选择角色后逐项调用既有 grant/revoke API，status=0 仅授予使用权。版本发布和回滚只改变生效快照，原入口与授权继续存在。撤销入口保留版本，删除草稿前必须先撤销其资源绑定。资源、接口绑定及角色授权在事务提交后清理已有权限缓存，回滚保留旧缓存。
+
+部署需执行新增菜单绑定 changeSet `lambda-fusion-form-202610010001` 与资源树锁 changeSet `lambda-authority-202610010002`。表单模块对 authority 和 permission-api 均为可选依赖；缺少本地菜单服务时挂载能力明确不可用。动态接口目录目前限同应用、当前租户请求；跨服务权限服务尚需后续实现携带租户边界的动态目录同步，不能将它当作现有静态编译元数据直接全局上报。
 
 ## 11. warm-flow 集成（P2）
 
@@ -488,12 +553,12 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 | R1 | 新表诉求仍需一次部署（无运行时建表） | 毕业路径把摩擦降到一次评审（§2.1）；设计器引导"先建表再映射" |
 | R2 | 查询 AST 逃逸为注入面 | 三层白名单 + 值全参数化，表名/列名永不出自请求（§4.3） |
 | R3 | 通用接口性能（大宽表分页） | 分页为 `COUNT` + `LIMIT/OFFSET` 直下推（不走实体栈）；`query_show` 字段建议建索引由设计器提示；两段式级联控住 JOIN 复杂度（P1） |
-| R4 | 元数据缓存失效前的旧版本窗口 | 广播失效 + 懒加载；无 Dubbo 时 TTL 上界 300s（§4.2）；字段下架须先停用引用表单 |
+| R4 | 停用前已取得模型的在途操作，以及缓存容量增长 | 新请求逐次核对状态与版本，缓存不能绕过停用；结构变更处理在途请求；缓存容量/主动清理待完善（§4.2） |
 
 ## 14. 已知限制与后续
 
 1. **平台级共享表单**：`la_form_*` 本期租户内隔离，平台级共享走豁免白名单 + 差异化下发（可参考 m1 版本-租户绑定），后续单独立项；
-2. **按钮权限自动注册**：发布/版本切换 diff 注册（m1 `publishResource` 先例），本期手工（§10.3）；
+2. **分离部署的动态权限目录**：本地路由挂载、角色授权和运行时目录已实现；跨服务动态目录同步尚未实现。版本发布始终不承担资源注册（§10.3）；
 3. **行级数据权限**：留 DataScope 扩展；m1 的 rule 模型可作参考，但其 SQL 片段通道明确不引入（§4.3）；
 4. **导入导出/批量操作/合计列**：待真实诉求再评估（m1 有 sumColumn 与超 2 万行大导出实现可参考）；
 5. **版本导入导出**：跨环境迁移（导入换 id），随 P3 毕业路径一并落地（§15）。
@@ -504,11 +569,15 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 | --- | --- | --- |
 | P0 ✅ 已实施 | 模块骨架（pom + 三件套 + imports + 前缀登记）；`lambda-form-changelog.xml` 四表；design 子域（草稿 CRUD + 选表导列 + 发布/停用/回滚/版本历史）；runtime 子域（快照编译 + TTL 缓存 + AST 白名单 + 单表 CRUD + 权限/租户/审计 + 自关联树直接子节点）；前端引擎组件 + 设计器；startup 演示表 `la_demo_leave` 与菜单 | 模块 `mvn test` 36 项通过（AST 白名单 10 + 编译 14 + 动态数据 12）；`mvn compile` 过 Spotless/SpotBugs；演示流程见 §17 未勾选项 |
 | P1 ◐ 部分实施（2026-09-29） | 设计器三步化（§4.9）：字段显示配置归组为 `QUERY_CONFIG`/`LIST_CONFIG`/`FORM_CONFIG` 三个 JSON 配置列（键白名单 + 值域两道校验），设计器改三步向导（基础与数据 / 列表设计 / 表单与详情），列表列宽/对齐/格式化、查询默认值、字段级只读、校验规则表单化 | 模块 `mvn test` 51 项通过（新增配置解析校验 9 + 编译配置块 5）；前端 `vue-tsc` form 目录零错误 |
+| 第一批整改 ✅（2026-09-30） | 发布权限、表允许清单、系统列保护、结果投影、逻辑删除、部分更新/清空、IN/区间/空值输入、发布前编译、草稿版本与身份约束、并发发布及缓存版本核对 | `mvn -pl lambda-fusion-form -am test` 通过（form 83 项、core 3 项，含 Spotless/SpotBugs）；前端相关 Vitest 9 项及 web-tdesign vue-tsc 通过 |
+| 第二阶段设计器批次 ✅（2026-10-01） | Vben 拖拽画布、属性面板、统一布局与三种来源预览、业务显示名、启用入口、支持范围收敛 | form 93 项与 core 3 项测试通过；实际 Vben、拖拽及只读预览组件测试与专项类型检查通过；H2 验证 Liquibase 新增字段和重复执行 |
+| 第二阶段路由与接口权限批次 | 通用参数页面、独立挂载/更新/撤销、明确角色授权、动态接口目录与真实请求鉴权、提交后缓存清理 | 真实 MVC / Mapper / 事务和浏览器组件夹具验证；具体数量与边界见审计记录 |
+| 第二阶段目标表与字段契约批次（2026-10-01） | 真实主键、ID 容量、精确元数据范围、实际租户策略、审计/生成/默认列、服务端类型和规则校验 | JDBC 物理表反例、真实事务中的默认值回滚、发布/回滚/启用结构变更验证；数量及边界见审计记录 |
 | P1 | TREE 左树右表（含列表页子孙过滤 + `maxTreeDescendants`）；MASTER_SUB 主从写入与两段式级联查询、`CASCADE_DELETE` | 左树右表与主从演示 |
-| P2 | warm-flow 集成（§11 五步 + 办理页消费端）+ Dubbo 跨节点失效广播 + `FormDataInterceptor` SPI | 动态表单走通审批闭环 |
+| P2 | warm-flow 集成（§11 五步 + 办理页消费端）+ `FormDataInterceptor` SPI；缓存优化按实际性能需求评估 | 动态表单走通审批闭环 |
 | P3 | 代码生成毕业路径（含新表 changelog 生成）+ 版本导入导出 | 生成源码编译进模块 |
 
-P0 的偏差已就地登记：§4.2（广播未做）、§4.4（子孙过滤/级联删除未做）、§8.3（label 取字段标识）、§9（`tree.max-descendants` P1 生效）。
+尚未完成项已就地登记：§4.2（缓存容量）、§4.4（子孙过滤/级联删除）、§5.5（字典成员、文件协议和目标数据库部署验收）、§9（`tree.max-descendants` 未生效）、§10（分离部署下的动态目录同步）。
 
 ## 16. 关键决策
 
@@ -529,8 +598,8 @@ P0 的偏差已就地登记：§4.2（广播未做）、§4.4（子孙过滤/级
 - [x] 模块 POM 无硬编码版本，`mvn dependency:tree` 确认 MP 收敛 3.5.17（契约 §1.2）；
 - [x] 引擎 SQL 零原文拼接：`wrapper.apply` 零命中；`${}` 仅出现在 `DynamicTableMapper` 的标识符占位（表名/列名/WHERE/ORDER 片段），其来源经 `FormConstants.isIdentifier` 白名单校验（§4.3）；
 - [x] AST 白名单单测覆盖：字段越权/算子越权/排序越权/条件超限（`QueryAstValidatorTest` 10 项）；树子孙超限随 P1 实现补测；
-- [ ] 租户隔离验证：两租户同名 formKey 互不可见；动态表 SELECT 自动带 `tenant_id`、INSERT 自动填充——机制上由 `TenantLineInnerInterceptor` 承担（引擎零租户代码），集成验证待演示环境执行；
-- [ ] 发布/停用/回滚后缓存失效验证：节点内 `evict` 已实现，跨节点广播为 P2（§4.2）；
+- [x] 自动化租户隔离验证：H2 真实租户插件验证动态表读写隔离及 INSERT 补租户列；Provider 测试验证同 formKey、不同定义 ID 的缓存不串用；真实登录/切租户的演示环境验收仍待执行；
+- [x] 发布/停用/回滚与缓存自动化验证：Spring 事务提交后失效、回滚不失效、旧加载晚到、版本切换和停用拒绝均有测试；未执行多节点部署验收；
 - [ ] startup 演示：changelog 预建演示表 → 设计器选表导列 → 发布 → 运行时 CRUD 全流程（待演示环境执行）；
 - [x] `lambda.fusion.form` 前缀登记契约 §3.2（规则文件独立提交，契约 §18.2）。
 

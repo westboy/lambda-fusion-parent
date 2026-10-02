@@ -4,11 +4,13 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
+import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.support.FormFieldValidator;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
 import com.lambda.fusion.form.runtime.support.FormModel.FormRelation;
@@ -16,9 +18,11 @@ import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedCondition;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedSort;
+import com.lambda.fusion.form.runtime.support.TargetTableContract;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -52,14 +56,16 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     private final DynamicTableMapper dynamicTableMapper;
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
+    private final TargetTableContract targetTableContract;
 
     @Override
     public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
+        targetTableContract.validateAccess(model);
         astValidator.validate(model, query);
         String selectColumns = String.join(", ", selectColumns(model));
         Map<String, Object> params = new HashMap<>();
-        String whereSql = buildWhere(astValidator.resolve(model, query.getConditions()), params);
-        String orderSql = buildOrder(astValidator.resolveSorts(model, query.getSorts()));
+        String whereSql = activeRows(model) + buildWhere(astValidator.resolve(model, query.getConditions()), params);
+        String orderSql = buildOrder(model, astValidator.resolveSorts(model, query.getSorts()));
 
         long pageNum = currentPage(query);
         long pageSize = pageSize(query);
@@ -81,27 +87,29 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 .pageSize(pageSize)
                 .total(total)
                 .totalPages((total + pageSize - 1) / pageSize)
-                .records(records)
+                .records(records.stream().map(row -> project(model, row)).toList())
                 .build();
     }
 
     @Override
     public Map<String, Object> getById(FormModel model, String id) {
+        targetTableContract.validateAccess(model);
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
-        Map<String, Object> row =
-                dynamicTableMapper.selectById(model.tableName(), String.join(", ", selectColumns(model)), params);
+        Map<String, Object> row = dynamicTableMapper.selectById(
+                model.tableName(), String.join(", ", selectColumns(model)), activeRows(model), params);
         if (row == null) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
-        return row;
+        return project(model, row);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String create(FormModel model, Map<String, Object> data) {
         String id = IdWorker.getIdStr();
-        Map<String, Object> row = normalize(model, data, true);
+        Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
+        Map<String, Object> row = normalize(model, data, true, tableColumns);
         List<String> columns = new ArrayList<>();
         List<String> values = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
@@ -114,7 +122,27 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (!model.skipContractColumns()) {
             fillAudit(columns, values, params, true);
         }
+        if (StringUtils.hasText(model.logicDeleteColumn())) {
+            columns.add(model.logicDeleteColumn());
+            values.add(bind("p" + params.size(), 0, params));
+        }
         dynamicTableMapper.insertDynamic(model.tableName(), columns, values, params);
+        List<FormField> defaulted = model.fields().stream()
+                .filter(field -> field.persisted()
+                        && !field.column().equals(model.logicDeleteColumn())
+                        && !row.containsKey(field.column())
+                        && TargetTableContract.hasDefault(tableColumns.get(field.column())))
+                .toList();
+        if (!defaulted.isEmpty()) {
+            // SQL 默认值表达式只由数据库求值，实际结果仍遵守字段规则；失败随新增事务回滚。
+            Map<String, Object> inserted = getById(model, id);
+            defaulted.forEach(field -> {
+                Object value = FormFieldValidator.normalize(
+                        field, inserted.get(field.name()), FormErrorCode.FORM_DATA_INVALID);
+                TargetTableContract.validateValue(
+                        tableColumns.get(field.column()), value, FormErrorCode.FORM_DATA_INVALID);
+            });
+        }
         return id;
     }
 
@@ -122,7 +150,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public void update(FormModel model, String id, Map<String, Object> data) {
         getById(model, id);
-        Map<String, Object> row = normalize(model, data, false);
+        Map<String, Object> row = normalize(model, data, false, targetTableContract.validate(model));
+        if (row.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
+        }
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
@@ -131,12 +162,17 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
             assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
         }
-        dynamicTableMapper.updateDynamic(model.tableName(), String.join(", ", assignments), params);
+        if (dynamicTableMapper.updateDynamic(
+                        model.tableName(), String.join(", ", assignments), activeRows(model), params)
+                == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(FormModel model, String id) {
+        targetTableContract.validate(model);
         getById(model, id);
         // 级联删除依赖子表物理表名解析（P1 主从落地时补齐）；P0 一律拒绝删除有子表数据的记录
         for (FormRelation relation : model.relations()) {
@@ -154,25 +190,37 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
                 assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
             }
-            dynamicTableMapper.updateDynamic(model.tableName(), String.join(", ", assignments), params);
+            if (dynamicTableMapper.updateDynamic(
+                            model.tableName(), String.join(", ", assignments), activeRows(model), params)
+                    == 0) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+            }
             return;
         }
-        dynamicTableMapper.deleteById(model.tableName(), params);
+        if (dynamicTableMapper.deleteById(model.tableName(), activeRows(model), params) == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
     }
 
     @Override
     public List<Map<String, Object>> tree(FormModel model, String parentValue) {
+        targetTableContract.validateAccess(model);
         if (model.tree() == null || !model.tree().selfRelation()) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单不是自关联树类型");
         }
         Map<String, Object> params = new HashMap<>();
-        String whereSql = " AND " + model.tree().parentColumn() + " = " + bind("p0", parentValue, params);
-        return dynamicTableMapper.selectList(
-                model.tableName(),
-                String.join(", ", selectColumns(model)),
-                whereSql,
-                " ORDER BY " + model.tree().nodeColumn() + " ASC, ID DESC",
-                params);
+        String whereSql = activeRows(model) + " AND " + model.tree().parentColumn()
+                + (parentValue == null ? " IS NULL" : " = " + bind("p0", parentValue, params));
+        return dynamicTableMapper
+                .selectList(
+                        model.tableName(),
+                        String.join(", ", selectColumns(model)),
+                        whereSql,
+                        " ORDER BY " + model.tree().nodeColumn() + " ASC, ID DESC",
+                        params)
+                .stream()
+                .map(row -> project(model, row))
+                .toList();
     }
 
     /**
@@ -180,9 +228,16 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      */
     private boolean hasChildRows(FormRelation relation, String id) {
         FormModel subModel = modelProvider.require(relation.subFormKey());
+        if (subModel.fields().stream().noneMatch(field -> field.column().equals(relation.foreignKey()))) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表外键未映射：" + relation.foreignKey());
+        }
         Map<String, Object> params = new HashMap<>();
         params.put("value", id);
-        return dynamicTableMapper.countByColumn(subModel.tableName(), relation.foreignKey(), params) > 0;
+        return dynamicTableMapper.countBy(
+                        subModel.tableName(),
+                        activeRows(subModel) + " AND " + relation.foreignKey() + " = #{params.value}",
+                        params)
+                > 0;
     }
 
     /**
@@ -196,47 +251,56 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
-     * 入参归一：按字段白名单裁剪，未知键丢弃；create 补默认值；非空字段缺失一律拒绝
+     * 入参归一：仅接受字段标识；新增补默认值，更新时未提交字段保持原值、显式 null 表示清空。
      */
-    private Map<String, Object> normalize(FormModel model, Map<String, Object> data, boolean create) {
+    private Map<String, Object> normalize(
+            FormModel model, Map<String, Object> data, boolean create, Map<String, TableColumnView> columns) {
         Map<String, Object> source = data == null ? Map.of() : data;
         Map<String, Object> row = new LinkedHashMap<>();
         for (FormField field : model.fields()) {
-            if (!field.persisted()) {
+            if (FormConstants.isSystemColumn(field.column()) || "id".equalsIgnoreCase(field.name())) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.column());
+            }
+            if (!field.persisted() || field.column().equalsIgnoreCase(model.logicDeleteColumn())) {
                 continue;
             }
-            Object value = lookup(source, field.name());
-            if (value == null && create && StringUtils.hasText(field.defaultValue())) {
+            boolean submitted = source.containsKey(field.name());
+            if (!create && !submitted) {
+                continue;
+            }
+            Object value = source.get(field.name());
+            if (!submitted && create && StringUtils.hasText(field.defaultValue())) {
                 value = field.defaultValue();
             }
-            if (!field.nullable() && (value == null || (value instanceof String s && s.isBlank()))) {
-                throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, field.name() + " 不能为空");
+            TableColumnView column = columns.get(field.column());
+            if (create && !submitted && value == null && TargetTableContract.hasDefault(column)) {
+                continue;
             }
-            if (value != null) {
+            value = FormFieldValidator.normalize(field, value, FormErrorCode.FORM_DATA_INVALID);
+            value = TargetTableContract.validateValue(column, value, FormErrorCode.FORM_DATA_INVALID);
+            if (submitted || value != null) {
                 row.put(field.column(), value);
             }
-        }
-        if (create && row.isEmpty()) {
-            throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "提交数据为空");
         }
         return row;
     }
 
     /**
-     * 入参键匹配：同时接受字段标识与物理列名（大小写不敏感）
+     * 结果按字段标识投影，屏蔽 JDBC 驱动的列名大小写差异，并保留空值键。
      */
-    private Object lookup(Map<String, Object> source, String fieldName) {
-        if (source.containsKey(fieldName)) {
-            return source.get(fieldName);
-        }
-        String upper = fieldName.toUpperCase(Locale.ROOT);
-        for (Map.Entry<String, Object> entry : source.entrySet()) {
-            if (entry.getKey() != null
-                    && entry.getKey().toUpperCase(Locale.ROOT).equals(upper)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+    private Map<String, Object> project(FormModel model, Map<String, Object> row) {
+        Map<String, Object> columns = new HashMap<>();
+        row.forEach((key, value) -> columns.put(key.toUpperCase(Locale.ROOT), value));
+        Map<String, Object> result = new LinkedHashMap<>();
+        Object id = columns.get(FormConstants.COLUMN_ID);
+        result.put("id", id == null ? null : id.toString());
+        model.fields().forEach(field -> result.put(field.name(), columns.get(field.column())));
+        return result;
+    }
+
+    /** 逻辑删除统一约定：0 有效、1 已删除，由引擎维护。 */
+    private String activeRows(FormModel model) {
+        return StringUtils.hasText(model.logicDeleteColumn()) ? " AND " + model.logicDeleteColumn() + " = 0" : "";
     }
 
     /**
@@ -264,7 +328,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     private String buildWhere(List<ResolvedCondition> conditions, Map<String, Object> params) {
         if (conditions.isEmpty()) {
-            return null;
+            return "";
         }
         StringBuilder sql = new StringBuilder();
         for (ResolvedCondition condition : conditions) {
@@ -283,9 +347,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 case "like" ->
                     sql.append(" AND ")
                             .append(column)
-                            .append(" LIKE CONCAT('%', ")
-                            .append(bind(nextKey(params), condition.value(), params))
-                            .append(", '%')");
+                            .append(" LIKE ")
+                            .append(bind(nextKey(params), "%" + condition.value() + "%", params));
                 case "ge" ->
                     sql.append(" AND ")
                             .append(column)
@@ -298,12 +361,16 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                             .append(bind(nextKey(params), condition.value(), params));
                 case "isNull" -> sql.append(" AND ").append(column).append(" IS NULL");
                 case "isNotNull" -> sql.append(" AND ").append(column).append(" IS NOT NULL");
-                case "in" ->
+                case "in" -> {
+                    Collection<?> values = asCollection(condition.value());
                     sql.append(" AND ")
                             .append(column)
                             .append(" IN (")
-                            .append(bind(nextKey(params), asCollection(condition.value()), params))
+                            .append(values.stream()
+                                    .map(value -> bind(nextKey(params), value, params))
+                                    .collect(Collectors.joining(", ")))
                             .append(")");
+                }
                 case "between" -> {
                     List<Object> range = asRange(condition.value());
                     sql.append(" AND ")
@@ -324,9 +391,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return "p" + params.size();
     }
 
-    private String buildOrder(List<ResolvedSort> sorts) {
+    private String buildOrder(FormModel model, List<ResolvedSort> sorts) {
         if (sorts.isEmpty()) {
-            return " ORDER BY CREATED_AT DESC, ID DESC";
+            return model.skipContractColumns() ? " ORDER BY ID DESC" : " ORDER BY CREATED_AT DESC, ID DESC";
         }
         return " ORDER BY "
                 + sorts.stream()
@@ -336,20 +403,21 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     private Collection<?> asCollection(Object value) {
-        if (value instanceof Collection<?> collection) {
+        if (value instanceof Collection<?> collection
+                && !collection.isEmpty()
+                && collection.stream().noneMatch(java.util.Objects::isNull)) {
             return collection;
         }
         if (value instanceof Object[] array) {
-            return List.of(array);
+            return asCollection(Arrays.asList(array));
         }
-        if (value instanceof String text && text.contains(",")) {
-            return List.of(text.split(","));
-        }
-        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "in 操作符需要数组值");
+        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "in 操作符需要不含 null 的非空数组");
     }
 
     private List<Object> asRange(Object value) {
-        if (value instanceof Collection<?> collection && collection.size() == 2) {
+        if (value instanceof Collection<?> collection
+                && collection.size() == 2
+                && collection.stream().noneMatch(java.util.Objects::isNull)) {
             return new ArrayList<>(collection);
         }
         throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "between 操作符需要长度 2 的数组");

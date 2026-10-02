@@ -46,6 +46,8 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_DELETE_FORBIDDEN(18105, "已发布表单不可删除，请先停用"),
 
+    FORM_KEY_RESERVED(18106, "表单标识 design 为系统设计权限保留，请使用其它标识"),
+
     // ========== 发布错误 (18110-18119) ==========
     /**
      * 目标表校验失败：{0}
@@ -102,7 +104,11 @@ public enum FormErrorCode implements ErrorCode {
     /**
      * 字段校验失败：{0}
      */
-    FORM_DATA_INVALID(18132, "字段校验失败：{0}");
+    FORM_DATA_INVALID(18132, "字段校验失败：{0}"),
+
+    FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
+    FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
+    FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");
 
     private final Integer code;
 

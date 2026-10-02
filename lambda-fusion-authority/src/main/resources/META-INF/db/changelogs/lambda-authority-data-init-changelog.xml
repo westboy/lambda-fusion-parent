@@ -1004,4 +1004,30 @@
         ]]></sql>
     </changeSet>
 
+    <!-- 预览是设计管理权限；不生成任何表单运行权限或业务菜单授权。 -->
+    <changeSet id="lambda-authority-2026093000012" author="Zx">
+        <preConditions onFail="HALT">
+            <tableExists tableName="la_resources"/>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_MODE,
+                                      METHOD, HIDDEN, PARENT_KEYS, IS_DEV, KEEP_ALIVE, ORDER_NO)
+            select 'FmDsgV001', 'FmDesign001', '表单预览', 'form:design:preview', 2147483647, 3, 0,
+                   '', 0, 'FmTop00001-FmDesign001', 0, 0, 8
+            where not exists (select 1 from la_resources where RES_PATH = 'form:design:preview');
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="lambda-authority-202610010001" author="Zx">
+        <preConditions onFail="HALT">
+            <tableExists tableName="la_resources"/>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_MODE,
+                                      METHOD, HIDDEN, PARENT_KEYS, IS_DEV, KEEP_ALIVE, ORDER_NO)
+            select 'FmDsgR001', 'FmDesign001', '发布路由', 'form:design:route', 2147483647, 3, 0,
+                   '', 0, 'FmTop00001-FmDesign001', 0, 0, 9
+            where not exists (select 1 from la_resources where RES_PATH = 'form:design:route');
+        ]]></sql>
+    </changeSet>
 </databaseChangeLog>

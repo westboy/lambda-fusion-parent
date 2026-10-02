@@ -2,10 +2,10 @@ package com.lambda.fusion.form.runtime.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
+import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
@@ -23,10 +24,13 @@ import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
+import com.lambda.fusion.form.runtime.support.TargetTableContract;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,7 +59,29 @@ class DynamicDataServiceImplTest {
     void setUp() {
         mapper = mock(DynamicTableMapper.class);
         modelProvider = mock(FormModelProvider.class);
-        service = new DynamicDataServiceImpl(mapper, new QueryAstValidator(new FormProperties()), modelProvider);
+        TargetTableContract contract = mock(TargetTableContract.class);
+        when(contract.validate(any())).thenAnswer(invocation -> ((FormModel) invocation.getArgument(0))
+                .fields().stream()
+                        .collect(Collectors.toMap(
+                                FormModel.FormField::column,
+                                field -> new TableColumnView(
+                                        field.column(),
+                                        null,
+                                        "DECIMAL".equals(field.type()) ? "DECIMAL" : "VARCHAR",
+                                        field.type(),
+                                        false,
+                                        field.nullable(),
+                                        128,
+                                        "DECIMAL".equals(field.type()) ? Types.DECIMAL : Types.VARCHAR,
+                                        2,
+                                        null,
+                                        false,
+                                        false))));
+        service = new DynamicDataServiceImpl(
+                mapper, new QueryAstValidator(new FormProperties()), modelProvider, contract);
+        when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(1);
+        when(mapper.deleteById(anyString(), anyString(), anyMap())).thenReturn(1);
     }
 
     @Test
@@ -69,17 +95,17 @@ class DynamicDataServiceImplTest {
         ArgumentCaptor<String> whereSql = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
         verify(mapper).selectList(eq(TABLE), anyString(), whereSql.capture(), anyString(), params.capture());
-        assertThat(whereSql.getValue()).isEqualTo(" AND APPLICANT LIKE CONCAT('%', #{params.p0}, '%')");
+        assertThat(whereSql.getValue()).isEqualTo(" AND APPLICANT LIKE #{params.p0}");
         assertThat(whereSql.getValue()).doesNotContain("张").doesNotContain(FormConstants.COLUMN_TENANT_ID);
-        assertThat(params.getValue()).containsValue("张");
+        assertThat(params.getValue()).containsValue("%张%");
         assertThat(view.getTotal()).isEqualTo(1L);
         assertThat(view.getRecords()).hasSize(1);
     }
 
     @Test
     void pageDefaultsPageSizeAndOrderWhenNoConditions() {
-        when(mapper.countBy(eq(TABLE), isNull(), anyMap())).thenReturn(1L);
-        when(mapper.selectList(eq(TABLE), anyString(), isNull(), anyString(), anyMap()))
+        when(mapper.countBy(eq(TABLE), eq(""), anyMap())).thenReturn(1L);
+        when(mapper.selectList(eq(TABLE), anyString(), eq(""), anyString(), anyMap()))
                 .thenReturn(List.of());
 
         service.page(model(), new FormDataPageQuery());
@@ -88,14 +114,14 @@ class DynamicDataServiceImplTest {
                 .selectList(
                         eq(TABLE),
                         eq("ID, APPLICANT, DAYS, REMARK"),
-                        isNull(),
+                        eq(""),
                         eq(" ORDER BY CREATED_AT DESC, ID DESC LIMIT 20 OFFSET 0"),
                         anyMap());
     }
 
     @Test
     void pageClampsPageSizeToUpperBound() {
-        when(mapper.countBy(eq(TABLE), isNull(), anyMap())).thenReturn(0L);
+        when(mapper.countBy(eq(TABLE), eq(""), anyMap())).thenReturn(0L);
         FormDataPageQuery query = new FormDataPageQuery();
         query.setPageSize(5000);
 
@@ -124,7 +150,7 @@ class DynamicDataServiceImplTest {
 
     @Test
     void getByIdThrowsWhenRowMissing() {
-        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(null);
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(null);
 
         assertErrorCode(() -> service.getById(model(), "404"), FormErrorCode.FORM_DATA_NOT_FOUND);
     }
@@ -160,47 +186,49 @@ class DynamicDataServiceImplTest {
 
     @Test
     void updateBindsAssignmentsWithAudit() {
-        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
 
         service.update(model(), "1", Map.of("applicant", "张三", "days", 3));
 
         ArgumentCaptor<String> setSql = ArgumentCaptor.forClass(String.class);
-        verify(mapper).updateDynamic(eq(TABLE), setSql.capture(), anyMap());
+        verify(mapper).updateDynamic(eq(TABLE), setSql.capture(), anyString(), anyMap());
         assertThat(setSql.getValue())
                 .isEqualTo(
                         "APPLICANT = #{params.p1}, DAYS = #{params.p2}, UPDATED_BY = #{params.p3}, UPDATED_AT = #{params.p4}");
     }
 
     @Test
-    void updateRejectsMissingRequiredField() {
-        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+    void updateLeavesUnsubmittedRequiredFieldUnchanged() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
 
-        assertErrorCode(() -> service.update(model(), "1", Map.of("days", 3)), FormErrorCode.FORM_DATA_INVALID);
-        verify(mapper, never()).updateDynamic(anyString(), anyString(), anyMap());
+        service.update(model(), "1", Map.of("days", 3));
+        ArgumentCaptor<String> assignments = ArgumentCaptor.forClass(String.class);
+        verify(mapper).updateDynamic(eq(TABLE), assignments.capture(), anyString(), anyMap());
+        assertThat(assignments.getValue()).doesNotContain("APPLICANT");
     }
 
     @Test
     void deleteRejectsWhenChildRowsExist() {
-        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
         when(modelProvider.require("leave_item")).thenReturn(subModel());
-        when(mapper.countByColumn(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyMap()))
+        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(2L);
 
         assertErrorCode(() -> service.delete(masterSubModel(), "1"), FormErrorCode.FORM_SUB_DELETE_FORBIDDEN);
-        verify(mapper, never()).deleteById(anyString(), anyMap());
+        verify(mapper, never()).deleteById(anyString(), anyString(), anyMap());
     }
 
     @Test
     void deleteRemovesRowWhenNoChildRows() {
-        when(mapper.selectById(eq(TABLE), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
         when(modelProvider.require("leave_item")).thenReturn(subModel());
-        when(mapper.countByColumn(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyMap()))
+        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(0L);
 
         service.delete(masterSubModel(), "1");
 
         ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
-        verify(mapper).deleteById(eq(TABLE), params.capture());
+        verify(mapper).deleteById(eq(TABLE), anyString(), params.capture());
         assertThat(params.getValue()).containsEntry("id", "1");
     }
 
@@ -234,6 +262,7 @@ class DynamicDataServiceImplTest {
                 false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", true, true, true, "eq", 2),
@@ -253,6 +282,7 @@ class DynamicDataServiceImplTest {
                 false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                null,
                 model().fields(),
                 List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", FormConstants.CASCADE_DELETE)),
                 null,
@@ -269,7 +299,8 @@ class DynamicDataServiceImplTest {
                 false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
-                List.of(),
+                null,
+                List.of(field("leaveId", "LEAVE_ID", "STRING", false, false, false, "eq", 0)),
                 List.of(),
                 null,
                 null);
@@ -285,6 +316,7 @@ class DynamicDataServiceImplTest {
             String queryOp,
             int sort) {
         return new FormModel.FormField(
+                name,
                 name,
                 column,
                 type,

@@ -8,8 +8,10 @@ import com.lambda.fusion.form.runtime.support.FormModel.FormRelation;
 import com.lambda.fusion.form.runtime.support.FormModel.TreeConfig;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -42,6 +44,11 @@ public class FormModelCompiler {
      */
     public FormModel compile(String snapshotJson, long version) {
         FormDefSnapshot snapshot = this.snapshotJson.read(snapshotJson);
+        if (!FormConstants.isFormKey(snapshot.getFormKey())
+                || snapshot.getFormType() == null
+                || !FormConstants.FORM_TYPES.contains(snapshot.getFormType())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表单标识或类型非法");
+        }
         if (!FormConstants.isIdentifier(snapshot.getTableName())) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表名非法：" + snapshot.getTableName());
         }
@@ -54,11 +61,14 @@ public class FormModelCompiler {
             if (type == null || !FormConstants.FIELD_TYPES.contains(type)) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字段类型非法：" + field.getFieldName());
             }
-            if (field.getFieldName() == null || field.getColumnName() == null) {
+            if (!FormConstants.isIdentifier(field.getFieldName()) || field.getColumnName() == null) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字段标识与列名不能为空");
             }
             if (!FormConstants.isIdentifier(field.getColumnName())) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列名非法：" + field.getColumnName());
+            }
+            if (FormConstants.isSystemColumn(field.getColumnName()) || "id".equalsIgnoreCase(field.getFieldName())) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.getColumnName());
             }
             if (!fieldNames.add(field.getFieldName())
                     || !columns.add(field.getColumnName().toUpperCase(Locale.ROOT))) {
@@ -71,6 +81,7 @@ public class FormModelCompiler {
                     field.getForm() == null ? new FormDefSnapshot.FormConf() : field.getForm();
             fields.add(new FormField(
                     field.getFieldName(),
+                    field.getLabel() == null || field.getLabel().isBlank() ? field.getFieldName() : field.getLabel(),
                     field.getColumnName().toUpperCase(Locale.ROOT),
                     type,
                     Boolean.TRUE.equals(field.getNullable()),
@@ -85,6 +96,7 @@ public class FormModelCompiler {
                     compileListConf(list),
                     compileFormConf(formConf)));
         }
+        fields.forEach(FormFieldValidator::validateDefinition);
         fields.sort(Comparator.comparingInt(FormField::sort));
         List<FormRelation> relations = new ArrayList<>();
         for (FormDefSnapshot.Relation relation : snapshot.getRelations()) {
@@ -111,11 +123,15 @@ public class FormModelCompiler {
                 snapshot.getTableName(),
                 Boolean.TRUE.equals(snapshot.getSkipContractColumns()),
                 snapshot.getLogicDeleteColumn() == null
+                                || snapshot.getLogicDeleteColumn().isBlank()
                         ? null
                         : snapshot.getLogicDeleteColumn().toUpperCase(Locale.ROOT),
                 compileListConfig(snapshot.getListConfig()),
-                fields,
-                relations,
+                FormLayouts.compile(
+                        snapshot.getFormLayout(),
+                        fields.stream().map(FormField::name).toList()),
+                List.copyOf(fields),
+                List.copyOf(relations),
                 tree,
                 snapshot.getTreeConfig());
     }
@@ -233,6 +249,10 @@ public class FormModelCompiler {
         if (!mapped) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "逻辑删除列未映射字段：" + column);
         }
+        if (fields.stream().filter(field -> field.column().equals(upper)).anyMatch(field -> !Set.of("INT", "BOOL")
+                .contains(field.type()))) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "逻辑删除列必须为整数或布尔，0 有效、1 已删除");
+        }
     }
 
     /** 表单与详情配置编译：组件名走标识符白名单（快照被篡改时在此拦截） */
@@ -244,8 +264,12 @@ public class FormModelCompiler {
         return new FormModel.FormConf(
                 !Boolean.FALSE.equals(formConf.getShow()),
                 component == null || component.isBlank() ? null : component,
-                formConf.getProps() == null ? Map.of() : Map.copyOf(formConf.getProps()),
-                formConf.getRules() == null ? Map.of() : Map.copyOf(formConf.getRules()),
+                formConf.getProps() == null
+                        ? Map.of()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(formConf.getProps())),
+                formConf.getRules() == null
+                        ? Map.of()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(formConf.getRules())),
                 Boolean.TRUE.equals(formConf.getReadonly()));
     }
 

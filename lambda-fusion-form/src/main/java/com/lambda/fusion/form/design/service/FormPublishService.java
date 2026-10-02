@@ -20,6 +20,9 @@ public interface FormPublishService {
      */
     void disable(String id);
 
+    /** 启用当前生效快照，不创建新版本。 */
+    void enable(String id);
+
     /**
      * 回滚到历史快照（published_version 指针回指）
      */

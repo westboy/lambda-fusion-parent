@@ -6,6 +6,7 @@ import com.lambda.fusion.authority.resource.model.ApiPermissionTreeNode;
 import com.lambda.fusion.authority.resource.model.Resource;
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
+import com.lambda.fusion.authority.resource.support.AuthorizationCache;
 import com.lambda.fusion.permission.model.ApiPermissionMetadata;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -20,8 +21,6 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +33,7 @@ public class PermissionServiceImpl implements PermissionService {
     private final ResourceService resourceService;
     private final ApiResourceMapper apiResourceMapper;
     private final ApiPermissionRegistry apiPermissionRegistry;
+    private final AuthorizationCache authorizationCache;
 
     @Override
     public List<ApiPermissionTreeNode> listPermissionTree(String resourceId, String application, String keyword) {
@@ -121,12 +121,6 @@ public class PermissionServiceImpl implements PermissionService {
         return groups;
     }
 
-    @Caching(
-            evict = {
-                @CacheEvict(value = "ResourceOwners", allEntries = true),
-                @CacheEvict(value = "auth:role", allEntries = true),
-                @CacheEvict(value = "auth:permission", allEntries = true)
-            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void bind(String resourceId, String permissionId) {
@@ -137,14 +131,9 @@ public class PermissionServiceImpl implements PermissionService {
         if (!apiResourceMapper.hasBound(resourceId, permissionId)) {
             apiResourceMapper.bind(resourceId, permissionId);
         }
+        authorizationCache.evictAfterCommit();
     }
 
-    @Caching(
-            evict = {
-                @CacheEvict(value = "ResourceOwners", allEntries = true),
-                @CacheEvict(value = "auth:role", allEntries = true),
-                @CacheEvict(value = "auth:permission", allEntries = true)
-            })
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void unbind(String resourceId, String permissionId) {
@@ -153,6 +142,7 @@ public class PermissionServiceImpl implements PermissionService {
             throw AuthorityBusinessException.invalidParameter("接口权限ID不能为空");
         }
         apiResourceMapper.unbind(resourceId, permissionId);
+        authorizationCache.evictAfterCommit();
     }
 
     private String resolveNodeName(ApiPermissionMetadata api, String permissionId) {

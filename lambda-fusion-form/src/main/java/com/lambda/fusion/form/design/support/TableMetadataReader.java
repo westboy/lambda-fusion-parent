@@ -1,6 +1,5 @@
 package com.lambda.fusion.form.design.support;
 
-import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
@@ -11,8 +10,11 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,8 +24,8 @@ import org.springframework.stereotype.Component;
  * 物理表元数据只读读取（选表导列与发布校验共用）
  *
  * <p>经 JDBC DatabaseMetaData introspection，不执行任何 DDL；排除表由
- * {@link FormProperties#getTableExcludePattern()} 过滤。catalog/schema 传 null
- * 表示使用当前连接的默认库/schema。
+ * {@link FormProperties#getTableExcludePattern()} 过滤。只读取当前连接的 catalog/schema，
+ * 转义 JDBC 模式字符并核对返回的表名，不跨库合并同名表。
  *
  * @author Zx
  */
@@ -43,12 +45,15 @@ public class TableMetadataReader {
         List<String> tables = new ArrayList<>();
         try (Connection connection = dataSource.getConnection()) {
             DatabaseMetaData metaData = connection.getMetaData();
-            try (ResultSet rs = metaData.getTables(null, null, "%", new String[] {"TABLE"})) {
+            String catalog = connection.getCatalog();
+            String schema = connection.getSchema();
+            requireScope(catalog, schema);
+            try (ResultSet rs = metaData.getTables(catalog, pattern(metaData, schema), "%", new String[] {"TABLE"})) {
                 while (rs.next()) {
                     String name = rs.getString("TABLE_NAME");
                     // 保留数据库报告的原始大小写：Linux MySQL（lower_case_table_names=0）表名区分大小写，
                     // 存储的表名要能与 ${tableName} 处的原样 SQL 对上
-                    if (name != null && !isExcluded(name)) {
+                    if (inScope(rs, catalog, schema) && name != null && !isExcluded(name)) {
                         tables.add(name);
                     }
                 }
@@ -72,9 +77,24 @@ public class TableMetadataReader {
         List<TableColumnView> columns = new ArrayList<>();
         try (Connection connection = dataSource.getConnection()) {
             DatabaseMetaData metaData = connection.getMetaData();
-            try (ResultSet rs = metaData.getColumns(null, null, tableName, "%")) {
+            String catalog = connection.getCatalog();
+            String schema = connection.getSchema();
+            requireScope(catalog, schema);
+            String exactName = resolveTable(metaData, catalog, schema, tableName);
+            Set<String> primaryKeys = new HashSet<>();
+            try (ResultSet rs = metaData.getPrimaryKeys(catalog, schema, exactName)) {
                 while (rs.next()) {
-                    columns.add(toColumnView(rs));
+                    if (inScope(rs, catalog, schema) && exactName.equals(rs.getString("TABLE_NAME"))) {
+                        primaryKeys.add(rs.getString("COLUMN_NAME").toUpperCase(Locale.ROOT));
+                    }
+                }
+            }
+            try (ResultSet rs =
+                    metaData.getColumns(catalog, pattern(metaData, schema), pattern(metaData, exactName), "%")) {
+                while (rs.next()) {
+                    if (inScope(rs, catalog, schema) && exactName.equals(rs.getString("TABLE_NAME"))) {
+                        columns.add(toColumnView(rs, primaryKeys));
+                    }
                 }
             }
         } catch (SQLException e) {
@@ -86,28 +106,51 @@ public class TableMetadataReader {
         return columns;
     }
 
-    /**
-     * 目标表是否存在于当前库
-     */
-    public boolean tableExists(String tableName) {
-        try (Connection connection = dataSource.getConnection()) {
-            DatabaseMetaData metaData = connection.getMetaData();
-            try (ResultSet rs = metaData.getTables(null, null, tableName, new String[] {"TABLE"})) {
-                return rs.next();
+    private String resolveTable(DatabaseMetaData meta, String catalog, String schema, String name) throws SQLException {
+        String normalized = meta.storesUpperCaseIdentifiers()
+                ? name.toUpperCase(Locale.ROOT)
+                : meta.storesLowerCaseIdentifiers() ? name.toLowerCase(Locale.ROOT) : name;
+        try (ResultSet rs =
+                meta.getTables(catalog, pattern(meta, schema), pattern(meta, normalized), new String[] {"TABLE"})) {
+            while (rs.next()) {
+                if (inScope(rs, catalog, schema) && normalized.equals(rs.getString("TABLE_NAME"))) {
+                    return rs.getString("TABLE_NAME");
+                }
             }
-        } catch (SQLException e) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表存在性校验失败：" + e.getMessage());
         }
+        throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "当前库/schema 中不存在目标表：" + name);
+    }
+
+    private static boolean inScope(ResultSet rs, String catalog, String schema) throws SQLException {
+        return (catalog == null || Objects.equals(catalog, rs.getString("TABLE_CAT")))
+                && (schema == null || Objects.equals(schema, rs.getString("TABLE_SCHEM")));
+    }
+
+    private static void requireScope(String catalog, String schema) {
+        if (catalog == null && schema == null) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "数据源必须指定默认 catalog 或 schema");
+        }
+    }
+
+    private static String pattern(DatabaseMetaData meta, String identifier) throws SQLException {
+        if (identifier == null) {
+            return null;
+        }
+        String escape = meta.getSearchStringEscape();
+        return identifier
+                .replace(escape, escape + escape)
+                .replace("_", escape + "_")
+                .replace("%", escape + "%");
     }
 
     /**
      * 表名是否命中排除模式
      */
     public boolean isExcluded(String tableName) {
-        return tableName == null || properties.tableExclude().matcher(tableName).matches();
+        return !properties.allowsTable(tableName);
     }
 
-    private TableColumnView toColumnView(ResultSet rs) throws SQLException {
+    private TableColumnView toColumnView(ResultSet rs, Set<String> primaryKeys) throws SQLException {
         String columnName = rs.getString("COLUMN_NAME").toUpperCase(Locale.ROOT);
         String remarks = rs.getString("REMARKS");
         String dbType = rs.getString("TYPE_NAME");
@@ -118,9 +161,14 @@ public class TableMetadataReader {
                 remarks,
                 dbType,
                 suggestFieldType(dbType, length),
-                FormConstants.COLUMN_ID.equals(columnName),
+                primaryKeys.contains(columnName),
                 nullable,
-                length);
+                length,
+                rs.getInt("DATA_TYPE"),
+                rs.getObject("DECIMAL_DIGITS") instanceof Number scale ? scale.intValue() : null,
+                rs.getString("COLUMN_DEF"),
+                "YES".equalsIgnoreCase(rs.getString("IS_AUTOINCREMENT")),
+                "YES".equalsIgnoreCase(rs.getString("IS_GENERATEDCOLUMN")));
     }
 
     /**

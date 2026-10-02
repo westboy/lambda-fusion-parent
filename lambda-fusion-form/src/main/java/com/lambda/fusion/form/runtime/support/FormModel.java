@@ -12,7 +12,7 @@ import java.util.Map;
  * @param version 生效快照版本号
  * @param formType SINGLE / TREE / MASTER_SUB
  * @param tableName 目标物理表（服务端私有，绝不出参）
- * @param skipContractColumns 跳过契约列校验与填充
+ * @param skipContractColumns 跳过审计列要求与填充；租户策略由实际插件决定
  * @param fields 字段定义（按 sort 升序）
  * @param relations 主从关系
  * @param tree TREE 类型树配置（可空）
@@ -28,6 +28,7 @@ public record FormModel(
         boolean skipContractColumns,
         String logicDeleteColumn,
         ListConfig listConfig,
+        FormLayout formLayout,
         List<FormField> fields,
         List<FormRelation> relations,
         TreeConfig tree,
@@ -50,6 +51,7 @@ public record FormModel(
      */
     public record FormField(
             String name,
+            String label,
             String column,
             String type,
             boolean nullable,

@@ -6,12 +6,14 @@ import com.lambda.fusion.permission.client.PermissionPushClient;
 import com.lambda.fusion.permission.loader.LocalPermissionLoader;
 import com.lambda.fusion.permission.server.PermissionSyncApiImpl;
 import com.lambda.fusion.permission.service.ApiPermissionMatcher;
+import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import com.lambda.fusion.permission.service.PermissionTokenVerifier;
 import com.lambda.fusion.permission.service.StaticPermissionTokenVerifier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.ReferenceConfig;
 import org.apache.dubbo.config.annotation.DubboService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -26,8 +28,8 @@ import tools.jackson.databind.ObjectMapper;
 public class PermissionConfigure {
     @Bean
     @ConditionalOnMissingBean
-    public ApiPermissionRegistry permissionRegistry() {
-        return new ApiPermissionRegistry();
+    public ApiPermissionRegistry permissionRegistry(ObjectProvider<ApiPermissionProvider> providers) {
+        return new ApiPermissionRegistry(providers.orderedStream().toList());
     }
 
     @Bean

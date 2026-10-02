@@ -46,6 +46,8 @@ public class FormDefSnapshot {
     /** 列表级配置：布局/分页/按钮等 */
     private ListConfig listConfig = new ListConfig();
 
+    private FormLayout formLayout;
+
     private List<Field> fields = new ArrayList<>();
 
     private List<Relation> relations = new ArrayList<>();
@@ -56,6 +58,7 @@ public class FormDefSnapshot {
     @Data
     public static class Field {
         private String fieldName;
+        private String label;
         private String columnName;
         private String fieldType;
         private Boolean nullable = Boolean.TRUE;

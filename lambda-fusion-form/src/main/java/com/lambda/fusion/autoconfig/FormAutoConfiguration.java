@@ -12,7 +12,11 @@ import org.springframework.context.annotation.Import;
  * @author Zx
  */
 @Slf4j
-@AutoConfiguration
+@AutoConfiguration(
+        afterName = {
+            "com.lambda.fusion.autoconfig.PermissionAutoConfiguration",
+            "com.lambda.fusion.autoconfig.AuthorityAutoConfiguration"
+        })
 @ConditionalOnProperty(prefix = "lambda.fusion.form", name = "enabled", havingValue = "true", matchIfMissing = true)
 @Import(FormConfigure.class)
 public class FormAutoConfiguration {}

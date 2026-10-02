@@ -7,10 +7,14 @@ import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -264,6 +268,37 @@ class FormModelCompilerTest {
         snapshot.setFields(List.of(field));
 
         assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ID", "TENANT_ID", "created_by", "CREATED_AT", "UPDATED_BY", "UPDATED_AT"})
+    void rejectsReservedColumnsEvenForReadOnlyMappings(String column) {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field reserved = field("businessField", column, "STRING", 0);
+        reserved.setPersisted(false);
+        snapshot.setFields(List.of(reserved));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsIdFieldNameWhichWouldOverwriteRowIdentity() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field("id", "BUSINESS_CODE", "STRING", 0)));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void acceptsNullComponentPropsWithoutMutableTopLevelMap() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field field = field("name", "NAME", "STRING", 0);
+        Map<String, Object> props = new HashMap<>();
+        props.put("placeholder", null);
+        field.getForm().setProps(props);
+        snapshot.setFields(List.of(field));
+        FormModel model = compiler.compile(snapshotJson.write(snapshot), 1);
+        assertThat(model.fields().getFirst().form().props()).containsEntry("placeholder", null);
+        assertThatThrownBy(() -> model.fields().getFirst().form().props().put("disabled", true))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     private static void assertErrorCode(ThrowingCallable callable, FormErrorCode expected) {

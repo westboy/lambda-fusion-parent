@@ -187,6 +187,8 @@ public enum AuthorityErrorCode implements ErrorCode {
      */
     RESOURCE_TYPE_NOT_SUPPORTED(13503, "资源类型不支持"),
 
+    RESOURCE_PATH_CONFLICT(13504, "访问路径已被其它资源占用：{0}"),
+
     // ========== 令牌相关错误 (13600-13699) ==========
     /**
      * API令牌不存在

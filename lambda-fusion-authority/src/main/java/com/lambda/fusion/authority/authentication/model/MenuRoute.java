@@ -22,6 +22,9 @@ public class MenuRoute implements TreeNode<MenuRoute>, Serializable {
     @Schema(description = "路由组件")
     private String component;
 
+    @JsonIgnore
+    private String expand;
+
     @Schema(description = "路由重定向")
     private String redirect;
 

@@ -57,10 +57,13 @@ public class FormDefSaveCommand {
     @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
     private String listConfig;
 
+    @Schema(description = "表单与详情共享布局 JSON：{columns, items:[{field,span}]}")
+    private String formLayout;
+
     @Schema(description = "保存时同步发布（默认 false）")
     private Boolean publishOnSave;
 
-    @Schema(description = "跳过契约列校验与填充（默认 false；缺 TENANT_ID 时需同步配置 tenant.ignore-tables）")
+    @Schema(description = "跳过审计列要求与填充（默认 false；不豁免实际租户插件策略）")
     private Boolean skipContractColumns;
 
     @Schema(description = "乐观锁版本（更新时必传，新建忽略）")

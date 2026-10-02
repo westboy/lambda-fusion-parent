@@ -1,5 +1,6 @@
 package com.lambda.fusion.form.runtime.model;
 
+import com.lambda.fusion.form.runtime.support.FormLayout;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,6 +29,9 @@ public class FormSchemaView {
     @Schema(description = "生效版本号")
     private Long version;
 
+    @Schema(description = "草稿预览的修订号，数据请求必须回传以避免使用已变更的配置")
+    private Long draftVersion;
+
     @Schema(description = "字段渲染描述")
     private List<FieldSchema> fields = new ArrayList<>();
 
@@ -42,6 +46,9 @@ public class FormSchemaView {
 
     @Schema(description = "列表级配置：布局/分页/按钮等")
     private ListConfig listConfig = new ListConfig();
+
+    @Schema(description = "新增、编辑、详情共用布局")
+    private FormLayout formLayout;
 
     @Schema(description = "当前用户按钮权限：add/edit/delete")
     private Map<String, Boolean> permissions = new LinkedHashMap<>();

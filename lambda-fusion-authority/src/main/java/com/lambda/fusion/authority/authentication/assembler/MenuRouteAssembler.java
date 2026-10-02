@@ -5,8 +5,13 @@ import cn.hutool.core.util.StrUtil;
 import com.lambda.fusion.authority.AuthorityConstants;
 import com.lambda.fusion.authority.authentication.model.MenuRoute;
 import com.lambda.fusion.authority.authentication.model.NavigationRouteMeta;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 菜单路由组装器
@@ -15,7 +20,11 @@ import org.springframework.stereotype.Component;
  * 包括元信息填充、组件解析、重定向设置等
  */
 @Component
+@RequiredArgsConstructor
+@Slf4j
+@SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "共享 Spring ObjectMapper，仅用于读取路由元数据")
 public class MenuRouteAssembler {
+    private final ObjectMapper json;
 
     /**
      * 丰富菜单路由信息
@@ -45,6 +54,7 @@ public class MenuRouteAssembler {
         meta.putIfAbsent("order", node.getOrderNo());
         meta.putIfAbsent("hideInMenu", node.isHidden());
         meta.putIfAbsent("keepAlive", node.isKeepAlive());
+        applyExplicitRoute(node, meta);
         if (StrUtil.isBlank(node.getComponent())) {
             String component = resolveComponent(node, meta);
             if (StrUtil.isNotBlank(component)) {
@@ -68,6 +78,28 @@ public class MenuRouteAssembler {
             for (MenuRoute child : node.getChildren()) {
                 enrichNode(child);
             }
+        }
+    }
+
+    private void applyExplicitRoute(MenuRoute node, NavigationRouteMeta meta) {
+        if (StrUtil.isBlank(node.getExpand())) return;
+        try {
+            var expand = json.readTree(node.getExpand());
+            if (!expand.isObject() || !expand.path("component").isTextual()) return;
+            String component = expand.path("component").asText();
+            if (component.isBlank()) return;
+            node.setComponent(component);
+            // 菜单名称可编辑；显式组件路由以资源 ID 保持稳定且唯一的路由名称。
+            node.setName("resource:" + node.getId());
+            var configuredMeta = expand.path("meta");
+            if (configuredMeta.isObject()) {
+                configuredMeta
+                        .properties()
+                        .forEach(entry ->
+                                meta.putIfAbsent(entry.getKey(), json.convertValue(entry.getValue(), Object.class)));
+            }
+        } catch (JacksonException error) {
+            log.warn("忽略无效的菜单路由扩展，resourceId={}", node.getId());
         }
     }
 
