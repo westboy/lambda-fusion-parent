@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
@@ -20,6 +21,8 @@ import com.lambda.fusion.permission.service.ApiPermissionMatcher;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.web.context.support.StaticWebApplicationContext;
@@ -55,8 +58,9 @@ class FormApiPermissionTest {
         }
     }
 
-    @Test
-    void catalogDerivesAllSevenMvcEndpointsAndSurvivesStaticMetadataReplacement() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void catalogDerivesAllSevenMvcEndpointsAndSurvivesStaticMetadataReplacement(boolean tenantEnabled) {
         FormDefMapper forms = mock(FormDefMapper.class);
         FormDefEntity definition = new FormDefEntity();
         definition.setFormKey("leave_demo");
@@ -73,10 +77,16 @@ class FormApiPermissionTest {
             mapping.afterPropertiesSet();
             var factory = new StaticListableBeanFactory();
             factory.addBean("mapping", mapping);
+            var mybatisProperties = new MybatisPlusExtendProperties();
+            mybatisProperties.getTenant().setEnabled(tenantEnabled);
             var provider = new FormApiPermissionProvider(
-                    forms, factory.getBeanProvider(RequestMappingHandlerMapping.class), "form-app");
-            assertThat(provider.getApis()).isEmpty();
-            verifyNoInteractions(forms);
+                    forms, factory.getBeanProvider(RequestMappingHandlerMapping.class), "form-app", mybatisProperties);
+            if (tenantEnabled) {
+                assertThat(provider.getApis()).isEmpty();
+                verifyNoInteractions(forms);
+            } else {
+                assertThat(provider.getApis()).hasSize(7);
+            }
             try (var tenant = TenantContextHolder.getInstance()) {
                 tenant.setTenantId("tenant-1");
                 var registry = new ApiPermissionRegistry(List.of(provider));

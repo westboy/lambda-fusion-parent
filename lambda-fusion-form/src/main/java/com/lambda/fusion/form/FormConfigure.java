@@ -1,5 +1,6 @@
 package com.lambda.fusion.form;
 
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
 import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
@@ -52,9 +53,15 @@ public class FormConfigure {
     static class PermissionIntegration {
         @Bean
         ApiPermissionProvider formApiPermissionProvider(
-                FormDefMapper forms, ObjectProvider<RequestMappingHandlerMapping> mappings, Environment environment) {
+                FormDefMapper forms,
+                ObjectProvider<RequestMappingHandlerMapping> mappings,
+                Environment environment,
+                MybatisPlusExtendProperties mybatisProperties) {
             return new FormApiPermissionProvider(
-                    forms, mappings, environment.getProperty("spring.application.name", "unknown-app"));
+                    forms,
+                    mappings,
+                    environment.getProperty("spring.application.name", "unknown-app"),
+                    mybatisProperties);
         }
     }
 }

@@ -296,7 +296,7 @@ public interface FormDataInterceptor {
 2. 元数据限定当前连接的 catalog/schema，转义 JDBC 模式字符并复核返回的表名；真实主键必须为单列 `ID`，不可自增或生成。ID 至少容纳 19 位雪花值，支持长度至少 19 的字符列、BIGINT、DECIMAL(p≥19,0)；查询结果中的 `id` 始终为字符串。
 3. 每个映射都必须有真实物理列。STRING/TEXT/FILE 仅映射文本列，JSON/ENUM/SET 不作为普通文本开放；DICT 支持文本或整数列；INT 支持整数或精确小数列，DECIMAL 只支持 DECIMAL/NUMERIC，不映射整数或近似浮点列；BOOL 支持布尔、单 bit 或 TINYINT；DATE/DATETIME 匹配日期/日期时间列，不将 YEAR 当作 DATE。写入还检查文本容量、整数范围、小数精度与小数秒精度，不截断或四舍五入。
 4. 引擎写入列不可自增或生成；未赋值的物理 NOT NULL 列必须有数据库默认值或由数据库生成。可清空字段不可映射 NOT NULL 列。无法输入的必填字段（隐藏或控件只读）必须有表单默认值或数据库默认值。`persisted=false` 表示读取现有列但不写入，支持数据库生成列，尚不提供脱离物理列的计算字段；导列自动将自增/生成列设为不提交、只读。
-5. 使用 **SqlSessionFactory 中实际启用的租户拦截器** 判断策略，不另写租户 SQL 或复制 ignore-tables 配置。正常契约要求租户插件过滤目标表、字符串 `TENANT_ID` 列至少 32 字符及审计四列（操作人列至少 32 字符、时间列为 DATETIME/TIMESTAMP）。`skipContractColumns=true` 仅跳过审计要求与填充，不能绕过实际租户过滤；被过滤的表仍须有 TENANT_ID。显式共享表必须同时跳过契约、被实际插件忽略（或未启用插件）且无 TENANT_ID。启用租户插件时，缺失当前租户上下文一律拒绝动态数据访问。
+5. 复用 Cloud 的 `mybatis-plus.tenant.enabled` 全局开关，并核对 **SqlSessionFactory 中实际装配的租户拦截器**；不另写租户 SQL 或复制 ignore-tables 配置。开启时，正常契约要求插件过滤目标表、字符串 `TENANT_ID` 列至少 32 字符及审计四列（操作人列至少 32 字符、时间列为 DATETIME/TIMESTAMP）。`skipContractColumns=true` 只跳过审计要求与填充，不能绕过已启用的租户过滤；共享表须被实际插件忽略且无 TENANT_ID，缺失当前租户上下文仍拒绝访问。全局关闭时，按单租户模式处理，不要求租户上下文或 TENANT_ID 列，不自动填充租户值；审计四列仍由 `skipContractColumns` 决定，物理表 NOT NULL/default 等约束仍执行。配置开关与实际插件装配不一致时明确报错。
 
 表单默认值保持文本存储协议，但编译时即做类型和规则检查，发布时再检查列容量；新增转换为布尔、整数、BigDecimal 或日期时间后绑定。未提交且无表单默认值的字段可交给数据库默认值，SQL 表达式只由数据库执行；映射字段的实际默认值在新增事务内回读校验，违反规则则回滚。显式 null 不触发任何默认值；更新未提交字段保持原值。
 
@@ -466,6 +466,16 @@ Controller 只编排（契约 §9.3），权限在 Cloud 统一注解鉴权链�
 | `lambda.fusion.form.max-condition-count` | `20` | AST 条件数上限（§4.3） |
 | `lambda.fusion.form.tree.max-descendants` | `500` | 树子孙 id 集上限（P1 生效，P0 未实现子孙过滤，§4.4） |
 | `lambda.fusion.form.table-exclude-pattern` | `la_form_.*\|databasechangelog.*\|qrtz_.*` | 对允许清单追加的排除规则，大小写不敏感；设计、发布和运行共同检查（§5.5） |
+
+租户开关沿用基础框架配置，不新增表单私有开关：
+
+```yaml
+mybatis-plus:
+  tenant:
+    enabled: false # 单租户运行；开启则必须有当前租户上下文
+```
+
+startup 默认开启，可设置环境变量 `MYBATIS_PLUS_TENANT_ENABLED=false` 后重启，关闭整个应用的租户隔离。多租户开启时，请求通过现有 `X-Tenant-Id` 或域名解析获取租户。单租户模式下，动态接口权限目录也允许无租户上下文加载。MyBatis-Plus 的 `InterceptorIgnoreHelper` 适合受控代码段临时忽略插件，本实现不使用它绕过已开启模式下缺失的租户上下文。
 
 ## 10. 前端设计
 

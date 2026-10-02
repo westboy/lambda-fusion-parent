@@ -3,6 +3,7 @@ package com.lambda.fusion.form.runtime.support;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.design.model.TableColumnView;
@@ -10,6 +11,7 @@ import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Types;
@@ -32,10 +34,12 @@ import org.springframework.util.StringUtils;
 /** 发布、回滚、启用与写入共用的目标表契约；物理元数据不存入发布快照或长期缓存。 */
 @Component
 @RequiredArgsConstructor
+@SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "读取框架统一租户配置，不修改配置对象")
 public class TargetTableContract {
 
     private final TableMetadataReader metadataReader;
     private final SqlSessionFactory sqlSessionFactory;
+    private final MybatisPlusExtendProperties mybatisProperties;
 
     public Map<String, TableColumnView> validate(FormModel model) {
         Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
@@ -70,7 +74,7 @@ public class TargetTableContract {
             }
             validateValue(column, value.getValue(), FormErrorCode.FORM_TABLE_INVALID);
             supplied.add(FormConstants.COLUMN_TENANT_ID);
-        } else if (columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
+        } else if (tenant != null && columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
             throw invalid("含 TENANT_ID 的目标表必须由实际租户插件过滤，不能作为共享表跳过");
         }
         if (!model.skipContractColumns()) {
@@ -136,7 +140,8 @@ public class TargetTableContract {
     /** 读取也必须检查当前租户上下文，避免框架的缺失租户跳过策略扩大动态接口的范围。 */
     public void validateAccess(FormModel model) {
         TenantLineHandler handler = tenantHandler(model);
-        if ((handler == null || handler.ignoreTable(model.tableName()))
+        if (handler != null
+                && handler.ignoreTable(model.tableName())
                 && metadataReader.listColumns(model.tableName()).stream()
                         .anyMatch(column -> FormConstants.COLUMN_TENANT_ID.equals(column.getColumnName()))) {
             throw invalid("含 TENANT_ID 的目标表不能绕过租户过滤读取");
@@ -155,18 +160,22 @@ public class TargetTableContract {
         if (handlers.size() > 1) {
             throw invalid("目标数据源存在多个租户插件，无法确定租户契约");
         }
-        if (handlers.isEmpty()) {
-            if (!model.skipContractColumns()) {
-                throw invalid("目标数据源未启用租户插件");
+        if (!Boolean.TRUE.equals(mybatisProperties.getTenant().getEnabled())) {
+            // 复用 Cloud 的全局开关；关闭时应由自动配置移除插件，不能仅跳过校验。
+            if (!handlers.isEmpty()) {
+                throw invalid("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启");
             }
             return null;
+        }
+        if (handlers.isEmpty()) {
+            throw invalid("租户功能已开启，但目标数据源未装配租户插件");
         }
         TenantLineHandler handler = handlers.getFirst();
         Expression tenantId = handler.getTenantId();
         if (tenantId == null
                 || tenantId instanceof NullValue
                 || tenantId instanceof StringValue value && !StringUtils.hasText(value.getValue())) {
-            throw invalid("缺少当前租户上下文");
+            throw invalid("缺少当前租户上下文：多租户已启用，请选择租户或提供 X-Tenant-Id");
         }
         if (!FormConstants.COLUMN_TENANT_ID.equalsIgnoreCase(handler.getTenantIdColumn())) {
             throw invalid("动态表单只支持 TENANT_ID 租户列");

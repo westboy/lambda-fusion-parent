@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
@@ -38,6 +39,7 @@ class TargetTableContractTest {
     private TargetTableContract contract;
     private MybatisConfiguration configuration;
     private String tenant = "tenantA";
+    private MybatisPlusExtendProperties mybatisProperties;
 
     @BeforeEach
     void setUp() {
@@ -49,7 +51,9 @@ class TargetTableContractTest {
         reader = new TableMetadataReader(source, properties);
         configuration = new MybatisConfiguration();
         configuration.setEnvironment(new Environment("test", new JdbcTransactionFactory(), source));
-        contract = new TargetTableContract(reader, new MybatisSqlSessionFactoryBuilder().build(configuration));
+        mybatisProperties = new MybatisPlusExtendProperties();
+        contract = new TargetTableContract(
+                reader, new MybatisSqlSessionFactoryBuilder().build(configuration), mybatisProperties);
     }
 
     @AfterEach
@@ -204,6 +208,7 @@ class TargetTableContractTest {
 
     @Test
     void normalContractRequiresActiveTenantPluginAndWritableAuditColumns() {
+        mybatisProperties.getTenant().setEnabled(true);
         table(
                 "ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32), CREATED_BY VARCHAR(32), UPDATED_BY VARCHAR(32), CREATED_AT TIMESTAMP, UPDATED_AT TIMESTAMP");
         var model = model(snapshot -> snapshot.setSkipContractColumns(false));
@@ -214,7 +219,46 @@ class TargetTableContractTest {
         assertThatThrownBy(() -> contract.validate(model)).isInstanceOf(FormBusinessException.class);
     }
 
+    @Test
+    void disabledTenantModeAllowsNormalAuditContractWithoutTenantContext() {
+        tenant = null;
+        table(
+                "ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32), CREATED_BY VARCHAR(32), UPDATED_BY VARCHAR(32), CREATED_AT TIMESTAMP, UPDATED_AT TIMESTAMP");
+        var model = model(snapshot -> snapshot.setSkipContractColumns(false));
+        assertThat(contract.validate(model)).containsKeys("ID", "TENANT_ID", "CREATED_AT");
+        contract.validateAccess(model);
+        jdbc.execute("ALTER TABLE TARGET_TABLE DROP COLUMN TENANT_ID");
+        assertThat(contract.validate(model)).doesNotContainKey("TENANT_ID");
+    }
+
+    @Test
+    void disabledTenantModeStillEnforcesRequiredDatabaseColumns() {
+        table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32) NOT NULL");
+        assertThatThrownBy(() -> contract.validate(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error ->
+                        assertThat(((FormBusinessException) error).getArgs()).containsExactly("未赋值的必填列：TENANT_ID"));
+        jdbc.execute("ALTER TABLE TARGET_TABLE ALTER COLUMN TENANT_ID SET DEFAULT 'single'");
+        assertThat(contract.validate(model(snapshot -> {}))).containsKey("TENANT_ID");
+    }
+
+    @Test
+    void disabledSettingCannotHideAnInstalledTenantPlugin() {
+        table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10)");
+        enableTenant(false);
+        mybatisProperties.getTenant().setEnabled(false);
+        assertThatThrownBy(() -> contract.validate(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
+                        .containsExactly("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启"));
+        assertThatThrownBy(() -> contract.validateAccess(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
+                        .containsExactly("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启"));
+    }
+
     private void enableTenant(boolean ignored) {
+        mybatisProperties.getTenant().setEnabled(true);
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         interceptor.addInnerInterceptor(new TenantLineInnerInterceptor(new TenantLineHandler() {
             @Override

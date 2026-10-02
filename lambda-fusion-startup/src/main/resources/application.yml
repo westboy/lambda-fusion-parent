@@ -60,7 +60,7 @@ logging:
 ################################# Mybatis-plus 配置 #################################
 mybatis-plus:
   tenant:
-    enabled: true
+    enabled: ${MYBATIS_PLUS_TENANT_ENABLED:true}
   configuration:
     default-enum-type-handler: org.apache.ibatis.type.EnumOrdinalTypeHandler
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

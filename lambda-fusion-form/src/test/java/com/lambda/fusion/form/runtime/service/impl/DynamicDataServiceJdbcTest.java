@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
@@ -85,11 +86,13 @@ class DynamicDataServiceJdbcTest {
         session = factory.openSession(true);
         FormProperties properties = new FormProperties();
         properties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY"));
+        var mybatisProperties = new MybatisPlusExtendProperties();
+        mybatisProperties.getTenant().setEnabled(true);
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
                 mock(FormModelProvider.class),
-                new TargetTableContract(new TableMetadataReader(dataSource, properties), factory));
+                new TargetTableContract(new TableMetadataReader(dataSource, properties), factory, mybatisProperties));
     }
 
     @AfterEach

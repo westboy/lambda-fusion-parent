@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.assembler.FormSnapshotAssemblerImpl;
@@ -384,6 +385,11 @@ class FormLifecycleIntegrationTest {
         SnapshotJson.class
     })
     static class Config {
+        @Bean
+        MybatisPlusExtendProperties mybatisProperties() {
+            return new MybatisPlusExtendProperties();
+        }
+
         @Bean
         DataSource dataSource() {
             DriverManagerDataSource source = new DriverManagerDataSource(

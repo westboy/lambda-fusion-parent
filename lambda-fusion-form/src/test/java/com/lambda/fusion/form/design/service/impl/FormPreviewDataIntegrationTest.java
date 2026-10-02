@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mockStatic;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
 import com.lambda.fusion.form.design.model.FormFieldItem;
@@ -19,6 +20,8 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -197,6 +200,7 @@ class FormPreviewDataIntegrationTest {
 
     @Test
     void actualTenantPluginIsolatesDefinitionsVersionsAndAllBusinessOperations() {
+        context.getBean(MybatisPlusExtendProperties.class).getTenant().setEnabled(true);
         jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD TENANT_ID VARCHAR(64)");
         var interceptor = context.getBean(SqlSessionFactory.class).getConfiguration().getInterceptors().stream()
                 .filter(MybatisPlusInterceptor.class::isInstance)
@@ -230,6 +234,34 @@ class FormPreviewDataIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT PERSON_NAME FROM LA_TEST_BUSINESS WHERE ID=?", String.class, rowA))
                 .isEqualTo("Tenant A");
         assertThat(count("LA_TEST_BUSINESS")).isEqualTo(1);
+    }
+
+    @Test
+    void singleTenantModePublishesAndReadsWritesThroughPreviewAndRuntimeWithoutTenantContext() {
+        jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD TENANT_ID VARCHAR(64)");
+        jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD CREATED_BY VARCHAR(64)");
+        jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD UPDATED_BY VARCHAR(64)");
+        jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD CREATED_AT TIMESTAMP");
+        jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD UPDATED_AT TIMESTAMP");
+        auth.when(AuthUtils::getSafeUsername).thenReturn("single-user");
+        var command = command("sample");
+        command.setSkipContractColumns(false);
+        String form = design.save(command);
+        publish.publish(form);
+        var source = draft(form);
+        String id = preview.create(source, Map.of("name", "Single tenant"));
+        assertThat(jdbc.queryForObject("SELECT TENANT_ID FROM LA_TEST_BUSINESS WHERE ID=?", String.class, id))
+                .isNull();
+        assertThat(jdbc.queryForObject("SELECT CREATED_BY FROM LA_TEST_BUSINESS WHERE ID=?", String.class, id))
+                .isEqualTo("single-user");
+        var runtime = context.getBean(DynamicDataService.class);
+        var model = context.getBean(FormModelProvider.class).require("sample");
+        assertThat(runtime.getById(model, id)).containsEntry("name", "Single tenant");
+        runtime.update(model, id, Map.of("name", "Updated"));
+        assertThat(preview.detail(source, id)).containsEntry("name", "Updated");
+        assertThat(preview.page(source, null).getTotal()).isEqualTo(1);
+        preview.delete(source, id);
+        assertThat(runtime.page(model, new FormDataPageQuery()).getTotal()).isZero();
     }
 
     private FormPreviewSource draft(String id) {
