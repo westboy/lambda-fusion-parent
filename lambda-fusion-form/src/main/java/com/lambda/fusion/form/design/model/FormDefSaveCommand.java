@@ -63,9 +63,6 @@ public class FormDefSaveCommand {
     @Schema(description = "保存时同步发布（默认 false）")
     private Boolean publishOnSave;
 
-    @Schema(description = "跳过审计列要求与填充（默认 false；不豁免实际租户插件策略）")
-    private Boolean skipContractColumns;
-
     @Schema(description = "乐观锁版本（更新时必传，新建忽略）")
     private Long version;
 

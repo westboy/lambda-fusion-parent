@@ -66,10 +66,6 @@ public class FormDefEntity extends BaseEntity {
     @TableField("PUBLISH_ON_SAVE")
     private Boolean publishOnSave;
 
-    /** 跳过审计列要求与填充；租户列仍须符合实际插件的过滤/共享策略。 */
-    @TableField("SKIP_CONTRACT_COLUMNS")
-    private Boolean skipContractColumns;
-
     /** 逻辑删除列名（空=物理删除）；目标表必须含该列 */
     @TableField("LOGIC_DELETE_COLUMN")
     private String logicDeleteColumn;

@@ -14,7 +14,7 @@
 与现有模块的关系：
 
 - 复用 `lambda-fusion-core` 全部分页/树/字典/身份能力（契约 §2.1）；
-- 租户隔离走 MyBatis-Plus 租户插件 SQL 解析层，动态业务表默认即被纳入（豁免才是配置项），零额外成本（契约 §5.1）；
+- 租户隔离走 MyBatis-Plus 租户插件 SQL 解析层，动态业务表默认即被纳入（豁免才是配置项），零额外成本（契约 §5.1）；豁免清单中不含 `TENANT_ID` 列的全局表（字典、配置类）同样可作为表单目标，无租户上下文的平台管理/开发者模式整体放行（§9）；
 - warm-flow 集成复用 workflow 模块五步范式（`workflow.md` §10.2），并补齐 `la_workflow_form_path` 注册表已建成但消费端未实现的办理页渲染缺口；
 - 下游复用单位仍是 starter jar（宪章 §1）：依赖本模块即获得"表单设计器 + 运行时引擎 + 通用页面"。
 
@@ -36,7 +36,7 @@
 
 本模块不做运行时建表，契约 §6 无需修订：
 
-- 表单目标表必须是经 Liquibase changelog 治理预建、且在 `allowed-tables` 中显式开放的物理表（携带 `tenant_id` 与审计四列），发布时校验列存在性与类型兼容（§5.5）；
+- 表单目标表必须是经 Liquibase changelog 治理预建、且在 `allowed-tables` 中显式开放的物理表；租户与审计契约按物理列自动适配（§5.5、§9），发布时校验列存在性与类型兼容；
 - 设计器只做"字段映射 + UI/查询/校验配置"，不产生 DDL；
 - 新表诉求走毕业路径：元数据 → 生成源码 + changelog → 正常评审部署。
 
@@ -136,7 +136,7 @@ FormModel = {
 
 `field` 一律是**字段标识**（前端 vModel），物理列名只在服务端解析；`between` 的 value 为长度 2 且端点非空的数组（0 有效），`in` 为非空、无 null 元素的数组且逐元素绑定参数，`isNull/isNotNull` 忽略 value。前端为空值操作提供显式选择，数字区间采用双输入组件，IN 支持多选或逗号分隔输入。LIKE 的完整模式值直接参数绑定。
 
-列表、详情和树节点统一投影为 `{id, 字段标识: 值}`，保留 null 键，屏蔽 JDBC 驱动列名大小写差异。默认排序使用 `CREATED_AT DESC, ID DESC`；`skipContractColumns=true` 时使用 `ID DESC`。
+列表、详情和树节点统一投影为 `{id, 字段标识: 值}`，保留 null 键，屏蔽 JDBC 驱动列名大小写差异。默认排序按目标表是否含 `CREATED_AT` 自动适配：存在用 `CREATED_AT DESC, ID DESC`，否则 `ID DESC`。
 
 三层白名单（全部对照 `FormModel` 服务端校验）：
 
@@ -167,7 +167,7 @@ FormModel = {
 
 ### 4.5 系统字段与逻辑删除
 
-`GlobalMetaObjectHandler` 只覆盖实体路径，通用引擎的 Map 投影不经过它——这是本模块唯一的手工点。写路径在 `DynamicDataServiceImpl#fillAudit` 内联填充 `CREATED_BY/CREATED_AT/UPDATED_BY/UPDATED_AT`（经 `AuthUtils.getSafeUsername()` 取当前身份，无登录上下文时退化为匿名），目标表的审计四列在发布校验时强制存在（§5.5）。
+`GlobalMetaObjectHandler` 只覆盖实体路径，通用引擎的 Map 投影不经过它——这是本模块唯一的手工点。写路径在 `DynamicDataServiceImpl#fillAudit` 内联填充 `CREATED_BY/CREATED_AT/UPDATED_BY/UPDATED_AT`（经 `AuthUtils.getSafeUsername()` 取当前身份，无登录上下文时退化为匿名），审计列按目标表物理存在逐列适配：存在则填充，不存在则跳过（§5.5）。
 
 ID、TENANT_ID、审计四列及对外字段名 `id` 不允许作为普通业务字段映射；保存、快照编译和写入归一均校验。租户归属继续由框架插件处理。
 
@@ -296,7 +296,7 @@ public interface FormDataInterceptor {
 2. 元数据限定当前连接的 catalog/schema，转义 JDBC 模式字符并复核返回的表名；真实主键必须为单列 `ID`，不可自增或生成。ID 至少容纳 19 位雪花值，支持长度至少 19 的字符列、BIGINT、DECIMAL(p≥19,0)；查询结果中的 `id` 始终为字符串。
 3. 每个映射都必须有真实物理列。STRING/TEXT/FILE 仅映射文本列，JSON/ENUM/SET 不作为普通文本开放；DICT 支持文本或整数列；INT 支持整数或精确小数列，DECIMAL 只支持 DECIMAL/NUMERIC，不映射整数或近似浮点列；BOOL 支持布尔、单 bit 或 TINYINT；DATE/DATETIME 匹配日期/日期时间列，不将 YEAR 当作 DATE。写入还检查文本容量、整数范围、小数精度与小数秒精度，不截断或四舍五入。
 4. 引擎写入列不可自增或生成；未赋值的物理 NOT NULL 列必须有数据库默认值或由数据库生成。可清空字段不可映射 NOT NULL 列。无法输入的必填字段（隐藏或控件只读）必须有表单默认值或数据库默认值。`persisted=false` 表示读取现有列但不写入，支持数据库生成列，尚不提供脱离物理列的计算字段；导列自动将自增/生成列设为不提交、只读。
-5. 复用 Cloud 的 `mybatis-plus.tenant.enabled` 全局开关，并核对 **SqlSessionFactory 中实际装配的租户拦截器**；不另写租户 SQL 或复制 ignore-tables 配置。开启时，正常契约要求插件过滤目标表、字符串 `TENANT_ID` 列至少 32 字符及审计四列（操作人列至少 32 字符、时间列为 DATETIME/TIMESTAMP）。`skipContractColumns=true` 只跳过审计要求与填充，不能绕过已启用的租户过滤；共享表须被实际插件忽略且无 TENANT_ID，缺失当前租户上下文仍拒绝访问。全局关闭时，按单租户模式处理，不要求租户上下文或 TENANT_ID 列，不自动填充租户值；审计四列仍由 `skipContractColumns` 决定，物理表 NOT NULL/default 等约束仍执行。配置开关与实际插件装配不一致时明确报错。
+5. 租户与审计契约按物理元数据与租户配置自动适配，不检查插件装配（装配一致性由框架自动配置保证）。租户：复用 `mybatis-plus.tenant.enabled` 与 `ignore-tables` 配置——请求带租户上下文时，未豁免的表必须有可写的字符串 `TENANT_ID` 列（至少 32 字符）且当前租户值可落库；表被豁免却含 `TENANT_ID` 列属配置矛盾，拒绝动态读写；豁免且无该列的全局表直接放行；请求无租户上下文即平台管理/开发者模式（契约 §5.1 受控流程，登录与权限入口仍生效），整体放行且不代填租户列，租户列的数据库约束自行表态；全局关闭时按单租户模式处理，不要求租户上下文或 `TENANT_ID` 列。审计列按物理存在逐列适配：存在则校验类型（操作人列至少 32 字符、时间列为 DATETIME/TIMESTAMP）并由引擎填充，不存在则跳过要求与填充。物理表 NOT NULL/default 等约束仍执行。
 
 表单默认值保持文本存储协议，但编译时即做类型和规则检查，发布时再检查列容量；新增转换为布尔、整数、BigDecimal 或日期时间后绑定。未提交且无表单默认值的字段可交给数据库默认值，SQL 表达式只由数据库执行；映射字段的实际默认值在新增事务内回读校验，违反规则则回滚。显式 null 不触发任何默认值；更新未提交字段保持原值。
 
@@ -476,6 +476,8 @@ mybatis-plus:
 ```
 
 startup 默认开启，可设置环境变量 `MYBATIS_PLUS_TENANT_ENABLED=false` 后重启，关闭整个应用的租户隔离。多租户开启时，请求通过现有 `X-Tenant-Id` 或域名解析获取租户。单租户模式下，动态接口权限目录也允许无租户上下文加载。MyBatis-Plus 的 `InterceptorIgnoreHelper` 适合受控代码段临时忽略插件，本实现不使用它绕过已开启模式下缺失的租户上下文。
+
+目标表的租户契约区分两种模式。请求无租户上下文即平台管理/开发者模式（契约 §5.1 的受控平台流程，登录与权限入口仍生效）：框架策略本就全表跳过租户注入，引擎不代填租户列、不设防，租户列的数据库约束自行表态，开发者据此在设计器与预览中联调任意允许清单内的表。请求带租户上下文时按业务契约校验：注入生效的表必须有可写的 `TENANT_ID` 列（≥32 字符文本，当前租户值须能落库）；表在 `mybatis-plus.tenant.ignore-tables` 豁免清单中时，含 `TENANT_ID` 列等于对全租户关掉隔离，一律拒绝动态读写，不含该列的全局表直接放行。契约只读取租户配置与物理元数据，插件装配由框架自动配置负责；设计、发布、预览与运行数据路径共用该契约，发布/回滚/启用校验因此不依赖请求租户上下文。
 
 ## 10. 前端设计
 

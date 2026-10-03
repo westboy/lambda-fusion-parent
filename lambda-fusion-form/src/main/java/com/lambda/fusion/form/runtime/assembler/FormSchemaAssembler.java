@@ -15,7 +15,6 @@ public class FormSchemaAssembler {
         view.setFormName(model.formName());
         view.setFormType(model.formType());
         view.setVersion(model.version());
-        view.setSkipContractColumns(model.skipContractColumns());
         view.setLogicDeleteColumn(model.logicDeleteColumn());
         view.setListConfig(toListConfig(model.listConfig()));
         view.setTreeConfig(model.treeConfig());

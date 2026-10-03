@@ -121,7 +121,6 @@ public class FormModelCompiler {
                 version,
                 snapshot.getFormType(),
                 snapshot.getTableName(),
-                Boolean.TRUE.equals(snapshot.getSkipContractColumns()),
                 snapshot.getLogicDeleteColumn() == null
                                 || snapshot.getLogicDeleteColumn().isBlank()
                         ? null

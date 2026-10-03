@@ -60,23 +60,9 @@ class DynamicDataServiceImplTest {
         mapper = mock(DynamicTableMapper.class);
         modelProvider = mock(FormModelProvider.class);
         TargetTableContract contract = mock(TargetTableContract.class);
-        when(contract.validate(any())).thenAnswer(invocation -> ((FormModel) invocation.getArgument(0))
-                .fields().stream()
-                        .collect(Collectors.toMap(
-                                FormModel.FormField::column,
-                                field -> new TableColumnView(
-                                        field.column(),
-                                        null,
-                                        "DECIMAL".equals(field.type()) ? "DECIMAL" : "VARCHAR",
-                                        field.type(),
-                                        false,
-                                        field.nullable(),
-                                        128,
-                                        "DECIMAL".equals(field.type()) ? Types.DECIMAL : Types.VARCHAR,
-                                        2,
-                                        null,
-                                        false,
-                                        false))));
+        when(contract.validate(any())).thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
+        when(contract.validateAccess(any()))
+                .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
         service = new DynamicDataServiceImpl(
                 mapper, new QueryAstValidator(new FormProperties()), modelProvider, contract);
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
@@ -238,6 +224,44 @@ class DynamicDataServiceImplTest {
                 .isEqualTo(expected.getCode()));
     }
 
+    /** 模拟物理元数据：映射列 + 审计四列（引擎按物理存在自动填充） */
+    private static Map<String, TableColumnView> columnsFor(FormModel model) {
+        Map<String, TableColumnView> columns = model.fields().stream()
+                .collect(Collectors.toMap(
+                        FormModel.FormField::column,
+                        field -> new TableColumnView(
+                                field.column(),
+                                null,
+                                "DECIMAL".equals(field.type()) ? "DECIMAL" : "VARCHAR",
+                                field.type(),
+                                false,
+                                field.nullable(),
+                                128,
+                                "DECIMAL".equals(field.type()) ? Types.DECIMAL : Types.VARCHAR,
+                                2,
+                                null,
+                                false,
+                                false)));
+        for (String audit : FormConstants.AUDIT_COLUMNS) {
+            columns.put(
+                    audit,
+                    new TableColumnView(
+                            audit,
+                            null,
+                            audit.endsWith("_AT") ? "DATETIME" : "VARCHAR",
+                            audit.endsWith("_AT") ? "DATETIME" : "STRING",
+                            false,
+                            true,
+                            64,
+                            audit.endsWith("_AT") ? Types.TIMESTAMP : Types.VARCHAR,
+                            0,
+                            null,
+                            false,
+                            false));
+        }
+        return columns;
+    }
+
     private static FormDataPageQuery query(AstCondition... conditions) {
         FormDataPageQuery query = new FormDataPageQuery();
         query.setConditions(new ArrayList<>(List.of(conditions)));
@@ -259,7 +283,6 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 TABLE,
-                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,
@@ -279,7 +302,6 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_MASTER_SUB,
                 TABLE,
-                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,
@@ -296,7 +318,6 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave_item",
-                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,

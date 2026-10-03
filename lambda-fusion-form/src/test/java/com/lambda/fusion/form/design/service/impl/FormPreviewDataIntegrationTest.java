@@ -245,7 +245,6 @@ class FormPreviewDataIntegrationTest {
         jdbc.execute("ALTER TABLE LA_TEST_BUSINESS ADD UPDATED_AT TIMESTAMP");
         auth.when(AuthUtils::getSafeUsername).thenReturn("single-user");
         var command = command("sample");
-        command.setSkipContractColumns(false);
         String form = design.save(command);
         publish.publish(form);
         var source = draft(form);
@@ -285,7 +284,6 @@ class FormPreviewDataIntegrationTest {
         command.setFormName("Preview");
         command.setFormType("SINGLE");
         command.setTableName("LA_TEST_BUSINESS");
-        command.setSkipContractColumns(true);
         var field = new FormFieldItem();
         field.setFieldName("name");
         field.setColumnName("PERSON_NAME");

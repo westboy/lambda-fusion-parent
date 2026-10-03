@@ -60,12 +60,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     @Override
     public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
-        targetTableContract.validateAccess(model);
+        Map<String, TableColumnView> tableColumns = targetTableContract.validateAccess(model);
         astValidator.validate(model, query);
         String selectColumns = String.join(", ", selectColumns(model));
         Map<String, Object> params = new HashMap<>();
         String whereSql = activeRows(model) + buildWhere(astValidator.resolve(model, query.getConditions()), params);
-        String orderSql = buildOrder(model, astValidator.resolveSorts(model, query.getSorts()));
+        String orderSql = buildOrder(astValidator.resolveSorts(model, query.getSorts()), tableColumns);
 
         long pageNum = currentPage(query);
         long pageSize = pageSize(query);
@@ -119,13 +119,11 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             columns.add(column);
             values.add(bind("p" + params.size(), value, params));
         });
-        if (!model.skipContractColumns()) {
-            fillAudit(columns, values, params, true);
-        }
         if (StringUtils.hasText(model.logicDeleteColumn())) {
             columns.add(model.logicDeleteColumn());
             values.add(bind("p" + params.size(), 0, params));
         }
+        fillAudit(tableColumns, columns, values, params, true);
         dynamicTableMapper.insertDynamic(model.tableName(), columns, values, params);
         List<FormField> defaulted = model.fields().stream()
                 .filter(field -> field.persisted()
@@ -150,7 +148,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public void update(FormModel model, String id, Map<String, Object> data) {
         getById(model, id);
-        Map<String, Object> row = normalize(model, data, false, targetTableContract.validate(model));
+        Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
+        Map<String, Object> row = normalize(model, data, false, tableColumns);
         if (row.isEmpty()) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
         }
@@ -158,8 +157,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
         row.forEach((column, value) -> assignments.add(column + " = " + bind("p" + params.size(), value, params)));
-        if (!model.skipContractColumns()) {
+        if (tableColumns.containsKey("UPDATED_BY")) {
             assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+        }
+        if (tableColumns.containsKey("UPDATED_AT")) {
             assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
         }
         if (dynamicTableMapper.updateDynamic(
@@ -172,7 +173,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(FormModel model, String id) {
-        targetTableContract.validate(model);
+        Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         getById(model, id);
         // 级联删除依赖子表物理表名解析（P1 主从落地时补齐）；P0 一律拒绝删除有子表数据的记录
         for (FormRelation relation : model.relations()) {
@@ -186,8 +187,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (logicDeleteColumn != null && !logicDeleteColumn.isBlank()) {
             List<String> assignments = new ArrayList<>();
             assignments.add(logicDeleteColumn + " = 1");
-            if (!model.skipContractColumns()) {
+            if (tableColumns.containsKey("UPDATED_BY")) {
                 assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+            }
+            if (tableColumns.containsKey("UPDATED_AT")) {
                 assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
             }
             if (dynamicTableMapper.updateDynamic(
@@ -304,21 +307,32 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
-     * 审计四列填充（创建/更新人、时间）
+     * 审计四列按物理存在填充（创建/更新人、时间）；目标表没有的列直接跳过。
      */
-    private void fillAudit(List<String> columns, List<String> values, Map<String, Object> params, boolean create) {
+    private void fillAudit(
+            Map<String, TableColumnView> tableColumns,
+            List<String> columns,
+            List<String> values,
+            Map<String, Object> params,
+            boolean create) {
         String operator = AuthUtils.getSafeUsername();
         LocalDateTime now = LocalDateTime.now();
-        if (create) {
+        if (create && tableColumns.containsKey("CREATED_BY")) {
             columns.add("CREATED_BY");
             values.add(bind("p" + params.size(), operator, params));
+        }
+        if (create && tableColumns.containsKey("CREATED_AT")) {
             columns.add("CREATED_AT");
             values.add(bind("p" + params.size(), now, params));
         }
-        columns.add("UPDATED_BY");
-        values.add(bind("p" + params.size(), operator, params));
-        columns.add("UPDATED_AT");
-        values.add(bind("p" + params.size(), now, params));
+        if (tableColumns.containsKey("UPDATED_BY")) {
+            columns.add("UPDATED_BY");
+            values.add(bind("p" + params.size(), operator, params));
+        }
+        if (tableColumns.containsKey("UPDATED_AT")) {
+            columns.add("UPDATED_AT");
+            values.add(bind("p" + params.size(), now, params));
+        }
     }
 
     private String bind(String key, Object value, Map<String, Object> params) {
@@ -391,9 +405,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return "p" + params.size();
     }
 
-    private String buildOrder(FormModel model, List<ResolvedSort> sorts) {
+    private String buildOrder(List<ResolvedSort> sorts, Map<String, TableColumnView> tableColumns) {
         if (sorts.isEmpty()) {
-            return model.skipContractColumns() ? " ORDER BY ID DESC" : " ORDER BY CREATED_AT DESC, ID DESC";
+            // 默认排序按目标表是否含 CREATED_AT 自动适配
+            return tableColumns != null && tableColumns.containsKey("CREATED_AT")
+                    ? " ORDER BY CREATED_AT DESC, ID DESC"
+                    : " ORDER BY ID DESC";
         }
         return " ORDER BY "
                 + sorts.stream()

@@ -3,12 +3,8 @@ package com.lambda.fusion.form.runtime.support;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
-import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
-import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
+import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
@@ -16,12 +12,9 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
-import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.StringValue;
-import org.apache.ibatis.mapping.Environment;
-import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,8 +30,6 @@ class TargetTableContractTest {
     private JdbcTemplate jdbc;
     private TableMetadataReader reader;
     private TargetTableContract contract;
-    private MybatisConfiguration configuration;
-    private String tenant = "tenantA";
     private MybatisPlusExtendProperties mybatisProperties;
 
     @BeforeEach
@@ -49,15 +40,13 @@ class TargetTableContractTest {
         FormProperties properties = new FormProperties();
         properties.setAllowedTables(List.of("TARGET_TABLE"));
         reader = new TableMetadataReader(source, properties);
-        configuration = new MybatisConfiguration();
-        configuration.setEnvironment(new Environment("test", new JdbcTransactionFactory(), source));
         mybatisProperties = new MybatisPlusExtendProperties();
-        contract = new TargetTableContract(
-                reader, new MybatisSqlSessionFactoryBuilder().build(configuration), mybatisProperties);
+        contract = new TargetTableContract(reader, mybatisProperties);
     }
 
     @AfterEach
     void tearDown() {
+        TenantContextHolder.getInstance().close();
         jdbc.execute("DROP ALL OBJECTS");
     }
 
@@ -182,37 +171,71 @@ class TargetTableContractTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void missingTenantContextRunsPlatformModeRegardlessOfExemption(boolean exempt) {
+        table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32)");
+        enableTenant(exempt);
+        // 开发者/平台管理无租户上下文：引擎不设租户防线，既有租户列仅豁免出赋值检查
+        assertThat(contract.validate(model(snapshot -> {}))).containsKey("TENANT_ID");
+        contract.validateAccess(model(snapshot -> {}));
+    }
+
     @Test
-    void skipContractDoesNotBypassTenantPluginOrMissingContext() {
+    void contextBearingRequestsEnforceFullTenantContract() {
         table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10)");
         enableTenant(false);
-        assertThatThrownBy(() -> contract.validate(model(snapshot -> {}))).isInstanceOf(FormBusinessException.class);
-        jdbc.execute("ALTER TABLE TARGET_TABLE ADD TENANT_ID VARCHAR(32)");
-        assertThat(contract.validate(model(snapshot -> {}))).containsKey("TENANT_ID");
-        tenant = null;
+        TenantContextHolder.getInstance().setTenantId("tenantA"); // 业务模式：注入生效，缺租户列必须补齐
+        assertThatThrownBy(() -> contract.validate(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
+                        .containsExactly("目标表已纳入租户过滤但缺少 TENANT_ID 列：请为表补充该列，"
+                                + "或将表加入 mybatis-plus.tenant.ignore-tables 作为全局表"));
         assertThatThrownBy(() -> contract.validateAccess(model(snapshot -> {})))
                 .isInstanceOf(FormBusinessException.class);
-        assertThatThrownBy(() -> contract.validate(model(snapshot -> {}))).isInstanceOf(FormBusinessException.class);
+        jdbc.execute("ALTER TABLE TARGET_TABLE ADD TENANT_ID VARCHAR(32)");
+        assertThat(contract.validate(model(snapshot -> {}))).containsKey("TENANT_ID");
+        contract.validateAccess(model(snapshot -> {}));
     }
 
     @Test
     void ignoredTenantBearingTableCannotBecomeShared() {
         table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32)");
         enableTenant(true);
-        assertThatThrownBy(() -> contract.validate(model(snapshot -> {}))).isInstanceOf(FormBusinessException.class);
+        TenantContextHolder.getInstance().setTenantId("tenantA"); // 有上下文时豁免含租户列的表是配置错误
+        assertThatThrownBy(() -> contract.validate(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
+                        .containsExactly("目标表含 TENANT_ID 列，但在租户豁免清单（mybatis-plus.tenant.ignore-tables 或框架默认清单）中，"
+                                + "租户过滤不会生效，禁止动态读写；请将表移出豁免清单，或删除 TENANT_ID 列改作全局表"));
+        assertThatThrownBy(() -> contract.validateAccess(model(snapshot -> {})))
+                .isInstanceOf(FormBusinessException.class);
         jdbc.execute("ALTER TABLE TARGET_TABLE DROP COLUMN TENANT_ID");
         assertThat(contract.validate(model(snapshot -> {}))).containsKey("ID");
-        assertThatThrownBy(() -> contract.validate(model(snapshot -> snapshot.setSkipContractColumns(false))))
-                .isInstanceOf(FormBusinessException.class);
+        // 豁免不豁免审计契约：存在的审计列仍须类型合格
+        jdbc.execute("ALTER TABLE TARGET_TABLE ADD CREATED_AT VARCHAR(32)");
+        assertThatThrownBy(() -> contract.validate(model(snapshot -> {}))).isInstanceOf(FormBusinessException.class);
     }
 
     @Test
-    void normalContractRequiresActiveTenantPluginAndWritableAuditColumns() {
-        mybatisProperties.getTenant().setEnabled(true);
+    void exemptGlobalTableWithoutTenantColumnWorksWithAndWithoutTenantContext() {
+        table(
+                "ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), CREATED_BY VARCHAR(32), UPDATED_BY VARCHAR(32), CREATED_AT TIMESTAMP, UPDATED_AT TIMESTAMP");
+        enableTenant(true);
+        var model = model(snapshot -> {});
+        assertThat(contract.validate(model)).containsKeys("ID", "NAME"); // 平台模式
+        contract.validateAccess(model);
+        TenantContextHolder.getInstance().setTenantId("tenantA"); // 租户上下文：全局表照常可用
+        assertThat(contract.validate(model)).containsKeys("ID", "NAME");
+        contract.validateAccess(model);
+    }
+
+    @Test
+    void businessModeValidatesTenantValueAndAuditColumns() {
         table(
                 "ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32), CREATED_BY VARCHAR(32), UPDATED_BY VARCHAR(32), CREATED_AT TIMESTAMP, UPDATED_AT TIMESTAMP");
-        var model = model(snapshot -> snapshot.setSkipContractColumns(false));
-        assertThatThrownBy(() -> contract.validate(model)).isInstanceOf(FormBusinessException.class);
+        var model = model(snapshot -> {});
+        TenantContextHolder.getInstance().setTenantId("tenantA");
         enableTenant(false);
         assertThat(contract.validate(model)).containsKey("TENANT_ID");
         jdbc.execute("ALTER TABLE TARGET_TABLE ALTER COLUMN UPDATED_AT VARCHAR(32)");
@@ -221,10 +244,9 @@ class TargetTableContractTest {
 
     @Test
     void disabledTenantModeAllowsNormalAuditContractWithoutTenantContext() {
-        tenant = null;
         table(
                 "ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10), TENANT_ID VARCHAR(32), CREATED_BY VARCHAR(32), UPDATED_BY VARCHAR(32), CREATED_AT TIMESTAMP, UPDATED_AT TIMESTAMP");
-        var model = model(snapshot -> snapshot.setSkipContractColumns(false));
+        var model = model(snapshot -> {});
         assertThat(contract.validate(model)).containsKeys("ID", "TENANT_ID", "CREATED_AT");
         contract.validateAccess(model);
         jdbc.execute("ALTER TABLE TARGET_TABLE DROP COLUMN TENANT_ID");
@@ -242,36 +264,12 @@ class TargetTableContractTest {
         assertThat(contract.validate(model(snapshot -> {}))).containsKey("TENANT_ID");
     }
 
-    @Test
-    void disabledSettingCannotHideAnInstalledTenantPlugin() {
-        table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10)");
-        enableTenant(false);
-        mybatisProperties.getTenant().setEnabled(false);
-        assertThatThrownBy(() -> contract.validate(model(snapshot -> {})))
-                .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
-                        .containsExactly("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启"));
-        assertThatThrownBy(() -> contract.validateAccess(model(snapshot -> {})))
-                .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertThat(((FormBusinessException) error).getArgs())
-                        .containsExactly("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启"));
-    }
-
-    private void enableTenant(boolean ignored) {
+    /** 契约按配置与租户上下文判定模式：开启开关并按需注册豁免表。 */
+    private void enableTenant(boolean exempt) {
         mybatisProperties.getTenant().setEnabled(true);
-        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new TenantLineInnerInterceptor(new TenantLineHandler() {
-            @Override
-            public Expression getTenantId() {
-                return tenant == null ? null : new StringValue(tenant);
-            }
-
-            @Override
-            public boolean ignoreTable(String tableName) {
-                return tenant == null || ignored;
-            }
-        }));
-        configuration.addInterceptor(interceptor);
+        if (exempt) {
+            mybatisProperties.getTenant().setIgnoreTables(Set.of("target_table"));
+        }
     }
 
     private void table(String columns) {
@@ -283,7 +281,6 @@ class TargetTableContractTest {
         snapshot.setFormKey("test_form");
         snapshot.setFormType("SINGLE");
         snapshot.setTableName("TARGET_TABLE");
-        snapshot.setSkipContractColumns(true);
         var field = new FormDefSnapshot.Field();
         field.setFieldName("name");
         field.setColumnName("NAME");

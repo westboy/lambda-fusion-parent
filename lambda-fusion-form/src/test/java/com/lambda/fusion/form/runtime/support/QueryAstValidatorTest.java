@@ -155,7 +155,6 @@ class QueryAstValidatorTest {
                 3L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave",
-                false,
                 null,
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,

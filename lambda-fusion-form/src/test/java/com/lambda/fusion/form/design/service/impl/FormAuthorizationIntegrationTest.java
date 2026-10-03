@@ -320,7 +320,6 @@ class FormAuthorizationIntegrationTest {
         command.setFormName("Test");
         command.setFormType("SINGLE");
         command.setTableName("LA_TEST_BUSINESS");
-        command.setSkipContractColumns(true);
         var field = new FormFieldItem();
         field.setFieldName("personName");
         field.setColumnName("PERSON_NAME");

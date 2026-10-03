@@ -250,4 +250,13 @@
         </addColumn>
         <addUniqueConstraint tableName="la_form_def" columnNames="ROUTE_RESOURCE_ID" constraintName="uk_form_route_resource"/>
     </changeSet>
+
+    <!-- 审计列改为按物理存在自动适配（存在则校验并填充），跳过契约列开关整体移除 -->
+    <changeSet id="lambda-fusion-form-202610030001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+            <columnExists tableName="la_form_def" columnName="SKIP_CONTRACT_COLUMNS"/>
+        </preConditions>
+        <dropColumn tableName="la_form_def" columnName="SKIP_CONTRACT_COLUMNS"/>
+    </changeSet>
 </databaseChangeLog>

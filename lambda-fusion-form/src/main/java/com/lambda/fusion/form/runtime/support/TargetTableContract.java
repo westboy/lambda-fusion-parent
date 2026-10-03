@@ -1,9 +1,8 @@
 package com.lambda.fusion.form.runtime.support;
 
-import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
-import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
+import com.lambda.cloud.mybatis.tenant.MissingTenantStrategy;
+import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.design.model.TableColumnView;
@@ -17,17 +16,12 @@ import java.math.BigInteger;
 import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import net.sf.jsqlparser.expression.Expression;
-import net.sf.jsqlparser.expression.NullValue;
-import net.sf.jsqlparser.expression.StringValue;
-import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -38,7 +32,6 @@ import org.springframework.util.StringUtils;
 public class TargetTableContract {
 
     private final TableMetadataReader metadataReader;
-    private final SqlSessionFactory sqlSessionFactory;
     private final MybatisPlusExtendProperties mybatisProperties;
 
     public Map<String, TableColumnView> validate(FormModel model) {
@@ -61,36 +54,26 @@ public class TargetTableContract {
         }
         Set<String> supplied = new HashSet<>();
         supplied.add(FormConstants.COLUMN_ID);
-        TenantLineHandler tenant = tenantHandler(model);
-        if (tenant != null && !tenant.ignoreTable(model.tableName())) {
-            TableColumnView column = requireColumn(columns, FormConstants.COLUMN_TENANT_ID);
-            writable(column);
-            if (!textual(column) || column.getLength() < 32) {
-                throw invalid("TENANT_ID 必须是至少 32 字符的文本列");
-            }
-            Expression tenantId = tenant.getTenantId();
-            if (!(tenantId instanceof StringValue value)) {
-                throw invalid("当前表单契约要求字符串租户标识");
-            }
-            validateValue(column, value.getValue(), FormErrorCode.FORM_TABLE_INVALID);
-            supplied.add(FormConstants.COLUMN_TENANT_ID);
-        } else if (tenant != null && columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
-            throw invalid("含 TENANT_ID 的目标表必须由实际租户插件过滤，不能作为共享表跳过");
+        TableColumnView tenantColumn = validateTenantRule(model, columns);
+        if (tenantColumn != null) {
+            supplied.add(tenantColumn.getColumnName());
         }
-        if (!model.skipContractColumns()) {
-            for (String name : FormConstants.AUDIT_COLUMNS) {
-                TableColumnView column = requireColumn(columns, name);
-                writable(column);
-                if (name.endsWith("_BY")) {
-                    if (!textual(column) || column.getLength() < 32) {
-                        throw invalid(name + " 必须是至少 32 字符的文本列");
-                    }
-                    validateValue(column, AuthUtils.getSafeUsername(), FormErrorCode.FORM_TABLE_INVALID);
-                } else if (column.getJdbcType() != Types.TIMESTAMP) {
-                    throw invalid(name + " 必须是 DATETIME/TIMESTAMP 列");
-                }
-                supplied.add(name);
+        // 审计列按物理存在自动适配：存在则校验并由引擎填充，不存在则跳过要求
+        for (String name : FormConstants.AUDIT_COLUMNS) {
+            TableColumnView column = columns.get(name);
+            if (column == null) {
+                continue;
             }
+            writable(column);
+            if (name.endsWith("_BY")) {
+                if (!textual(column) || column.getLength() < 32) {
+                    throw invalid(name + " 必须是至少 32 字符的文本列");
+                }
+                validateValue(column, AuthUtils.getSafeUsername(), FormErrorCode.FORM_TABLE_INVALID);
+            } else if (column.getJdbcType() != Types.TIMESTAMP) {
+                throw invalid(name + " 必须是 DATETIME/TIMESTAMP 列");
+            }
+            supplied.add(name);
         }
         for (FormField field : model.fields()) {
             TableColumnView column = requireColumn(columns, field.column());
@@ -137,53 +120,49 @@ public class TargetTableContract {
         return columns;
     }
 
-    /** 读取也必须检查当前租户上下文，避免框架的缺失租户跳过策略扩大动态接口的范围。 */
-    public void validateAccess(FormModel model) {
-        TenantLineHandler handler = tenantHandler(model);
-        if (handler != null
-                && handler.ignoreTable(model.tableName())
-                && metadataReader.listColumns(model.tableName()).stream()
-                        .anyMatch(column -> FormConstants.COLUMN_TENANT_ID.equals(column.getColumnName()))) {
-            throw invalid("含 TENANT_ID 的目标表不能绕过租户过滤读取");
-        }
+    /**
+     * 读取只校验租户契约（无租户上下文的平台管理模式直接放行），避免含 TENANT_ID 列的表在业务
+     * 模式下被无过滤读写；返回列元数据供默认排序等复用。
+     */
+    public Map<String, TableColumnView> validateAccess(FormModel model) {
+        Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
+                .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
+        validateTenantRule(model, columns);
+        return columns;
     }
 
-    private TenantLineHandler tenantHandler(FormModel model) {
-        List<TenantLineHandler> handlers = sqlSessionFactory.getConfiguration().getInterceptors().stream()
-                .filter(MybatisPlusInterceptor.class::isInstance)
-                .map(MybatisPlusInterceptor.class::cast)
-                .flatMap(interceptor -> interceptor.getInterceptors().stream())
-                .filter(TenantLineInnerInterceptor.class::isInstance)
-                .map(TenantLineInnerInterceptor.class::cast)
-                .map(TenantLineInnerInterceptor::getTenantLineHandler)
-                .toList();
-        if (handlers.size() > 1) {
-            throw invalid("目标数据源存在多个租户插件，无法确定租户契约");
+    /**
+     * 租户契约区分两种模式。请求无租户上下文即平台管理/开发者模式（契约 §5.1 的受控平台流程，
+     * 登录与权限入口仍生效）：框架策略本就全表跳过注入，引擎不代填租户列也不设防，租户列约束由
+     * 数据库表态。请求带租户上下文时按业务契约校验：未豁免的表必须有可写的 TENANT_ID 列并校验
+     * 当前租户值；表被豁免清单跳过时，含 TENANT_ID 列等于对全租户关掉隔离，必须拒绝，不含该列的
+     * 全局表直接放行。插件装配与开关一致性由框架自动配置保证，这里只读取其配置。
+     *
+     * @return 注入生效时要求的目标表 TENANT_ID 列（需豁免出赋值检查），否则 null
+     */
+    private TableColumnView validateTenantRule(FormModel model, Map<String, TableColumnView> columns) {
+        MybatisPlusExtendProperties.TenantConfig tenant = mybatisProperties.getTenant();
+        if (!Boolean.TRUE.equals(tenant.getEnabled()) || MissingTenantStrategy.isMissingTenantContext()) {
+            // 单租户运行或平台管理/开发者模式：框架全表跳过注入，引擎不代填租户列，约束由数据库表态。
+            return null;
         }
-        if (!Boolean.TRUE.equals(mybatisProperties.getTenant().getEnabled())) {
-            // 复用 Cloud 的全局开关；关闭时应由自动配置移除插件，不能仅跳过校验。
-            if (!handlers.isEmpty()) {
-                throw invalid("租户功能已关闭，但目标数据源仍装配租户插件，请检查 MyBatis 配置并重启");
+        if (tenant.getIgnoreTables().contains(model.tableName().toLowerCase(Locale.ROOT))) {
+            if (columns.containsKey(FormConstants.COLUMN_TENANT_ID)) {
+                throw invalid("目标表含 TENANT_ID 列，但在租户豁免清单（mybatis-plus.tenant.ignore-tables 或框架默认清单）中，"
+                        + "租户过滤不会生效，禁止动态读写；请将表移出豁免清单，或删除 TENANT_ID 列改作全局表");
             }
             return null;
         }
-        if (handlers.isEmpty()) {
-            throw invalid("租户功能已开启，但目标数据源未装配租户插件");
+        TableColumnView column = columns.get(FormConstants.COLUMN_TENANT_ID);
+        if (column == null) {
+            throw invalid("目标表已纳入租户过滤但缺少 TENANT_ID 列：请为表补充该列，" + "或将表加入 mybatis-plus.tenant.ignore-tables 作为全局表");
         }
-        TenantLineHandler handler = handlers.getFirst();
-        Expression tenantId = handler.getTenantId();
-        if (tenantId == null
-                || tenantId instanceof NullValue
-                || tenantId instanceof StringValue value && !StringUtils.hasText(value.getValue())) {
-            throw invalid("缺少当前租户上下文：多租户已启用，请选择租户或提供 X-Tenant-Id");
+        writable(column);
+        if (!textual(column) || column.getLength() < 32) {
+            throw invalid("TENANT_ID 必须是至少 32 字符的文本列");
         }
-        if (!FormConstants.COLUMN_TENANT_ID.equalsIgnoreCase(handler.getTenantIdColumn())) {
-            throw invalid("动态表单只支持 TENANT_ID 租户列");
-        }
-        if (handler.ignoreTable(model.tableName()) && !model.skipContractColumns()) {
-            throw invalid("目标表被实际租户插件忽略，不符合租户表契约");
-        }
-        return handler;
+        validateValue(column, TenantContextHolder.getCurrentTenantId(), FormErrorCode.FORM_TABLE_INVALID);
+        return column;
     }
 
     public static boolean hasDefault(TableColumnView column) {

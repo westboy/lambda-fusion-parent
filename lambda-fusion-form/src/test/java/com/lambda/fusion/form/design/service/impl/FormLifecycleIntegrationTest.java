@@ -343,7 +343,6 @@ class FormLifecycleIntegrationTest {
         command.setFormName("第一版");
         command.setFormType("SINGLE");
         command.setTableName("LA_TEST_BUSINESS");
-        command.setSkipContractColumns(true);
         FormFieldItem field = new FormFieldItem();
         field.setFieldName("personName");
         field.setColumnName("PERSON_NAME");
@@ -402,7 +401,7 @@ class FormLifecycleIntegrationTest {
                     CREATE TABLE la_form_def (ID VARCHAR(32) PRIMARY KEY, FORM_KEY VARCHAR(64), FORM_NAME VARCHAR(128),
                     FORM_TYPE VARCHAR(16), TABLE_NAME VARCHAR(64), TREE_CONFIG CLOB, FLOW_CODE VARCHAR(64),
                     STATUS VARCHAR(16), PUBLISHED_VERSION BIGINT, TITLE_TEMPLATE VARCHAR(256), INTERCEPTOR VARCHAR(128),
-                    PUBLISH_ON_SAVE BOOLEAN, SKIP_CONTRACT_COLUMNS BOOLEAN, LOGIC_DELETE_COLUMN VARCHAR(64),
+                    PUBLISH_ON_SAVE BOOLEAN, LOGIC_DELETE_COLUMN VARCHAR(64),
                     LIST_CONFIG CLOB, FORM_LAYOUT CLOB, ROUTE_RESOURCE_ID VARCHAR(32), VERSION BIGINT DEFAULT 0
                     """
                             + audit);

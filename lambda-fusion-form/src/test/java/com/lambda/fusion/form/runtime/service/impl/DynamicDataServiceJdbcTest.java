@@ -10,6 +10,8 @@ import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
+import com.lambda.cloud.mybatis.tenant.MissingTenantStrategy;
+import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
@@ -26,6 +28,7 @@ import com.lambda.fusion.form.runtime.support.TargetTableContract;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import net.sf.jsqlparser.expression.Expression;
@@ -49,8 +52,7 @@ class DynamicDataServiceJdbcTest {
     private SqlSession session;
     private JdbcTemplate jdbc;
     private DynamicDataServiceImpl service;
-    private String tenant = "tenantA";
-    private boolean ignoreTiny = true;
+    private MybatisPlusExtendProperties mybatisProperties;
 
     @BeforeEach
     void setUp() {
@@ -72,12 +74,15 @@ class DynamicDataServiceJdbcTest {
         interceptor.addInnerInterceptor(new TenantLineInnerInterceptor(new TenantLineHandler() {
             @Override
             public Expression getTenantId() {
-                return tenant == null ? null : new StringValue(tenant);
+                String currentTenantId = TenantContextHolder.getCurrentTenantId();
+                return currentTenantId == null ? null : new StringValue(currentTenantId);
             }
 
             @Override
             public boolean ignoreTable(String tableName) {
-                return "LA_TEST_TINY".equalsIgnoreCase(tableName) && ignoreTiny;
+                // 镜像框架 TenantHandler：缺上下文全表跳过，有上下文按豁免清单判断（契约与插件共用同一配置）
+                return MissingTenantStrategy.isMissingTenantContext()
+                        || mybatisProperties.getTenant().getIgnoreTables().contains(tableName.toLowerCase());
             }
         }));
         configuration.addInterceptor(interceptor);
@@ -87,17 +92,21 @@ class DynamicDataServiceJdbcTest {
         FormProperties properties = new FormProperties();
         properties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY"));
         var mybatisProperties = new MybatisPlusExtendProperties();
+        this.mybatisProperties = mybatisProperties;
         mybatisProperties.getTenant().setEnabled(true);
+        mybatisProperties.getTenant().setIgnoreTables(Set.of("la_test_tiny"));
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
                 mock(FormModelProvider.class),
-                new TargetTableContract(new TableMetadataReader(dataSource, properties), factory, mybatisProperties));
+                new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties));
+        TenantContextHolder.getInstance().setTenantId("tenantA");
     }
 
     @AfterEach
     void tearDown() {
         session.close();
+        TenantContextHolder.getInstance().close();
         jdbc.execute("DROP ALL OBJECTS");
     }
 
@@ -187,11 +196,11 @@ class DynamicDataServiceJdbcTest {
     @Test
     void changingTenantPolicyAfterPublicationCannotExposeOtherTenantsRows() {
         jdbc.execute("ALTER TABLE LA_TEST_TINY ADD TENANT_ID VARCHAR(32)");
-        ignoreTiny = false;
+        exemptTiny(false);
         FormModel model = model(false, true, false);
         String id = service.create(model, Map.of("personName", "Alice"));
-        tenant = "tenantB";
-        ignoreTiny = true;
+        exemptTiny(true); // 发布后策略漂移：表被豁免，对带上下文的租户请求必须拒绝而非静默放开
+        TenantContextHolder.getInstance().setTenantId("tenantB");
         session.clearCache();
         assertThatThrownBy(() -> service.page(model, query(null, null, null)))
                 .isInstanceOf(FormBusinessException.class);
@@ -201,9 +210,14 @@ class DynamicDataServiceJdbcTest {
         assertThatThrownBy(() -> service.delete(model, id)).isInstanceOf(FormBusinessException.class);
         assertThat(jdbc.queryForObject("SELECT PERSON_NAME FROM LA_TEST_TINY WHERE ID=?", String.class, id))
                 .isEqualTo("Alice");
-        ignoreTiny = false;
-        tenant = null;
-        assertThatThrownBy(() -> service.getById(model, id)).isInstanceOf(FormBusinessException.class);
+        TenantContextHolder.getInstance().close(); // 平台管理模式：无上下文的开发者读写不设租户防线
+        session.clearCache();
+        assertThat(service.getById(model, id)).containsEntry("personName", "Alice");
+    }
+
+    /** 切换 LA_TEST_TINY 的豁免注册，契约与插件共用该配置事实。 */
+    private void exemptTiny(boolean exempt) {
+        mybatisProperties.getTenant().setIgnoreTables(exempt ? Set.of("la_test_tiny") : Set.of());
     }
 
     private FormModel validationModel() {
@@ -225,7 +239,6 @@ class DynamicDataServiceJdbcTest {
         snapshot.setFormKey("validation_form");
         snapshot.setFormType("SINGLE");
         snapshot.setTableName("LA_TEST_TINY");
-        snapshot.setSkipContractColumns(true);
         snapshot.setFields(List.of(
                 name,
                 amount,
@@ -330,7 +343,7 @@ class DynamicDataServiceJdbcTest {
         String id = service.create(model, Map.of("personName", "Alice", "TENANT_ID", "tenantB", "tenantId", "tenantB"));
         assertThat(jdbc.queryForObject("SELECT TENANT_ID FROM LA_TEST_FORM WHERE ID=?", String.class, id))
                 .isEqualTo("tenantA");
-        tenant = "tenantB";
+        TenantContextHolder.getInstance().setTenantId("tenantB");
         session.clearCache();
         assertThat(service.page(model, query(null, null, null)).getTotal()).isZero();
         assertThatThrownBy(() -> service.getById(model, id)).isInstanceOf(FormBusinessException.class);
@@ -357,7 +370,6 @@ class DynamicDataServiceJdbcTest {
         snapshot.setFormName("测试表单");
         snapshot.setFormType(tree ? "TREE" : "SINGLE");
         snapshot.setTableName(tiny ? "LA_TEST_TINY" : "LA_TEST_FORM");
-        snapshot.setSkipContractColumns(tiny);
         snapshot.setLogicDeleteColumn(deleted ? "DELETED" : null);
         if (tree) {
             snapshot.setTreeConfig(
