@@ -1,5 +1,6 @@
 package com.lambda.fusion.form.runtime.mapper;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.apache.ibatis.annotations.Delete;
@@ -65,6 +66,50 @@ public interface DynamicTableMapper {
     Map<String, Object> selectById(
             @Param("tableName") String tableName,
             @Param("selectColumns") String selectColumns,
+            @Param("whereSql") String whereSql,
+            @Param("params") Map<String, Object> params);
+
+    /**
+     * 按外键列批量查子行（主从两段式读组装；列名经服务端关系配置白名单，
+     * 值为主表行 id 集参数化绑定）
+     */
+    @Select(
+            """
+            <script>
+            SELECT ${selectColumns} FROM ${tableName} WHERE ${fkColumn} IN
+            <foreach collection="values" item="v" open="(" separator="," close=")">#{v}</foreach>
+            <if test="whereSql != null">${whereSql}</if>
+            <if test="orderSql != null">${orderSql}</if>
+            </script>
+            """)
+    List<Map<String, Object>> selectByFk(
+            @Param("tableName") String tableName,
+            @Param("selectColumns") String selectColumns,
+            @Param("fkColumn") String fkColumn,
+            @Param("values") Collection<String> values,
+            @Param("whereSql") String whereSql,
+            @Param("orderSql") String orderSql);
+
+    /**
+     * 按外键列删除子行（CASCADE 物理/替换式更新清理）
+     */
+    @Delete("<script>DELETE FROM ${tableName} WHERE ${fkColumn} = #{params.value}"
+            + "<if test=\"whereSql != null\">${whereSql}</if></script>")
+    int deleteByFk(
+            @Param("tableName") String tableName,
+            @Param("fkColumn") String fkColumn,
+            @Param("whereSql") String whereSql,
+            @Param("params") Map<String, Object> params);
+
+    /**
+     * 按外键列批量更新子行（逻辑删除级联：SET 片段如 "DELETED = 1"）
+     */
+    @Update("<script>UPDATE ${tableName} SET ${setSql} WHERE ${fkColumn} = #{params.value}"
+            + "<if test=\"whereSql != null\">${whereSql}</if></script>")
+    int updateByFk(
+            @Param("tableName") String tableName,
+            @Param("setSql") String setSql,
+            @Param("fkColumn") String fkColumn,
             @Param("whereSql") String whereSql,
             @Param("params") Map<String, Object> params);
 

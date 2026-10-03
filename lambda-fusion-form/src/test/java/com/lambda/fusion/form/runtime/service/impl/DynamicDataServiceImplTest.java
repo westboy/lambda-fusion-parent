@@ -200,8 +200,22 @@ class DynamicDataServiceImplTest {
         when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(2L);
 
-        assertErrorCode(() -> service.delete(masterSubModel(), "1"), FormErrorCode.FORM_SUB_DELETE_FORBIDDEN);
+        assertErrorCode(
+                () -> service.delete(masterSubModel("FORBID_DELETE"), "1"), FormErrorCode.FORM_SUB_DELETE_FORBIDDEN);
         verify(mapper, never()).deleteById(anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void deleteCascadesChildrenWhenStrategyAllows() {
+        when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
+                .thenReturn(2L);
+
+        service.delete(masterSubModel("CASCADE_DELETE"), "1");
+
+        verify(mapper).deleteByFk(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyString(), anyMap());
+        verify(mapper).deleteById(eq(TABLE), anyString(), anyMap());
     }
 
     @Test
@@ -211,7 +225,7 @@ class DynamicDataServiceImplTest {
         when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(0L);
 
-        service.delete(masterSubModel(), "1");
+        service.delete(masterSubModel("CASCADE_DELETE"), "1");
 
         ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
         verify(mapper).deleteById(eq(TABLE), anyString(), params.capture());
@@ -295,7 +309,7 @@ class DynamicDataServiceImplTest {
                 null);
     }
 
-    private static FormModel masterSubModel() {
+    private static FormModel masterSubModel(String cascadeStrategy) {
         return new FormModel(
                 "leave_demo",
                 "请假演示",
@@ -306,7 +320,7 @@ class DynamicDataServiceImplTest {
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,
                 model().fields(),
-                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", FormConstants.CASCADE_DELETE)),
+                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy)),
                 null,
                 null);
     }

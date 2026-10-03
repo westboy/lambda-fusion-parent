@@ -41,6 +41,23 @@ public class FormSchemaView {
     @Schema(description = "TREE 类型运行时树配置（字段标识视角，物理列名不出服务端）")
     private TreeSchema tree;
 
+    @Schema(description = "MASTER_SUB 主从关系（子表 schema 由前端按 subFormKey 单独拉取）")
+    private List<RelationSchema> relations = new ArrayList<>();
+
+    /** MASTER_SUB 主从关系描述 */
+    @Data
+    public static class RelationSchema {
+
+        @Schema(description = "子表单标识")
+        private String subFormKey;
+
+        @Schema(description = "子表外键列")
+        private String foreignKey;
+
+        @Schema(description = "CASCADE_DELETE / FORBID_DELETE")
+        private String cascadeStrategy;
+    }
+
     /** TREE 运行时树配置：节点展示与父列均为字段标识 */
     @Data
     public static class TreeSchema {

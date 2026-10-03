@@ -3,6 +3,7 @@ package com.lambda.fusion.form.runtime.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
@@ -55,6 +56,7 @@ class DynamicDataServiceJdbcTest {
     private DynamicDataServiceImpl service;
     private FormProperties formProperties;
     private MybatisPlusExtendProperties mybatisProperties;
+    private final FormModelProvider modelProvider = mock(FormModelProvider.class);
 
     @BeforeEach
     void setUp() {
@@ -70,6 +72,13 @@ class DynamicDataServiceJdbcTest {
                     CREATED_BY VARCHAR(64), CREATED_AT TIMESTAMP, UPDATED_BY VARCHAR(64), UPDATED_AT TIMESTAMP)
                 """);
         jdbc.execute("CREATE TABLE LA_TEST_TINY (ID VARCHAR(32) PRIMARY KEY, PERSON_NAME VARCHAR(128))");
+        jdbc.execute(
+                """
+                CREATE TABLE LA_TEST_SUB (
+                    ID VARCHAR(32) PRIMARY KEY, ITEM_NAME VARCHAR(64) NOT NULL,
+                    LEAVE_ID VARCHAR(32), TENANT_ID VARCHAR(32),
+                    CREATED_BY VARCHAR(64), CREATED_AT TIMESTAMP, UPDATED_BY VARCHAR(64), UPDATED_AT TIMESTAMP)
+                """);
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setEnvironment(new Environment("test", new JdbcTransactionFactory(), dataSource));
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
@@ -92,7 +101,7 @@ class DynamicDataServiceJdbcTest {
         var factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
         session = factory.openSession(true);
         FormProperties properties = new FormProperties();
-        properties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY"));
+        properties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY", "LA_TEST_SUB"));
         var mybatisProperties = new MybatisPlusExtendProperties();
         this.mybatisProperties = mybatisProperties;
         mybatisProperties.getTenant().setEnabled(true);
@@ -102,7 +111,7 @@ class DynamicDataServiceJdbcTest {
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
-                mock(FormModelProvider.class),
+                modelProvider,
                 new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties),
                 formProperties);
         TenantContextHolder.getInstance().setTenantId("tenantA");
@@ -373,6 +382,70 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void masterSubWritesReadsReplacesAndCascades() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("CASCADE_DELETE");
+
+        // 新增：外键回填 + 审计填充 + 租户由插件填充
+        String id = service.create(
+                master,
+                Map.of(
+                        "personName",
+                        "Alice",
+                        "leave_item",
+                        List.of(Map.of("itemName", "A1"), Map.of("itemName", "A2"))));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT DISTINCT TENANT_ID FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
+                .isEqualTo("tenantA");
+        assertThat(jdbc.queryForObject("SELECT COUNT(CREATED_BY) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(2);
+
+        // 两段式读组装：详情与分页均挂嵌套子行
+        assertThat((List<?>) service.getById(master, id).get("leave_item")).hasSize(2);
+        var page = service.page(master, query(null, null, null));
+        assertThat(page.getTotal()).isEqualTo(1);
+        assertThat((List<?>) page.getRecords().getFirst().get("leave_item")).hasSize(2);
+
+        // 替换式更新：显式携带键才整组替换（客户端子行 id 不被信任）
+        service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of(Map.of("itemName", "B1"))));
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
+                .isEqualTo("B1");
+        service.update(master, id, Map.of("personName", "Alice3"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(1);
+
+        // CASCADE_DELETE：删除主行级联清理子行
+        service.delete(master, id);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(0);
+    }
+
+    @Test
+    void masterSubForbidStrategyRejectsDeleteWhenChildRowsExist() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("FORBID_DELETE");
+        String id =
+                service.create(master, Map.of("personName", "Bob", "leave_item", List.of(Map.of("itemName", "C1"))));
+        assertThatThrownBy(() -> service.delete(master, id))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_SUB_DELETE_FORBIDDEN.getCode()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void masterSubCreateRejectsWhenSubFormUnavailable() {
+        when(modelProvider.require("leave_item"))
+                .thenThrow(new FormBusinessException(FormErrorCode.FORM_NOT_PUBLISHED, "leave_item"));
+        FormModel master = masterSubModel("CASCADE_DELETE");
+        assertThatThrownBy(() -> service.create(
+                        master, Map.of("personName", "Carol", "leave_item", List.of(Map.of("itemName", "D1")))))
+                .isInstanceOf(FormBusinessException.class);
+    }
+
+    @Test
     void cannotSetDeleteFlagThroughNormalUpdate() {
         FormModel model = model(true, false, false);
         String id = service.create(model, Map.of("personName", "Alice"));
@@ -429,6 +502,41 @@ class DynamicDataServiceJdbcTest {
                                 field("amount", "AMOUNT", "DECIMAL", true),
                                 field("deleted", "DELETED", "INT", false),
                                 field("parentId", "PARENT_ID", "STRING", true)));
+        SnapshotJson json = new SnapshotJson(new ObjectMapper());
+        return new FormModelCompiler(json).compile(json.write(snapshot), 1L);
+    }
+
+    /** 主从演示主表模型：LA_TEST_FORM + leave_item 关系 */
+    private static FormModel masterSubModel(String cascadeStrategy) {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_master");
+        snapshot.setFormName("主从演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false), field("deleted", "DELETED", "INT", false)));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setForeignKey("LEAVE_ID");
+        relation.setCascadeStrategy(cascadeStrategy);
+        snapshot.setRelations(List.of(relation));
+        return compile(snapshot);
+    }
+
+    /** 主从演示子表模型：LA_TEST_SUB（单表类型，LEAVE_ID 外键已映射、可空由引擎回填） */
+    private static FormModel subModel() {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("leave_item");
+        snapshot.setFormName("请假明细");
+        snapshot.setFormType("SINGLE");
+        snapshot.setTableName("LA_TEST_SUB");
+        snapshot.setFields(
+                List.of(field("itemName", "ITEM_NAME", "STRING", false), field("leaveId", "LEAVE_ID", "STRING", true)));
+        return compile(snapshot);
+    }
+
+    private static FormModel compile(FormDefSnapshot snapshot) {
         SnapshotJson json = new SnapshotJson(new ObjectMapper());
         return new FormModelCompiler(json).compile(json.write(snapshot), 1L);
     }

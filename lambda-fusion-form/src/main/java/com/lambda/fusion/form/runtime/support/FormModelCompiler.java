@@ -99,12 +99,20 @@ public class FormModelCompiler {
         fields.forEach(FormFieldValidator::validateDefinition);
         fields.sort(Comparator.comparingInt(FormField::sort));
         List<FormRelation> relations = new ArrayList<>();
+        Set<String> subFormKeys = new HashSet<>();
         for (FormDefSnapshot.Relation relation : snapshot.getRelations()) {
             if (!FormConstants.isIdentifier(relation.getSubFormKey())
                     || !FormConstants.isIdentifier(relation.getForeignKey())) {
                 throw new FormBusinessException(
                         FormErrorCode.FORM_TABLE_INVALID,
                         "主从关系标识非法：" + relation.getSubFormKey() + "/" + relation.getForeignKey());
+            }
+            if (relation.getSubFormKey().equals(snapshot.getFormKey())) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "主从关系不能自引用");
+            }
+            if (!subFormKeys.add(relation.getSubFormKey())) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "子表单关系重复：" + relation.getSubFormKey());
             }
             relations.add(new FormRelation(
                     relation.getSubFormKey(),

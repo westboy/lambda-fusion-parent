@@ -89,12 +89,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         String pageSql = orderSql + " LIMIT " + pageSize + " OFFSET " + ((pageNum - 1) * pageSize);
         List<Map<String, Object>> records =
                 dynamicTableMapper.selectList(model.tableName(), selectColumns, whereSql, pageSql, params);
+        List<Map<String, Object>> projected =
+                records.stream().map(row -> project(model, row)).toList();
+        attachSubRows(model, projected);
         return PageView.<Map<String, Object>>builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
                 .total(total)
                 .totalPages((total + pageSize - 1) / pageSize)
-                .records(records.stream().map(row -> project(model, row)).toList())
+                .records(projected)
                 .build();
     }
 
@@ -108,7 +111,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (row == null) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
-        return project(model, row);
+        Map<String, Object> result = project(model, row);
+        attachSubRows(model, List.of(result));
+        return result;
     }
 
     @Override
@@ -132,6 +137,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         fillAudit(tableColumns, columns, values, params, true);
         dynamicTableMapper.insertDynamic(model.tableName(), columns, values, params);
+        for (FormRelation relation : model.relations()) {
+            List<Map<String, Object>> rows = subRows(data, relation);
+            if (rows.isEmpty()) {
+                continue;
+            }
+            FormModel subModel = requireSubModel(relation);
+            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+            insertSubRows(relation, subModel, subColumns, id, rows);
+        }
         List<FormField> defaulted = model.fields().stream()
                 .filter(field -> field.persisted()
                         && !field.column().equals(model.logicDeleteColumn())
@@ -175,6 +189,18 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
+        // 主从子表替换式更新：仅当请求显式携带子表键（key=subFormKey）时才整组替换，
+        // 未携带表示不触碰子表；客户端子行 id 一律不被信任（提交行全部重新生成）
+        for (FormRelation relation : model.relations()) {
+            if (!data.containsKey(relation.subFormKey())) {
+                continue;
+            }
+            FormModel subModel = requireSubModel(relation);
+            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+            deleteSubRows(subModel, relation, id);
+            List<Map<String, Object>> rows = subRows(data, relation);
+            insertSubRows(relation, subModel, subColumns, id, rows);
+        }
     }
 
     @Override
@@ -182,10 +208,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     public void delete(FormModel model, String id) {
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         getById(model, id);
-        // 级联删除依赖子表物理表名解析（P1 主从落地时补齐）；P0 一律拒绝删除有子表数据的记录
+        // 主从级联：CASCADE_DELETE 先清理子行（尊重子表逻辑删除语义），FORBID_DELETE 有子行即拒绝
         for (FormRelation relation : model.relations()) {
-            if (hasChildRows(relation, id)) {
-                throw new FormBusinessException(FormErrorCode.FORM_SUB_DELETE_FORBIDDEN, relation.subFormKey());
+            FormModel subModel = requireSubModel(relation);
+            if (hasChildRows(subModel, relation, id)) {
+                if (FormConstants.CASCADE_DELETE.equals(relation.cascadeStrategy())) {
+                    deleteSubRows(subModel, relation, id);
+                } else {
+                    throw new FormBusinessException(FormErrorCode.FORM_SUB_DELETE_FORBIDDEN, relation.subFormKey());
+                }
             }
         }
         Map<String, Object> params = new HashMap<>();
@@ -235,13 +266,23 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
-     * 子表是否存在引用记录（子表物理表名经 FormModelProvider 解析）
+     * 解析关系子表单模型：须存在、已发布且表在允许清单（require 校验）、外键已映射、自身为单表类型
      */
-    private boolean hasChildRows(FormRelation relation, String id) {
+    private FormModel requireSubModel(FormRelation relation) {
         FormModel subModel = modelProvider.require(relation.subFormKey());
+        if (!FormConstants.FORM_TYPE_SINGLE.equals(subModel.formType())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表单须为单表类型：" + relation.subFormKey());
+        }
         if (subModel.fields().stream().noneMatch(field -> field.column().equals(relation.foreignKey()))) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表外键未映射：" + relation.foreignKey());
         }
+        return subModel;
+    }
+
+    /**
+     * 子表是否存在引用记录（外键列已由 {@link #requireSubModel} 校验）
+     */
+    private boolean hasChildRows(FormModel subModel, FormRelation relation, String id) {
         Map<String, Object> params = new HashMap<>();
         params.put("value", id);
         return dynamicTableMapper.countBy(
@@ -249,6 +290,121 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         activeRows(subModel) + " AND " + relation.foreignKey() + " = #{params.value}",
                         params)
                 > 0;
+    }
+
+    /** 提交数据中该关系的子行集合（key=subFormKey；非数组即非法参数，子行 id 不被信任） */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> subRows(Map<String, Object> data, FormRelation relation) {
+        Object raw = data.get(relation.subFormKey());
+        if (raw == null) {
+            return List.of();
+        }
+        if (!(raw instanceof List<?> list)) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表数据须为数组：" + relation.subFormKey());
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map)) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子行须为对象：" + relation.subFormKey());
+            }
+            rows.add((Map<String, Object>) item);
+        }
+        return rows;
+    }
+
+    /** 逐行写入子表：外键回填主表 id，复用子模型校验、逻辑删除初始化与审计填充（租户由插件承担） */
+    private void insertSubRows(
+            FormRelation relation,
+            FormModel subModel,
+            Map<String, TableColumnView> subColumns,
+            String mainId,
+            List<Map<String, Object>> rows) {
+        for (Map<String, Object> item : rows) {
+            Map<String, Object> row = normalize(subModel, item, true, subColumns);
+            List<String> columns = new ArrayList<>();
+            List<String> values = new ArrayList<>();
+            Map<String, Object> params = new HashMap<>();
+            columns.add(FormConstants.COLUMN_ID);
+            values.add(bind("id", IdWorker.getIdStr(), params));
+            row.forEach((column, value) -> {
+                columns.add(column);
+                values.add(bind("p" + params.size(), value, params));
+            });
+            if (StringUtils.hasText(subModel.logicDeleteColumn())) {
+                columns.add(subModel.logicDeleteColumn());
+                values.add(bind("p" + params.size(), 0, params));
+            }
+            columns.add(relation.foreignKey());
+            values.add(bind("fk", mainId, params));
+            fillAudit(subColumns, columns, values, params, true);
+            dynamicTableMapper.insertDynamic(subModel.tableName(), columns, values, params);
+        }
+    }
+
+    /** 清理子行：子表有逻辑删除列时置删除标记，否则物理删除 */
+    private void deleteSubRows(FormModel subModel, FormRelation relation, String mainId) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("value", mainId);
+        if (StringUtils.hasText(subModel.logicDeleteColumn())) {
+            dynamicTableMapper.updateByFk(
+                    subModel.tableName(),
+                    subModel.logicDeleteColumn() + " = 1",
+                    relation.foreignKey(),
+                    activeRows(subModel),
+                    params);
+        } else {
+            dynamicTableMapper.deleteByFk(subModel.tableName(), relation.foreignKey(), activeRows(subModel), params);
+        }
+    }
+
+    /**
+     * 两段式读组装：主行 id 集合按外键 in 查回子行，投影后挂到主行（key=subFormKey）。
+     * 子表单不可用（未发布/未映射）时跳过该关系并置空，不阻断主表读取。
+     */
+    private void attachSubRows(FormModel model, List<Map<String, Object>> rows) {
+        if (model.relations().isEmpty() || rows.isEmpty()) {
+            return;
+        }
+        for (FormRelation relation : model.relations()) {
+            FormModel subModel;
+            try {
+                subModel = requireSubModel(relation);
+            } catch (FormBusinessException error) {
+                log.warn("主从子表单不可用，读取跳过该关系：{} - {}", relation.subFormKey(), error.getMessage());
+                rows.forEach(row -> row.put(relation.subFormKey(), List.of()));
+                continue;
+            }
+            List<String> ids =
+                    rows.stream().map(row -> String.valueOf(row.get("id"))).toList();
+            List<Map<String, Object>> subRows = dynamicTableMapper.selectByFk(
+                    subModel.tableName(),
+                    String.join(", ", selectColumns(subModel)),
+                    relation.foreignKey(),
+                    ids,
+                    activeRows(subModel),
+                    " ORDER BY ID ASC");
+            Map<String, List<Map<String, Object>>> grouped = new HashMap<>();
+            for (Map<String, Object> subRow : subRows) {
+                Object fk = columnValue(subRow, relation.foreignKey());
+                if (fk == null) {
+                    continue;
+                }
+                grouped.computeIfAbsent(fk.toString(), key -> new ArrayList<>()).add(project(subModel, subRow));
+            }
+            for (Map<String, Object> row : rows) {
+                row.put(relation.subFormKey(), grouped.getOrDefault(String.valueOf(row.get("id")), List.of()));
+            }
+        }
+    }
+
+    /** 原始行键大小写随驱动漂移，按列名大小写不敏感取值 */
+    private Object columnValue(Map<String, Object> row, String column) {
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            if (entry.getKey().toUpperCase(Locale.ROOT).equals(column)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     /**
@@ -445,17 +601,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     params);
             // 原始行键大小写随驱动漂移，与 project() 同样归一后再取 ID
             frontier = children.stream()
-                    .map(row -> {
-                        Object id = null;
-                        for (Map.Entry<String, Object> entry : row.entrySet()) {
-                            if (FormConstants.COLUMN_ID.equals(entry.getKey().toUpperCase(Locale.ROOT))) {
-                                id = entry.getValue();
-                                break;
-                            }
-                        }
-                        return id == null ? null : id.toString();
-                    })
+                    .map(row -> columnValue(row, FormConstants.COLUMN_ID))
                     .filter(Objects::nonNull)
+                    .map(Object::toString)
                     .filter(ids::add)
                     .collect(Collectors.toList());
         }

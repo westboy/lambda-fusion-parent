@@ -22,6 +22,13 @@ public class FormSchemaAssembler {
             tree.setParentField(fieldNameOfColumn(model, model.tree().parentColumn()));
             view.setTree(tree);
         }
+        model.relations().forEach(relation -> {
+            FormSchemaView.RelationSchema view1 = new FormSchemaView.RelationSchema();
+            view1.setSubFormKey(relation.subFormKey());
+            view1.setForeignKey(relation.foreignKey());
+            view1.setCascadeStrategy(relation.cascadeStrategy());
+            view.getRelations().add(view1);
+        });
         view.setListConfig(toListConfig(model.listConfig()));
         view.setTreeConfig(model.treeConfig());
         view.setFormLayout(model.formLayout());
