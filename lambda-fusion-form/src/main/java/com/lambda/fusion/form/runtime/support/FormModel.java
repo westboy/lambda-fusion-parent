@@ -153,8 +153,9 @@ public record FormModel(
      * @param subFormKey 子表单 formKey
      * @param foreignKey 子表外键列
      * @param cascadeStrategy CASCADE_DELETE / FORBID_DELETE
+     * @param subTableConfig 子表列表呈现配置 JSON（{columns:[{field,width}]}，field 为子表单字段标识）
      */
-    public record FormRelation(String subFormKey, String foreignKey, String cascadeStrategy) {}
+    public record FormRelation(String subFormKey, String foreignKey, String cascadeStrategy, String subTableConfig) {}
 
     /**
      * TREE 类型树配置

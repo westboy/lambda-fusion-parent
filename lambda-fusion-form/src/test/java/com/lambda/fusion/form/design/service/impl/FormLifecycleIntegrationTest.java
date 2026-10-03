@@ -370,11 +370,29 @@ class FormLifecycleIntegrationTest {
 
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        command.setRelations(List.of(relation("sub_form", "PERSON_NAME")));
+        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
+        relation.setSubTableConfig("{\"columns\":[{\"field\":\"personName\",\"width\":120}]}");
+        command.setRelations(List.of(relation));
         String id = design.save(command);
         assertThat(definitions.selectById(id).getFormType()).isEqualTo("MASTER_SUB");
         assertThat(count("la_form_def")).isEqualTo(2);
         assertThat(count("la_form_relation")).isEqualTo(1);
+    }
+
+    @Test
+    void saveRejectsSubTableColumnNotMappedInSubForm() {
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("sub_form");
+        design.save(sub);
+
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
+        relation.setSubTableConfig("{\"columns\":[{\"field\":\"missing\"}]}");
+        command.setRelations(List.of(relation));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表列表列未在子表单映射"));
     }
 
     /** 业务异常的中文明细存于 args 而非 message，据此断言具体拦截原因 */
@@ -502,7 +520,7 @@ class FormLifecycleIntegrationTest {
             jdbc.execute(
                     """
                     CREATE TABLE la_form_relation (ID VARCHAR(32) PRIMARY KEY, FORM_ID VARCHAR(32), SUB_FORM_KEY VARCHAR(64),
-                    FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16)
+                    FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16), SUB_TABLE_CONFIG VARCHAR(2048)
                     """
                             + audit);
             jdbc.execute(

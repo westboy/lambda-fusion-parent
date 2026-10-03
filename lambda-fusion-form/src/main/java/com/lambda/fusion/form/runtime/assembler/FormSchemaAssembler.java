@@ -27,6 +27,7 @@ public class FormSchemaAssembler {
             view1.setSubFormKey(relation.subFormKey());
             view1.setForeignKey(relation.foreignKey());
             view1.setCascadeStrategy(relation.cascadeStrategy());
+            view1.setSubTableConfig(relation.subTableConfig());
             view.getRelations().add(view1);
         });
         view.setListConfig(toListConfig(model.listConfig()));

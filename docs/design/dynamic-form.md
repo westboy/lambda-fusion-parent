@@ -274,8 +274,9 @@ public interface FormDataInterceptor {
 | `SUB_FORM_KEY` | varchar(64) NN | 子表单 formKey（同租户内解析） |
 | `FOREIGN_KEY` | varchar(64) NN | 子表外键列 |
 | `CASCADE_STRATEGY` | varchar(16) NN | `CASCADE_DELETE` / `FORBID_DELETE` |
+| `SUB_TABLE_CONFIG` | json | 子表列表呈现配置 `{columns:[{field,width}]}`，field 为子表单字段标识（未配置=全量可见字段） |
 
-设计端保存期前置校验（2026-10-03）：草稿保存即拦截运行时 `requireSubModel` 才能发现的错误——子表单须存在（同租户）且为 `SINGLE` 类型、外键列须为子表单已映射且落库的字段，另拒绝自引用与重复 `SUB_FORM_KEY`；设计器关系配置为选择式（选子表单 → 自动加载其字段 → 外键下拉），不再手打 formKey。
+设计端保存期前置校验（2026-10-03）：草稿保存即拦截运行时 `requireSubModel` 才能发现的错误——子表单须存在（同租户）且为 `SINGLE` 类型、外键列须为子表单已映射且落库的字段，另拒绝自引用与重复 `SUB_FORM_KEY`；设计器关系配置为选择式（选子表单 → 自动加载其字段 → 外键下拉），不再手打 formKey。`SUB_TABLE_CONFIG` 经 `SubTableConfigs` 键白名单+值域校验（保存期对照子表单字段、编译期防篡改再拦一道），设计器子表区块拖拽定列（2026-10-03）。
 
 ### 5.4 `la_form_def_version` 发布快照
 

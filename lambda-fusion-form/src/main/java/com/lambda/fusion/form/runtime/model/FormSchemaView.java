@@ -56,6 +56,9 @@ public class FormSchemaView {
 
         @Schema(description = "CASCADE_DELETE / FORBID_DELETE")
         private String cascadeStrategy;
+
+        @Schema(description = "子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识（未配置=全量可见字段）")
+        private String subTableConfig;
     }
 
     /** TREE 运行时树配置：节点展示与父列均为字段标识 */

@@ -26,6 +26,7 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormLayouts;
+import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -34,6 +35,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -293,15 +295,26 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单须为单表类型：" + item.getSubFormKey());
             }
             String foreignKey = item.getForeignKey().toUpperCase(Locale.ROOT);
-            boolean mapped = formFieldMapper
-                    .selectList(
-                            new LambdaQueryWrapper<FormFieldEntity>().eq(FormFieldEntity::getFormId, subDef.getId()))
-                    .stream()
+            List<FormFieldEntity> subFields = formFieldMapper.selectList(
+                    new LambdaQueryWrapper<FormFieldEntity>().eq(FormFieldEntity::getFormId, subDef.getId()));
+            boolean mapped = subFields.stream()
                     .filter(field -> !Boolean.FALSE.equals(field.getPersisted()))
                     .map(FormFieldEntity::getColumnName)
                     .anyMatch(column -> foreignKey.equals(column.toUpperCase(Locale.ROOT)));
             if (!mapped) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表外键未在子表单映射：" + item.getForeignKey());
+            }
+            List<String> subTableColumns = SubTableConfigs.columnFields(objectMapper, item.getSubTableConfig());
+            if (!subTableColumns.isEmpty()) {
+                Set<String> subFieldNames = subFields.stream()
+                        .filter(field -> !Boolean.FALSE.equals(field.getPersisted()))
+                        .map(FormFieldEntity::getFieldName)
+                        .collect(Collectors.toSet());
+                for (String column : subTableColumns) {
+                    if (!subFieldNames.contains(column)) {
+                        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表列表列未在子表单映射：" + column);
+                    }
+                }
             }
         }
     }

@@ -114,12 +114,14 @@ public class FormModelCompiler {
                 throw new FormBusinessException(
                         FormErrorCode.FORM_TABLE_INVALID, "子表单关系重复：" + relation.getSubFormKey());
             }
+            this.snapshotJson.validateSubTableConfig(relation.getSubTableConfig());
             relations.add(new FormRelation(
                     relation.getSubFormKey(),
                     relation.getForeignKey().toUpperCase(Locale.ROOT),
                     relation.getCascadeStrategy() == null
                             ? FormConstants.CASCADE_DELETE
-                            : relation.getCascadeStrategy()));
+                            : relation.getCascadeStrategy(),
+                    relation.getSubTableConfig()));
         }
         TreeConfig tree = compileTree(snapshot, fields);
         validateLogicDeleteColumn(snapshot, fields);

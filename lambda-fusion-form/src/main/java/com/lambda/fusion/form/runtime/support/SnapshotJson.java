@@ -45,4 +45,9 @@ public class SnapshotJson {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "treeConfig 解析失败：" + e.getMessage());
         }
     }
+
+    /** 编译期拦截被篡改快照中的子表列表配置（与保存期同一校验规则） */
+    public void validateSubTableConfig(String json) {
+        SubTableConfigs.columnFields(objectMapper, json);
+    }
 }

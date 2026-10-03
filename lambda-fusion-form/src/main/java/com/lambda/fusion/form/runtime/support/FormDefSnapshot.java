@@ -138,5 +138,8 @@ public class FormDefSnapshot {
         private String subFormKey;
         private String foreignKey;
         private String cascadeStrategy;
+
+        /** 子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识 */
+        private String subTableConfig;
     }
 }
