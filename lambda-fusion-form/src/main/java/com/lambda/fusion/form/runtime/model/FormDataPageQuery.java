@@ -27,6 +27,9 @@ public class FormDataPageQuery extends PageQuery<Map<String, Object>> {
     @Schema(description = "排序列表")
     private List<SortItem> sorts = new ArrayList<>();
 
+    @Schema(description = "TREE 类型树节点过滤（选左树节点查全部子孙，null 表示不过滤）")
+    private TreeNodeFilter treeNode;
+
     @Override
     public LambdaQueryWrapper<Map<String, Object>> getLambdaQueryWrapper() {
         throw new UnsupportedOperationException("动态表单查询经引擎 AST 构建，不走 LambdaQueryWrapper");
@@ -40,4 +43,12 @@ public class FormDataPageQuery extends PageQuery<Map<String, Object>> {
      */
     @Schema(description = "排序项")
     public record SortItem(String field, boolean asc) {}
+
+    /**
+     * 树节点过滤（value 为树配置对应字段的值，由引擎按 FormModel.tree() 解析列）
+     *
+     * @param value 树节点值（对应 filterColumn 列的值）
+     */
+    @Schema(description = "树节点过滤")
+    public record TreeNodeFilter(String value) {}
 }

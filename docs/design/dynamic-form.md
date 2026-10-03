@@ -159,11 +159,12 @@ FormModel = {
 - **读路径**：两段式——主表分页出 id 集 → 子表/关联表 `in` 查回内存组装。**不做**动态多表 JOIN：AST 白名单控制 JOIN 的复杂度收益不抵风险，两段式慢查询可控、租户条件天然分别生效；
 - **树过滤**（TREE）：左树选中节点时过滤其全部子孙——按 `tree_config` 数据源递归取回子孙 id 集，对树关联列 `in` 过滤；子孙集上限 `lambda.fusion.form.tree.max-descendants`（m1 用独立关系表维护树闭包，本设计自关联/字典场景直接递归查询，规模由该上限兜底）。
 
-**P0 实施现状（偏差登记）**：P0 只落地单表 CRUD 与自关联树的**直接子节点**查询（`GET /v1/form/{formKey}/tree?parentValue=`），因此：
+**P1 交付（2026-10-03）**：TREE 左树右表已交付——
 
-- 写路径的主从同事务写入、读路径的两段式组装、`CASCADE_DELETE` 级联删除均未实现（`la_form_relation` 已建模、删除时的子表存在性检查已生效，但 P0 一律按 `FORBID_DELETE` 处理，见 `DynamicDataServiceImpl#delete` 注释）；
-- 列表页的"选树节点过滤全部子孙"未实现，`maxTreeDescendants` 与 `FORM_TREE_DESCENDANT_LIMIT`(18123) 为 P1 生效项；树来源 P0 只支持 `SELF` 自关联（`DICT` 等来源在编译期即拒绝）；
-- 上述三项随 P1 一并交付，届时 §4.4 全部条款生效。
+- 列表页选中树节点过滤「自身 + 全部子孙」：后端按 `parentColumn` 逐层递归收集 id 集（每层一条参数化 in 查询），对主键 `ID` in 过滤；`parentColumn` 引用父行 ID（树行即业务行，`filterColumn` 预留给 DICT 等外部树来源）；
+- 子孙集上限 `lambda.fusion.form.tree.max-descendants` 生效，超限抛 `FORM_TREE_DESCENDANT_LIMIT`(18123)，环状数据由上限兜底终止；
+- 树来源仍只支持 `SELF` 自关联（`DICT` 等来源在编译期即拒绝）；`GET /v1/form/{formKey}/tree` 供前端懒加载（`parentValue` 空=根节点层）；
+- 主从同事务写入、两段式组装与 `CASCADE_DELETE` 级联删除仍为 P1 未交付项（删除时一律按 `FORBID_DELETE` 检查子表存在性，见 `DynamicDataServiceImpl#delete`）。
 
 ### 4.5 系统字段与逻辑删除
 
@@ -464,7 +465,7 @@ Controller 只编排（契约 §9.3），权限在 Cloud 统一注解鉴权链�
 | `lambda.fusion.form.cache-ttl-seconds` | `300` | 快照编译结果 TTL；状态和生效版本每次查 DB（§4.2） |
 | `lambda.fusion.form.allowed-tables` | `[]` | 允许动态读写的物理表名，精确匹配、默认拒绝；startup 仅配置 `la_demo_leave` |
 | `lambda.fusion.form.max-condition-count` | `20` | AST 条件数上限（§4.3） |
-| `lambda.fusion.form.tree.max-descendants` | `500` | 树子孙 id 集上限（P1 生效，P0 未实现子孙过滤，§4.4） |
+| `lambda.fusion.form.tree.max-descendants` | `500` | 树子孙 id 集上限（已生效：TREE 列表子孙过滤 §4.4） |
 | `lambda.fusion.form.table-exclude-pattern` | `la_form_.*\|databasechangelog.*\|qrtz_.*` | 对允许清单追加的排除规则，大小写不敏感；设计、发布和运行共同检查（§5.5） |
 
 租户开关沿用基础框架配置，不新增表单私有开关：
@@ -502,7 +503,7 @@ packages/system-ui/src/
 
 **通用挂载**：菜单 `RES_PATH` 只承担访问路径；`EXPAND` 中明确声明 `{ "component": "/form/runtime/index", "meta": { "formKey": "leave", "formId": "..." } }`。`MenuRouteAssembler` 读取组件与参数，以资源 ID 生成稳定路由名称；显示名仍在 meta.title。运行页按当前租户的 formKey 读取生效快照，切换 formKey 会重建 Schema、查询和编辑状态；“刷新表单”重新读取版本与布局。`BUSINESS_EXPAND` 保存归属标记，供挂载管理验证，不靠路径或名称猜测归属。
 
-TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组件只渲染列表/查询/CRUD，`formType=TREE` 表单同样按列表渲染。
+TREE 类型运行页为左树右表布局（2026-10-03 交付）：左侧数据树按 `tree` 接口懒加载（节点展示列取 `tree.labelField` 字段），选中节点过滤「自身 + 全部子孙」，可一键清除回到全量；`MASTER_SUB` 主从子表编辑仍为 P1，其表单当前同样按列表渲染。
 
 ### 10.2 表单设计器
 
@@ -585,11 +586,11 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 | 第二阶段设计器批次 ✅（2026-10-01） | Vben 拖拽画布、属性面板、统一布局与三种来源预览、业务显示名、启用入口、支持范围收敛 | form 93 项与 core 3 项测试通过；实际 Vben、拖拽及只读预览组件测试与专项类型检查通过；H2 验证 Liquibase 新增字段和重复执行 |
 | 第二阶段路由与接口权限批次 | 通用参数页面、独立挂载/更新/撤销、明确角色授权、动态接口目录与真实请求鉴权、提交后缓存清理 | 真实 MVC / Mapper / 事务和浏览器组件夹具验证；具体数量与边界见审计记录 |
 | 第二阶段目标表与字段契约批次（2026-10-01） | 真实主键、ID 容量、精确元数据范围、实际租户策略、审计/生成/默认列、服务端类型和规则校验 | JDBC 物理表反例、真实事务中的默认值回滚、发布/回滚/启用结构变更验证；数量及边界见审计记录 |
-| P1 | TREE 左树右表（含列表页子孙过滤 + `maxTreeDescendants`）；MASTER_SUB 主从写入与两段式级联查询、`CASCADE_DELETE` | 左树右表与主从演示 |
+| P1 | ~~TREE 左树右表（含列表页子孙过滤 + `maxTreeDescendants`）~~（2026-10-03 交付，§4.4）；MASTER_SUB 主从写入与两段式级联查询、`CASCADE_DELETE` | 左树右表演示表 `la_demo_area`；主从演示待做 |
 | P2 | warm-flow 集成（§11 五步 + 办理页消费端）+ `FormDataInterceptor` SPI；缓存优化按实际性能需求评估 | 动态表单走通审批闭环 |
 | P3 | 代码生成毕业路径（含新表 changelog 生成）+ 版本导入导出 | 生成源码编译进模块 |
 
-尚未完成项已就地登记：§4.2（缓存容量）、§4.4（子孙过滤/级联删除）、§5.5（字典成员、文件协议和目标数据库部署验收）、§9（`tree.max-descendants` 未生效）、§10（分离部署下的动态目录同步）。
+尚未完成项已就地登记：§4.2（缓存容量）、§4.4（主从级联删除）、§5.5（字典成员、文件协议和目标数据库部署验收）、§10（分离部署下的动态目录同步）。
 
 ## 16. 关键决策
 
@@ -609,7 +610,7 @@ TREE 左树右表布局与主从子表编辑为 P1（§15）；P0 的引擎组�
 - [x] changelog 命名 `lambda-form-changelog.xml`，4 个 changeSet 全部带 `preConditions onFail="MARK_RAN"`，表名 `la_form_*`（契约 §6.1）；
 - [x] 模块 POM 无硬编码版本，`mvn dependency:tree` 确认 MP 收敛 3.5.17（契约 §1.2）；
 - [x] 引擎 SQL 零原文拼接：`wrapper.apply` 零命中；`${}` 仅出现在 `DynamicTableMapper` 的标识符占位（表名/列名/WHERE/ORDER 片段），其来源经 `FormConstants.isIdentifier` 白名单校验（§4.3）；
-- [x] AST 白名单单测覆盖：字段越权/算子越权/排序越权/条件超限（`QueryAstValidatorTest` 10 项）；树子孙超限随 P1 实现补测；
+- [x] AST 白名单单测覆盖：字段越权/算子越权/排序越权/条件超限（`QueryAstValidatorTest` 10 项）；树子孙超限已随 TREE 交付补测（`DynamicDataServiceJdbcTest`）；
 - [x] 自动化租户隔离验证：H2 真实租户插件验证动态表读写隔离及 INSERT 补租户列；Provider 测试验证同 formKey、不同定义 ID 的缓存不串用；真实登录/切租户的演示环境验收仍待执行；
 - [x] 发布/停用/回滚与缓存自动化验证：Spring 事务提交后失效、回滚不失效、旧加载晚到、版本切换和停用拒绝均有测试；未执行多节点部署验收；
 - [ ] startup 演示：changelog 预建演示表 → 设计器选表导列 → 发布 → 运行时 CRUD 全流程（待演示环境执行）；

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
+import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
@@ -25,10 +26,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +61,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
     private final TargetTableContract targetTableContract;
+    private final FormProperties formProperties;
 
     @Override
     public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
@@ -64,7 +69,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         astValidator.validate(model, query);
         String selectColumns = String.join(", ", selectColumns(model));
         Map<String, Object> params = new HashMap<>();
-        String whereSql = activeRows(model) + buildWhere(astValidator.resolve(model, query.getConditions()), params);
+        String whereSql = activeRows(model)
+                + buildWhere(astValidator.resolve(model, query.getConditions()), params)
+                + buildTreeFilter(model, query.getTreeNode(), params);
         String orderSql = buildOrder(astValidator.resolveSorts(model, query.getSorts()), tableColumns);
 
         long pageNum = currentPage(query);
@@ -212,8 +219,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单不是自关联树类型");
         }
         Map<String, Object> params = new HashMap<>();
-        String whereSql = activeRows(model) + " AND " + model.tree().parentColumn()
-                + (parentValue == null ? " IS NULL" : " = " + bind("p0", parentValue, params));
+        // parentValue 为 null 或空串都表示根节点（parent IS NULL），供前端懒加载首层
+        String condition = StringUtils.hasText(parentValue) ? " = " + bind("p0", parentValue, params) : " IS NULL";
+        String whereSql = activeRows(model) + " AND " + model.tree().parentColumn() + condition;
         return dynamicTableMapper
                 .selectList(
                         model.tableName(),
@@ -403,6 +411,58 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     private String nextKey(Map<String, Object> params) {
         return "p" + params.size();
+    }
+
+    /**
+     * TREE 类型左树选中节点时过滤「自身 + 全部子孙」：按 parentColumn 逐层递归取 id 集
+     * （每层一条参数化 in 查询），对 filterColumn 列 in 过滤；子孙集上限
+     * lambda.fusion.form.tree.max-descendants，超限抛 FORM_TREE_DESCENDANT_LIMIT。
+     * 环状数据由上限兜底终止（无环时集合收敛即停）。
+     */
+    private String buildTreeFilter(
+            FormModel model, FormDataPageQuery.TreeNodeFilter treeNode, Map<String, Object> params) {
+        if (treeNode == null || treeNode.value() == null) {
+            return "";
+        }
+        if (model.tree() == null || !model.tree().selfRelation()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单不是自关联树类型");
+        }
+        Set<String> ids = new HashSet<>();
+        List<String> frontier = List.of(treeNode.value());
+        int max = formProperties.getMaxTreeDescendants();
+        while (!frontier.isEmpty()) {
+            if (ids.size() + frontier.size() > max) {
+                throw new FormBusinessException(FormErrorCode.FORM_TREE_DESCENDANT_LIMIT);
+            }
+            String inSql = frontier.stream()
+                    .map(value -> bind(nextKey(params), value, params))
+                    .collect(Collectors.joining(", "));
+            List<Map<String, Object>> children = dynamicTableMapper.selectList(
+                    model.tableName(),
+                    FormConstants.COLUMN_ID + ", " + model.tree().parentColumn(),
+                    activeRows(model) + " AND " + model.tree().parentColumn() + " IN (" + inSql + ")",
+                    null,
+                    params);
+            // 原始行键大小写随驱动漂移，与 project() 同样归一后再取 ID
+            frontier = children.stream()
+                    .map(row -> {
+                        Object id = null;
+                        for (Map.Entry<String, Object> entry : row.entrySet()) {
+                            if (FormConstants.COLUMN_ID.equals(entry.getKey().toUpperCase(Locale.ROOT))) {
+                                id = entry.getValue();
+                                break;
+                            }
+                        }
+                        return id == null ? null : id.toString();
+                    })
+                    .filter(Objects::nonNull)
+                    .filter(ids::add)
+                    .collect(Collectors.toList());
+        }
+        ids.add(treeNode.value());
+        // SELF 自关联：树行即业务行，子树按主键过滤；filterColumn 预留给 DICT 等外部树来源
+        String inSql = ids.stream().map(id -> bind(nextKey(params), id, params)).collect(Collectors.joining(", "));
+        return " AND " + FormConstants.COLUMN_ID + " IN (" + inSql + ")";
     }
 
     private String buildOrder(List<ResolvedSort> sorts, Map<String, TableColumnView> tableColumns) {

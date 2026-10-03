@@ -160,14 +160,18 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树过滤列非法：" + tree.filterColumn());
         }
         String parentColumn = tree.parentColumn().toUpperCase(Locale.ROOT);
+        String nodeColumn = tree.nodeColumn().toUpperCase(Locale.ROOT);
         boolean parentMapped = fields.stream().anyMatch(f -> f.column().equals(parentColumn));
         if (!parentMapped) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树父列未映射字段：" + parentColumn);
         }
+        if (fields.stream().noneMatch(f -> f.column().equals(nodeColumn))) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点列未映射字段：" + nodeColumn);
+        }
         return new TreeConfig(
                 "SELF",
                 parentColumn,
-                tree.nodeColumn().toUpperCase(Locale.ROOT),
+                nodeColumn,
                 null,
                 tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT));
     }

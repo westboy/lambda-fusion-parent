@@ -64,7 +64,7 @@ class DynamicDataServiceImplTest {
         when(contract.validateAccess(any()))
                 .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
         service = new DynamicDataServiceImpl(
-                mapper, new QueryAstValidator(new FormProperties()), modelProvider, contract);
+                mapper, new QueryAstValidator(new FormProperties()), modelProvider, contract, new FormProperties());
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(1);
         when(mapper.deleteById(anyString(), anyString(), anyMap())).thenReturn(1);

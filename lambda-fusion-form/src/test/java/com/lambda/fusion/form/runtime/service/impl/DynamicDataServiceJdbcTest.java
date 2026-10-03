@@ -15,6 +15,7 @@ import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
+import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
@@ -52,6 +53,7 @@ class DynamicDataServiceJdbcTest {
     private SqlSession session;
     private JdbcTemplate jdbc;
     private DynamicDataServiceImpl service;
+    private FormProperties formProperties;
     private MybatisPlusExtendProperties mybatisProperties;
 
     @BeforeEach
@@ -95,11 +97,14 @@ class DynamicDataServiceJdbcTest {
         this.mybatisProperties = mybatisProperties;
         mybatisProperties.getTenant().setEnabled(true);
         mybatisProperties.getTenant().setIgnoreTables(Set.of("la_test_tiny"));
+        formProperties = new FormProperties();
+        formProperties.setMaxTreeDescendants(3);
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
                 mock(FormModelProvider.class),
-                new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties));
+                new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties),
+                formProperties);
         TenantContextHolder.getInstance().setTenantId("tenantA");
     }
 
@@ -325,6 +330,46 @@ class DynamicDataServiceJdbcTest {
         assertThatThrownBy(() -> service.update(model, id, Map.of("personName", "Revived", "deleted", 0)))
                 .isInstanceOf(FormBusinessException.class);
         assertThatThrownBy(() -> service.delete(model, id)).isInstanceOf(FormBusinessException.class);
+    }
+
+    @Test
+    void treeNodeFilterReturnsSelfAndAllDescendantsAndEnforcesLimit() {
+        FormModel model = model(true, false, true);
+        String root = service.create(model, Map.of("personName", "Root"));
+        String child = service.create(model, Map.of("personName", "Child", "parentId", root));
+        service.create(model, Map.of("personName", "Grandson", "parentId", child));
+        service.create(model, Map.of("personName", "Outsider"));
+
+        FormDataPageQuery treeQuery = query(null, null, null);
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root));
+        var page = service.page(model, treeQuery);
+        assertThat(page.getTotal()).isEqualTo(3);
+        assertThat(page.getRecords())
+                .extracting(row -> row.get("personName"))
+                .containsExactlyInAnyOrder("Root", "Child", "Grandson");
+
+        // 越选叶子只剩自身子树；懒加载根节点返回全部根（Root 与 Outsider 都是根）
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(child));
+        assertThat(service.page(model, treeQuery).getTotal()).isEqualTo(2);
+        assertThat(service.tree(model, null))
+                .extracting(row -> row.get("personName"))
+                .containsExactlyInAnyOrder("Root", "Outsider");
+
+        // 上限 maxTreeDescendants=3：root 的子孙集（Root+Child+Grandson=3）触顶，再多即拒绝
+        formProperties.setMaxTreeDescendants(2);
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root));
+        assertThatThrownBy(() -> service.page(model, treeQuery))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TREE_DESCENDANT_LIMIT.getCode()));
+    }
+
+    @Test
+    void treeNodeFilterIsRejectedOnNonTreeForms() {
+        FormModel model = model(false, false, false);
+        FormDataPageQuery treeQuery = query(null, null, null);
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter("any"));
+        assertThatThrownBy(() -> service.page(model, treeQuery)).isInstanceOf(FormBusinessException.class);
     }
 
     @Test

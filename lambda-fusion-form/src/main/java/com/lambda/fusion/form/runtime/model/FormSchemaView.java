@@ -38,6 +38,20 @@ public class FormSchemaView {
     @Schema(description = "TREE 类型树配置（原样透传设计端 treeConfig）")
     private String treeConfig;
 
+    @Schema(description = "TREE 类型运行时树配置（字段标识视角，物理列名不出服务端）")
+    private TreeSchema tree;
+
+    /** TREE 运行时树配置：节点展示与父列均为字段标识 */
+    @Data
+    public static class TreeSchema {
+
+        @Schema(description = "节点展示字段标识")
+        private String labelField;
+
+        @Schema(description = "父列字段标识")
+        private String parentField;
+    }
+
     @Schema(description = "逻辑删除列名（空=物理删除）")
     private String logicDeleteColumn;
 

@@ -16,6 +16,12 @@ public class FormSchemaAssembler {
         view.setFormType(model.formType());
         view.setVersion(model.version());
         view.setLogicDeleteColumn(model.logicDeleteColumn());
+        if (model.tree() != null) {
+            FormSchemaView.TreeSchema tree = new FormSchemaView.TreeSchema();
+            tree.setLabelField(fieldNameOfColumn(model, model.tree().nodeColumn()));
+            tree.setParentField(fieldNameOfColumn(model, model.tree().parentColumn()));
+            view.setTree(tree);
+        }
         view.setListConfig(toListConfig(model.listConfig()));
         view.setTreeConfig(model.treeConfig());
         view.setFormLayout(model.formLayout());
@@ -30,6 +36,15 @@ public class FormSchemaAssembler {
         });
         view.setFields(fields);
         return view;
+    }
+
+    /** 按物理列反查字段标识；未映射返回 null */
+    private String fieldNameOfColumn(FormModel model, String column) {
+        return model.fields().stream()
+                .filter(field -> field.column().equals(column))
+                .findFirst()
+                .map(FormModel.FormField::name)
+                .orElse(null);
     }
 
     private FormSchemaView.ListConfig toListConfig(FormModel.ListConfig config) {

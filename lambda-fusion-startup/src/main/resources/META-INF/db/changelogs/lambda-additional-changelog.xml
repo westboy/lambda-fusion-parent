@@ -192,4 +192,31 @@
         ]]></sql>
     </changeSet>
 
+    <!-- 动态表单 TREE 类型演示表：左树右表（设计文档 §4.4/§10.1）。
+         PARENT_ID 存父节点 ID（根节点为空）；业务数据由设计器/运行时产生，不做预置（租户行）。 -->
+    <changeSet id="lambda-fusion-startup-202610030001" author="zx">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="la_demo_area"/>
+            </not>
+        </preConditions>
+        <createTable tableName="la_demo_area" remarks="区域树（动态表单 TREE 左树右表演示业务）">
+            <column name="ID" type="varchar(32)" remarks="主键（同时作为树节点 ID）">
+                <constraints primaryKey="true" primaryKeyName="pk_la_demo_area_id" nullable="false"/>
+            </column>
+            <column name="PARENT_ID" type="varchar(32)" remarks="父节点 ID（根节点为空）"/>
+            <column name="NAME" type="varchar(64)" remarks="区域名称（必填，树节点展示列）">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="varchar(64)" remarks="租户"/>
+            <column name="CREATED_BY" type="varchar(32)" remarks="创建人"/>
+            <column name="CREATED_AT" type="datetime" remarks="创建时间"/>
+            <column name="UPDATED_BY" type="varchar(32)" remarks="修改人"/>
+            <column name="UPDATED_AT" type="datetime" remarks="修改时间"/>
+        </createTable>
+        <createIndex indexName="idx_la_demo_area_parent" tableName="la_demo_area">
+            <column name="PARENT_ID"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>
