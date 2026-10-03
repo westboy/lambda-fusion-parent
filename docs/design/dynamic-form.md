@@ -263,7 +263,7 @@ public interface FormDataInterceptor {
 | `FORM_CONFIG` | json | 表单与详情配置 `{show, component, props, rules, readonly}` |
 | `SORT` | int NN | 字段顺序 |
 
-唯一键 `uk_form_field_name (FORM_ID, FIELD_NAME)`。`FILE` 类型值 = lambda-fusion-oss 附件 id（单值存 id，多值存 id JSON 数组）。
+唯一键 `uk_form_field_name (FORM_ID, FIELD_NAME)`。`FILE` 类型值 = 附件三元组 JSON 数组文本 `[{"id","name","url"}]`（文本列存储；携带名称与地址避免渲染时逐个回查附件，`parseFileValue` 兼容旧纯链接文本）。
 
 ### 5.3 `la_form_relation` 主从关系（MASTER_SUB）
 
@@ -363,9 +363,10 @@ com.lambda.fusion.form
 | lambda-cloud-starter-liquibase | 必需 | `lambda-form-changelog.xml` 聚合执行 |
 | lambda-cloud-starter-logger | 必需 | 设计子域写操作留痕（`@OperationLog`） |
 | lambda-cloud-starter-dubbo | 可选（现有声明，未使用） | 不承担当前状态/版本正确性；缓存核对见 §4.2 |
+| lambda-fusion-oss | 可选（P1 引入） | FILE 字段上传：`FormUploadController` 复用 `AttachmentService` 附件体系（§9 上传协议）；缺失时端点不装配，字段退化为文本输入 |
 | com.h2database:h2 | 仅 test | 真实 Mapper、租户插件和事务集成测试；版本沿用 BOM，不改变运行数据库 |
 
-P0 未引入 oss / workflow / dictionary 依赖：FILE 字段只存附件 id（读写由前端经 oss 接口完成）、warm-flow 桥接与字典翻译（前端 `useDict` 已覆盖）分别在 P2 / 无需后端介入。
+P1 引入 oss 可选依赖：上传端点权限为设计预览或目标表单新增/编辑（any-of），附件按 `form-{formKey}` 分组归置；workflow / dictionary 仍不引入（warm-flow 桥接在 P2、字典翻译由前端 `useDict` 覆盖）。
 
 无硬编码版本（契约 §1.2），经 BOM 收敛。
 
@@ -480,6 +481,8 @@ startup 默认开启，可设置环境变量 `MYBATIS_PLUS_TENANT_ENABLED=false`
 
 目标表的租户契约区分两种模式。请求无租户上下文即平台管理/开发者模式（契约 §5.1 的受控平台流程，登录与权限入口仍生效）：框架策略本就全表跳过租户注入，引擎不代填租户列、不设防，租户列的数据库约束自行表态，开发者据此在设计器与预览中联调任意允许清单内的表。请求带租户上下文时按业务契约校验：注入生效的表必须有可写的 `TENANT_ID` 列（≥32 字符文本，当前租户值须能落库）；表在 `mybatis-plus.tenant.ignore-tables` 豁免清单中时，含 `TENANT_ID` 列等于对全租户关掉隔离，一律拒绝动态读写，不含该列的全局表直接放行。契约只读取租户配置与物理元数据，插件装配由框架自动配置负责；设计、发布、预览与运行数据路径共用该契约，发布/回滚/启用校验因此不依赖请求租户上下文。
 
+**文件上传协议（P1，2026-10-03）**：`POST /v1/form/upload`（multipart，复用 `lambda-fusion-oss` 附件体系）——权限为设计预览或目标表单新增/编辑（any-of，编程式校验，沿用统一开发者豁免）；附件按 `form-{formKey}`（设计端 `form-design`）分组归置，返回 `{id, name, url}`。FILE 字段值由前端组装为三元组 JSON 数组存入文本列（`parseFileValue` 兼容旧纯链接文本），引擎按文本容量校验、不感知文件协议细节；oss 模块缺失时端点不装配，FILE 退化为文本输入。子表（MASTER_SUB）内的 FILE 字段暂以文本输入呈现，上传组件仅覆盖主表单（登记 §15）。
+
 ## 10. 前端设计
 
 ### 10.1 通用运行时页（P0 实施结构）
@@ -513,10 +516,10 @@ TREE 类型运行页为左树右表布局（2026-10-03 交付）：左侧数据�
 - 表单与详情共享 1～4 列栅格与逐字段占列，默认两列且每字段占一列。`FORM_LAYOUT` 从草稿保存、不可变快照到运行 Schema 全程使用同一结构；改名同步引用、删除映射清理引用、缩小列数收窄占列；
 - 当前设计、草稿列表、历史版本分别调用 `POST /v1/form-design/preview`、`GET /{id}/preview`、`GET /{id}/versions/{version}/preview`。配置经正式编译和统一 Schema 组装；全屏运行页携带该来源调用预览数据端点，按后端权限与按钮配置提供新增、编辑、删除和详情；
 - 预览与正式页面共用 `FormRuntime`、编辑弹窗、详情抽屉及 Vben 字段校验；原前端 `FormPreviewData` 模拟引擎已移除。查询、排序和分页由数据库执行；保存成功才关闭弹窗并重新查询，末页删除后回到有效页。刷新和关闭重开都读取已持久化数据，页面明确提示保存和删除真实生效；
-- 当前设计使用深拷贝固定本次预览模型，不自动保存草稿；异步校验后核对提交上下文，关闭或切换来源时丢弃尚未发出的提交和过期回填。已经发出的成功数据写入不会因关闭窗口撤销。文件字段完整上传协议仍属于未实现范围；
+- 当前设计使用深拷贝固定本次预览模型，不自动保存草稿；异步校验后核对提交上下文，关闭或切换来源时丢弃尚未发出的提交和过期回填。已经发出的成功数据写入不会因关闭窗口撤销。文件字段上传协议已交付（§9）：FILE 字段经受控端点上传至 OSS 附件体系，值为三元组 JSON 数组；
 - 设计器提供保存草稿与保存并发布；自动发布仍由服务端在保存事务内校验发布权限。显式保存并发布不改变长期的自动发布配置，发布失败时准确提示草稿已保存；
 - 列表页分别展示版本与实际挂载状态，提供发布/停用/启用/回滚/版本历史、发布或管理路由、撤销入口、进入页面及独立角色授权；启用原生效快照不新增版本；
-- 新建仅开放 `SINGLE` 与 `NORMAL`，不开放未兑现的树/主从/文件/高级查询/导入导出等选择；按钮动作去重。完整能力边界与验证见 [审计报告](dynamic-form-audit-20260930.md) 的第二阶段批次。
+- 新建开放 `SINGLE` / `TREE` / `MASTER_SUB` 类型与 `NORMAL` 列表布局（树与主从已于 2026-10-03 交付）；文件/高级查询/导入导出等未兑现选择仍屏蔽；按钮动作去重。完整能力边界与验证见 [审计报告](dynamic-form-audit-20260930.md) 的第二阶段批次。
 
 ### 10.3 菜单、接口权限与角色授权
 
@@ -601,7 +604,7 @@ TREE 类型运行页为左树右表布局（2026-10-03 交付）：左侧数据�
 | 3 | 命名 | 模块 `lambda-fusion-form` / 前缀 `lambda.fusion.form` / 元数据表 `la_form_*`；`la_df_` 前缀留给毕业路径生成表 |
 | 4 | 元数据租户内隔离 | `la_form_*` 默认租户归属；平台级共享表单后续扩展（§14） |
 | 5 | 发布快照模型 | 草稿工作行 + 不可变快照 + `published_version` 指针（§4.1），回滚 = 指针回指 |
-| 6 | FILE 字段值 = 附件 id | 复用 lambda-fusion-oss（§5.2） |
+| 6 | FILE 字段值 = 附件三元组 JSON 数组文本 | 复用 lambda-fusion-oss（§5.2、§7.2）；受控上传端点按表单权限授权，名称/地址随值存储避免渲染回查 |
 | 7 | 服务端扩展 SPI | `FormDataInterceptor`（§4.7，P2）；前端事件脚本不做 |
 
 ## 17. 落地检查清单（PDCA Check）

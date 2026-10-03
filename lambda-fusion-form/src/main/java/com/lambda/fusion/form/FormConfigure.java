@@ -6,9 +6,11 @@ import com.lambda.fusion.authority.resource.service.ResourceService;
 import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
+import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
+import com.lambda.fusion.upload.service.AttachmentService;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
@@ -62,6 +64,17 @@ public class FormConfigure {
                     mappings,
                     environment.getProperty("spring.application.name", "unknown-app"),
                     mybatisProperties);
+        }
+    }
+
+    /** FILE 字段上传（P1）：复用 OSS 附件体系；oss 模块缺失时不装配，FILE 退化为文本输入 */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(AttachmentService.class)
+    @ConditionalOnBean(AttachmentService.class)
+    static class UploadIntegration {
+        @Bean
+        FormUploadController formUploadController(AttachmentService attachments) {
+            return new FormUploadController(attachments);
         }
     }
 }

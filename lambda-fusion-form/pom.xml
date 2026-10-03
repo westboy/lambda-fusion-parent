@@ -56,6 +56,12 @@
             <artifactId>lambda-cloud-starter-dubbo</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 文件字段上传（FILE）：复用 OSS 附件体系；缺失时上传端点不装配，字段退化为文本输入 -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-oss</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>
