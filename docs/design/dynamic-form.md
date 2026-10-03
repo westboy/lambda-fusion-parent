@@ -213,8 +213,8 @@ public interface FormDataInterceptor {
 | 步骤 | 内容 | 写哪段配置 |
 | --- | --- | --- |
 | ① 基础与数据 | 表单信息、选表导列（标识/列名/类型/可空/默认值/字典）、主从关系、树配置 | 字段数据层列 |
-| ② 列表设计 | 查询条件（开关/操作符/默认值）、表格列（开关/列宽/对齐/格式化） | `QUERY_CONFIG` / `LIST_CONFIG` |
-| ③ 表单与详情 | 组件选择、组件属性 JSON、校验规则（required/max/min/pattern/message）、字段级只读 | `FORM_CONFIG` |
+| ② 表单与详情 | 组件选择、组件属性 JSON、校验规则（required/max/min/pattern/message）、字段级只读 | `FORM_CONFIG` |
+| ③ 列表设计 | 查询条件（开关/操作符/默认值）、表格列（开关/列宽/对齐/格式化） | `QUERY_CONFIG` / `LIST_CONFIG` |
 
 数据模型：字段显示配置归组为三个 JSON 配置块（§4.2 / §5.2），运行时 `/schema` 展平下发（§8.3）。`readonly=true` 的字段在**表单中禁用**（详情页天然只读，合一设计不单独维护详情视图）。
 
