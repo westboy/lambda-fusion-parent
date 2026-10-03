@@ -25,6 +25,7 @@ import com.lambda.fusion.form.design.model.FormDefViewConverterImpl;
 import com.lambda.fusion.form.design.model.FormFieldItem;
 import com.lambda.fusion.form.design.model.FormFieldItemConverterImpl;
 import com.lambda.fusion.form.design.model.FormPreviewSource;
+import com.lambda.fusion.form.design.model.FormRelationItem;
 import com.lambda.fusion.form.design.model.FormRelationItemConverterImpl;
 import com.lambda.fusion.form.design.service.FormDesignService;
 import com.lambda.fusion.form.design.service.FormPreviewService;
@@ -300,6 +301,92 @@ class FormLifecycleIntegrationTest {
         command.setTableName("la_area");
         assertThatThrownBy(() -> design.save(command)).isInstanceOf(FormBusinessException.class);
         assertThat(count("la_form_def")).isZero();
+    }
+
+    @Test
+    void saveRejectsRelationToMissingSubForm() {
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        command.setRelations(List.of(relation("missing_sub", "AREA_ID")));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表单不存在"));
+        assertThat(count("la_form_def")).isZero();
+    }
+
+    @Test
+    void saveRejectsRelationToNonSingleSubForm() {
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("tree_sub");
+        sub.setFormType("TREE");
+        sub.setTreeConfig("{}");
+        design.save(sub);
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        command.setRelations(List.of(relation("tree_sub", "PERSON_NAME")));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表单须为单表类型"));
+    }
+
+    @Test
+    void saveRejectsForeignKeyNotMappedInSubForm() {
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("sub_form");
+        design.save(sub);
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        command.setRelations(List.of(relation("sub_form", "MISSING_ID")));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表外键未在子表单映射"));
+    }
+
+    @Test
+    void saveRejectsSelfReferencingAndDuplicatedRelations() {
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        command.setRelations(List.of(relation("test_form", "PERSON_NAME")));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表单不能引用自身"));
+
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("sub_form");
+        design.save(sub);
+        FormDefSaveCommand duplicated = command();
+        duplicated.setFormType("MASTER_SUB");
+        duplicated.setRelations(List.of(relation("sub_form", "PERSON_NAME"), relation("sub_form", "PERSON_NAME")));
+        assertThatThrownBy(() -> design.save(duplicated))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "子表单关系重复"));
+    }
+
+    @Test
+    void masterSubDraftAcceptsRelationMappedBySubFormField() {
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("sub_form");
+        design.save(sub);
+
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        command.setRelations(List.of(relation("sub_form", "PERSON_NAME")));
+        String id = design.save(command);
+        assertThat(definitions.selectById(id).getFormType()).isEqualTo("MASTER_SUB");
+        assertThat(count("la_form_def")).isEqualTo(2);
+        assertThat(count("la_form_relation")).isEqualTo(1);
+    }
+
+    /** 业务异常的中文明细存于 args 而非 message，据此断言具体拦截原因 */
+    private static void assertRelationDetail(Throwable error, String expectedDetail) {
+        assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0])).contains(expectedDetail);
+    }
+
+    private static FormRelationItem relation(String subFormKey, String foreignKey) {
+        FormRelationItem item = new FormRelationItem();
+        item.setSubFormKey(subFormKey);
+        item.setForeignKey(foreignKey);
+        return item;
     }
 
     @Test

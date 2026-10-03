@@ -28,6 +28,7 @@ import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormLayouts;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -256,6 +257,15 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                         .map(FormFieldItem::getFieldName)
                         .toList());
         command.setFormLayout(objectMapper.writeValueAsString(layout));
+        validateRelations(command);
+    }
+
+    /**
+     * 主从关系保存期校验：格式、自引用与重复之外，把运行时 {@code requireSubModel} 才暴露的错误
+     * （子表单缺失、类型非单表、外键未映射）前置到草稿保存时拦截。
+     */
+    private void validateRelations(FormDefSaveCommand command) {
+        Set<String> subFormKeys = new HashSet<>();
         for (FormRelationItem item : command.getRelations()) {
             if (!FormConstants.CASCADE_DELETE.equals(item.getCascadeStrategy())
                     && !FormConstants.FORBID_DELETE.equals(item.getCascadeStrategy())) {
@@ -266,6 +276,32 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 throw new FormBusinessException(
                         FormErrorCode.INVALID_PARAMETER,
                         "主从关系标识非法：" + item.getSubFormKey() + "/" + item.getForeignKey());
+            }
+            if (item.getSubFormKey().equals(command.getFormKey())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单不能引用自身：" + item.getSubFormKey());
+            }
+            if (!subFormKeys.add(item.getSubFormKey())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单关系重复：" + item.getSubFormKey());
+            }
+            FormDefEntity subDef = getBaseMapper()
+                    .selectOne(new LambdaQueryWrapper<FormDefEntity>()
+                            .eq(FormDefEntity::getFormKey, item.getSubFormKey()));
+            if (subDef == null) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单不存在：" + item.getSubFormKey());
+            }
+            if (!FormConstants.FORM_TYPE_SINGLE.equals(subDef.getFormType())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单须为单表类型：" + item.getSubFormKey());
+            }
+            String foreignKey = item.getForeignKey().toUpperCase(Locale.ROOT);
+            boolean mapped = formFieldMapper
+                    .selectList(
+                            new LambdaQueryWrapper<FormFieldEntity>().eq(FormFieldEntity::getFormId, subDef.getId()))
+                    .stream()
+                    .filter(field -> !Boolean.FALSE.equals(field.getPersisted()))
+                    .map(FormFieldEntity::getColumnName)
+                    .anyMatch(column -> foreignKey.equals(column.toUpperCase(Locale.ROOT)));
+            if (!mapped) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表外键未在子表单映射：" + item.getForeignKey());
             }
         }
     }
