@@ -2,7 +2,9 @@ package com.lambda.fusion.form.runtime.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -13,6 +15,8 @@ import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerIntercept
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.cloud.mybatis.tenant.MissingTenantStrategy;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
+import com.lambda.fusion.core.utils.AuthUtils;
+import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
@@ -436,6 +440,48 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void masterSubListModePagesSubRowsIndependentlyAndRejectsInlineSubmit() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("CASCADE_DELETE", FormConstants.RELATION_MODE_LIST);
+
+        // 台账式子行不随主表提交：新增与更新显式携带子表键均拒绝
+        assertThatThrownBy(() -> service.create(
+                        master, Map.of("personName", "Alice", "leave_item", List.of(Map.of("itemName", "A1")))))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.INVALID_PARAMETER.getCode()));
+        String id = service.create(master, Map.of("personName", "Alice"));
+        assertThatThrownBy(() -> service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of())))
+                .isInstanceOf(FormBusinessException.class);
+
+        // 独立新增：外键由服务端绑定（提交数据不携带外键），并显式校验子表数据写权限
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            service.createSubRow(master, id, "leave_item", Map.of("itemName", "L1"));
+            permissions.verify(() -> AuthUtils.checkPermission("form:leave_item:add"));
+            service.createSubRow(master, id, "leave_item", Map.of("itemName", "L2"));
+            permissions.when(() -> AuthUtils.checkPermission(anyString())).thenThrow(new SecurityException("denied"));
+            assertThatThrownBy(() -> service.createSubRow(master, id, "leave_item", Map.of("itemName", "L3")))
+                    .isInstanceOf(SecurityException.class);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(2);
+
+        // 详情不嵌套台账式子行（载荷有界），分页端点按外键过滤、投影并返回字段标识键
+        assertThat((List<?>) service.getById(master, id).get("leave_item")).isEmpty();
+        var page = service.pageSubRows(master, id, "leave_item", 1, 1);
+        assertThat(page.getTotal()).isEqualTo(2);
+        assertThat(page.getRecords()).hasSize(1);
+        assertThat(page.getRecords().getFirst()).containsEntry("itemName", "L1");
+        assertThatThrownBy(() -> service.pageSubRows(master, id, "other_item", 1, 10))
+                .isInstanceOf(FormBusinessException.class);
+
+        // 级联删除不受呈现方式影响
+        service.delete(master, id);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(0);
+    }
+
+    @Test
     void masterSubCreateRejectsWhenSubFormUnavailable() {
         when(modelProvider.require("leave_item"))
                 .thenThrow(new FormBusinessException(FormErrorCode.FORM_NOT_PUBLISHED, "leave_item"));
@@ -508,6 +554,10 @@ class DynamicDataServiceJdbcTest {
 
     /** 主从演示主表模型：LA_TEST_FORM + leave_item 关系 */
     private static FormModel masterSubModel(String cascadeStrategy) {
+        return masterSubModel(cascadeStrategy, null);
+    }
+
+    private static FormModel masterSubModel(String cascadeStrategy, String mode) {
         FormDefSnapshot snapshot = new FormDefSnapshot();
         snapshot.setFormKey("test_master");
         snapshot.setFormName("主从演示");
@@ -520,6 +570,7 @@ class DynamicDataServiceJdbcTest {
         relation.setSubFormKey("leave_item");
         relation.setForeignKey("LEAVE_ID");
         relation.setCascadeStrategy(cascadeStrategy);
+        relation.setMode(mode);
         snapshot.setRelations(List.of(relation));
         return compile(snapshot);
     }

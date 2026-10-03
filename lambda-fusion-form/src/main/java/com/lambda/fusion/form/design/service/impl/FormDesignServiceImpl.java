@@ -187,6 +187,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             entity.setForeignKey(item.getForeignKey().toUpperCase(Locale.ROOT));
             entity.setCascadeStrategy(
                     item.getCascadeStrategy() == null ? FormConstants.CASCADE_DELETE : item.getCascadeStrategy());
+            entity.setMode(item.getMode() == null ? FormConstants.RELATION_MODE_INLINE : item.getMode());
+            entity.setSubTableConfig(item.getSubTableConfig());
             formRelationMapper.insert(entity);
         }
     }
@@ -284,6 +286,12 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             }
             if (!subFormKeys.add(item.getSubFormKey())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单关系重复：" + item.getSubFormKey());
+            }
+            if (item.getMode() == null || item.getMode().isBlank()) {
+                item.setMode(FormConstants.RELATION_MODE_INLINE);
+            }
+            if (!FormConstants.RELATION_MODES.contains(item.getMode())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主从呈现方式非法：" + item.getMode());
             }
             FormDefEntity subDef = getBaseMapper()
                     .selectOne(new LambdaQueryWrapper<FormDefEntity>()

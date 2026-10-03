@@ -275,4 +275,23 @@
                     remarks="子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识（未配置=全量可见字段）"/>
         </addColumn>
     </changeSet>
+
+    <!-- 主从关系增加呈现方式：INLINE 内联编辑 / LIST 台账式 -->
+    <changeSet id="lambda-fusion-form-202610030003" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_relation"/>
+            <not>
+                <columnExists tableName="la_form_relation" columnName="RELATION_MODE"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_relation">
+            <column
+                    name="RELATION_MODE"
+                    type="varchar(16)"
+                    defaultValue="INLINE"
+                    remarks="呈现方式：INLINE 随主表内联编辑 / LIST 台账式（详情页分页展示、子行独立增删改）">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

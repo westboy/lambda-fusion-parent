@@ -55,6 +55,17 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     }
 
     @Override
+    public PageView<Map<String, Object>> pageSubRows(
+            String formKey, String id, String subFormKey, long pageNum, long pageSize) {
+        return dynamicDataService.pageSubRows(modelProvider.require(formKey), id, subFormKey, pageNum, pageSize);
+    }
+
+    @Override
+    public void createSubRow(String formKey, String id, String subFormKey, Map<String, Object> data) {
+        dynamicDataService.createSubRow(modelProvider.require(formKey), id, subFormKey, data);
+    }
+
+    @Override
     public Map<String, Object> getById(String formKey, String id) {
         return dynamicDataService.getById(modelProvider.require(formKey), id);
     }

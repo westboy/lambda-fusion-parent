@@ -22,6 +22,17 @@ public interface FormRuntimeService {
 
     List<Map<String, Object>> tree(String formKey, String parentValue);
 
+    /**
+     * 台账式子表分页（外键由服务端绑定主行 id）
+     */
+    PageView<Map<String, Object>> pageSubRows(
+            String formKey, String id, String subFormKey, long pageNum, long pageSize);
+
+    /**
+     * 台账式子表新增（外键由服务端绑定主行 id，并校验子表单新增权限）
+     */
+    void createSubRow(String formKey, String id, String subFormKey, Map<String, Object> data);
+
     Map<String, Object> getById(String formKey, String id);
 
     String create(String formKey, Map<String, Object> data);

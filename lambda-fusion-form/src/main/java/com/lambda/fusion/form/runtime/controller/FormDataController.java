@@ -68,6 +68,30 @@ public class FormDataController {
         return formRuntimeService.getById(formKey, id);
     }
 
+    @GetMapping("{formKey}/{id}/subs/{subFormKey}")
+    @FormPermission(FormAction.PAGE)
+    @Operation(summary = "台账式子表分页（外键由服务端绑定主行 id）")
+    public PageView<Map<String, Object>> subRowsPage(
+            @PathVariable String formKey,
+            @PathVariable String id,
+            @PathVariable String subFormKey,
+            @RequestParam(defaultValue = "1") long pageNum,
+            @RequestParam(defaultValue = "20") long pageSize) {
+        return formRuntimeService.pageSubRows(formKey, id, subFormKey, pageNum, pageSize);
+    }
+
+    @PostMapping("{formKey}/{id}/subs/{subFormKey}")
+    @FormPermission(FormAction.ADD)
+    @Operation(summary = "台账式子表新增（外键由服务端绑定，并校验子表单新增权限）")
+    @OperationLog(module = "动态表单", value = "新增子表数据")
+    public void subRowCreate(
+            @PathVariable String formKey,
+            @PathVariable String id,
+            @PathVariable String subFormKey,
+            @RequestBody Map<String, Object> data) {
+        formRuntimeService.createSubRow(formKey, id, subFormKey, data);
+    }
+
     @PostMapping("{formKey}")
     @FormPermission(FormAction.ADD)
     @Operation(summary = "新增")

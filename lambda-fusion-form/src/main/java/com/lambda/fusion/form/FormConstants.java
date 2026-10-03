@@ -80,4 +80,11 @@ public final class FormConstants {
     public static final String CASCADE_DELETE = "CASCADE_DELETE";
 
     public static final String FORBID_DELETE = "FORBID_DELETE";
+
+    /** 主从呈现方式：INLINE 随主表内联编辑（替换式写入） / LIST 台账式（详情页分页展示、子行独立增删改） */
+    public static final String RELATION_MODE_INLINE = "INLINE";
+
+    public static final String RELATION_MODE_LIST = "LIST";
+
+    public static final Set<String> RELATION_MODES = Set.of(RELATION_MODE_INLINE, RELATION_MODE_LIST);
 }

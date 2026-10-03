@@ -139,6 +139,9 @@ public class FormDefSnapshot {
         private String foreignKey;
         private String cascadeStrategy;
 
+        /** 呈现方式：INLINE 内联编辑 / LIST 台账式（null 视为 INLINE，兼容历史快照） */
+        private String mode;
+
         /** 子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识 */
         private String subTableConfig;
     }

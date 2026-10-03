@@ -205,6 +205,40 @@ class FormModelCompilerTest {
     }
 
     @Test
+    void rejectsInvalidRelationMode() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+        FormDefSnapshot.Relation relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setForeignKey("LEAVE_ID");
+        relation.setMode("GRID");
+        snapshot.setRelations(List.of(relation));
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void defaultsRelationModeToInlineAndKeepsListMode() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+        FormDefSnapshot.Relation inline = new FormDefSnapshot.Relation();
+        inline.setSubFormKey("leave_item");
+        inline.setForeignKey("LEAVE_ID");
+        FormDefSnapshot.Relation ledger = new FormDefSnapshot.Relation();
+        ledger.setSubFormKey("leave_memo");
+        ledger.setForeignKey("LEAVE_ID");
+        ledger.setMode("LIST");
+        snapshot.setRelations(List.of(inline, ledger));
+
+        FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
+
+        assertThat(model.relations().get(0).mode()).isEqualTo(FormConstants.RELATION_MODE_INLINE);
+        assertThat(model.relations().get(0).listMode()).isFalse();
+        assertThat(model.relations().get(1).mode()).isEqualTo(FormConstants.RELATION_MODE_LIST);
+        assertThat(model.relations().get(1).listMode()).isTrue();
+    }
+
+    @Test
     void compilesFieldConfigsWithDefaults() {
         FormDefSnapshot.Field field = field("days", "days", "DECIMAL", 1);
         field.getQuery().setShow(Boolean.TRUE);

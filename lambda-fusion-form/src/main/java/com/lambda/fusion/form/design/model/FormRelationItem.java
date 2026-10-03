@@ -36,6 +36,9 @@ public class FormRelationItem extends BaseVO<FormRelationEntity> {
     @Schema(description = "CASCADE_DELETE 级联删除 / FORBID_DELETE 禁止删除（默认 CASCADE_DELETE）")
     private String cascadeStrategy = "CASCADE_DELETE";
 
+    @Schema(description = "呈现方式：INLINE 内联编辑 / LIST 台账式（详情页分页展示、子行独立增删改，默认 INLINE）")
+    private String mode = "INLINE";
+
     @Schema(description = "子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识（未配置=全量可见字段）")
     private String subTableConfig;
 }

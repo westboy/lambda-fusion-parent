@@ -320,7 +320,7 @@ class DynamicDataServiceImplTest {
                 new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
                 null,
                 model().fields(),
-                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy, null)),
+                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy, null, null)),
                 null,
                 null);
     }

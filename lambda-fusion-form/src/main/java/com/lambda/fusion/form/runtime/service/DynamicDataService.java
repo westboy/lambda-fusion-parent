@@ -42,4 +42,15 @@ public interface DynamicDataService {
      * TREE 类型：全量节点列表（前端组树）
      */
     List<Map<String, Object>> tree(FormModel model, String parentValue);
+
+    /**
+     * 台账式子表分页（外键由服务端绑定为主行 id，不占用子表单查询白名单）
+     */
+    PageView<Map<String, Object>> pageSubRows(
+            FormModel model, String id, String subFormKey, long pageNum, long pageSize);
+
+    /**
+     * 台账式子表新增：外键由服务端绑定，校验子表单数据权限后按子模型写入
+     */
+    void createSubRow(FormModel model, String id, String subFormKey, Map<String, Object> data);
 }

@@ -36,6 +36,10 @@ public class FormRelationEntity extends BaseEntity {
     @TableField("CASCADE_STRATEGY")
     private String cascadeStrategy;
 
+    /** 呈现方式：INLINE 内联编辑 / LIST 台账式（详情页分页展示、子行独立增删改） */
+    @TableField("RELATION_MODE")
+    private String mode;
+
     /** 子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识（未配置=全量可见字段） */
     @TableField("SUB_TABLE_CONFIG")
     private String subTableConfig;

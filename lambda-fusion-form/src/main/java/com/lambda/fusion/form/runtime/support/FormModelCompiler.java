@@ -114,6 +114,12 @@ public class FormModelCompiler {
                 throw new FormBusinessException(
                         FormErrorCode.FORM_TABLE_INVALID, "子表单关系重复：" + relation.getSubFormKey());
             }
+            String mode = relation.getMode() == null || relation.getMode().isBlank()
+                    ? FormConstants.RELATION_MODE_INLINE
+                    : relation.getMode().toUpperCase(Locale.ROOT);
+            if (!FormConstants.RELATION_MODES.contains(mode)) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "主从呈现方式非法：" + relation.getMode());
+            }
             this.snapshotJson.validateSubTableConfig(relation.getSubTableConfig());
             relations.add(new FormRelation(
                     relation.getSubFormKey(),
@@ -121,6 +127,7 @@ public class FormModelCompiler {
                     relation.getCascadeStrategy() == null
                             ? FormConstants.CASCADE_DELETE
                             : relation.getCascadeStrategy(),
+                    mode,
                     relation.getSubTableConfig()));
         }
         TreeConfig tree = compileTree(snapshot, fields);

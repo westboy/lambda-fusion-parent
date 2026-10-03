@@ -274,9 +274,12 @@ public interface FormDataInterceptor {
 | `SUB_FORM_KEY` | varchar(64) NN | 子表单 formKey（同租户内解析） |
 | `FOREIGN_KEY` | varchar(64) NN | 子表外键列 |
 | `CASCADE_STRATEGY` | varchar(16) NN | `CASCADE_DELETE` / `FORBID_DELETE` |
+| `RELATION_MODE` | varchar(16) NN | 呈现方式：`INLINE` 内联编辑 / `LIST` 台账式（默认 `INLINE`） |
 | `SUB_TABLE_CONFIG` | json | 子表列表呈现配置 `{columns:[{field,width}]}`，field 为子表单字段标识（未配置=全量可见字段） |
 
 设计端保存期前置校验（2026-10-03）：草稿保存即拦截运行时 `requireSubModel` 才能发现的错误——子表单须存在（同租户）且为 `SINGLE` 类型、外键列须为子表单已映射且落库的字段，另拒绝自引用与重复 `SUB_FORM_KEY`；设计器关系配置为选择式（选子表单 → 自动加载其字段 → 外键下拉），不再手打 formKey。`SUB_TABLE_CONFIG` 经 `SubTableConfigs` 键白名单+值域校验（保存期对照子表单字段、编译期防篡改再拦一道），设计器子表区块拖拽定列（2026-10-03）。
+
+**呈现方式双模式（2026-10-03）**：`INLINE`（内联编辑）子行随主表整组提交、替换式写入，适合少量随主表生死的明细；`LIST`（台账式）面向数据量大、生命周期独立的子数据——主表详情页分页展示子行（列取子表单自己的列表设计），子行经专用端点独立新增（外键由服务端绑定主行 id，服务内显式校验子表单新增权限）、经子表单自己的编辑/删除端点独立修改；读取组装对台账式关系不再全量嵌套（仅置空占位，载荷有界），且随主表提交显式携带台账式子表键即拒绝。级联删除策略不受呈现方式影响。
 
 ### 5.4 `la_form_def_version` 发布快照
 
@@ -408,6 +411,8 @@ P1 引入 oss 可选依赖：上传端点权限为设计预览或目标表单新
 | `POST /v1/form/{formKey}/page` | `form:{formKey}:page` | 分页查询（AST 条件，§4.3） |
 | `GET /v1/form/{formKey}/tree` | `form:{formKey}:page` | TREE 树数据：按 `parentValue` 取直接子节点（P0 仅自关联树，子孙过滤见 §4.4） |
 | `GET /v1/form/{formKey}/{id}` | `form:{formKey}:page` | 详情（主从含子表为 P1） |
+| `GET /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:page` | 台账式子表分页（外键由服务端绑定主行 id，不占子表查询白名单） |
+| `POST /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:add` | 台账式子表新增（外键服务端绑定；服务内再校验 `form:{subFormKey}:add`） |
 | `POST /v1/form/{formKey}` | `form:{formKey}:add` | 新增（主从事务写入为 P1） |
 | `PUT /v1/form/{formKey}/{id}` | `form:{formKey}:edit` | 部分更新：未提交字段保持原值，显式 null 清空可空字段；无可写项拒绝 |
 | `DELETE /v1/form/{formKey}/{id}` | `form:{formKey}:delete` | 删除（按级联策略，P0 一律拒绝有子表数据的记录） |
@@ -509,7 +514,7 @@ packages/system-ui/src/
 
 **通用挂载**：菜单 `RES_PATH` 只承担访问路径；`EXPAND` 中明确声明 `{ "component": "/form/runtime/index", "meta": { "formKey": "leave", "formId": "..." } }`。`MenuRouteAssembler` 读取组件与参数，以资源 ID 生成稳定路由名称；显示名仍在 meta.title。运行页按当前租户的 formKey 读取生效快照，切换 formKey 会重建 Schema、查询和编辑状态；“刷新表单”重新读取版本与布局。`BUSINESS_EXPAND` 保存归属标记，供挂载管理验证，不靠路径或名称猜测归属。
 
-TREE 类型运行页为左树右表布局（2026-10-03 交付）：左侧数据树按 `tree` 接口懒加载（节点展示列取 `tree.labelField` 字段），选中节点过滤「自身 + 全部子孙」，可一键清除回到全量。MASTER_SUB 主从同步交付：编辑弹窗按关系渲染可编辑子表（子表单 schema 由前端按 `subFormKey` 拉取），列与列宽可由关系上的 `SUB_TABLE_CONFIG` 指定（未配置=全量可见字段），行编辑器按字段类型映射真实控件（字典下拉/日期选择/长文本等），详情抽屉只读展示子行；列表页主行与详情接口均携带嵌套子行数组。
+TREE 类型运行页为左树右表布局（2026-10-03 交付）：左侧数据树按 `tree` 接口懒加载（节点展示列取 `tree.labelField` 字段），选中节点过滤「自身 + 全部子孙」，可一键清除回到全量。MASTER_SUB 主从同步交付：编辑弹窗按关系渲染可编辑子表（子表单 schema 由前端按 `subFormKey` 拉取），列与列宽可由关系上的 `SUB_TABLE_CONFIG` 指定（未配置=全量可见字段），行编辑器按字段类型映射真实控件（字典下拉/日期选择/长文本等），详情抽屉只读展示子行；列表页主行与详情接口均携带嵌套子行数组。台账式（`RELATION_MODE=LIST`）关系在详情抽屉渲染分页网格（列取子表单列表设计），子行独立新增、编辑与删除（新增经主表子表端点，编辑/删除经子表单自己的端点），编辑弹窗不再随主表收集其子行；设计预览无子表数据端点，台账式网格仅出结构空态。
 
 ### 10.2 表单设计器
 

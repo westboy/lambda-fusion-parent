@@ -60,7 +60,7 @@ class FormApiPermissionTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void catalogDerivesAllSevenMvcEndpointsAndSurvivesStaticMetadataReplacement(boolean tenantEnabled) {
+    void catalogDerivesAllMvcEndpointsAndSurvivesStaticMetadataReplacement(boolean tenantEnabled) {
         FormDefMapper forms = mock(FormDefMapper.class);
         FormDefEntity definition = new FormDefEntity();
         definition.setFormKey("leave_demo");
@@ -85,18 +85,23 @@ class FormApiPermissionTest {
                 assertThat(provider.getApis()).isEmpty();
                 verifyNoInteractions(forms);
             } else {
-                assertThat(provider.getApis()).hasSize(7);
+                assertThat(provider.getApis()).hasSize(9);
             }
             try (var tenant = TenantContextHolder.getInstance()) {
                 tenant.setTenantId("tenant-1");
                 var registry = new ApiPermissionRegistry(List.of(provider));
                 registry.replaceLocal(List.of(), "form-app");
-                assertThat(registry.getLocalApis()).hasSize(7);
+                assertThat(registry.getLocalApis()).hasSize(9);
                 assertThat(new ApiPermissionMatcher()
                                 .match(registry.getLocalApis(), "POST", "/v1/form/leave_demo")
                                 .orElseThrow()
                                 .getPermissions())
                         .containsExactly("form:leave_demo:add");
+                assertThat(new ApiPermissionMatcher()
+                                .match(registry.getLocalApis(), "GET", "/v1/form/leave_demo/r1/subs/leave_item")
+                                .orElseThrow()
+                                .getPermissions())
+                        .containsExactly("form:leave_demo:page");
                 assertThat(registry.getLocalApis())
                         .extracting(ApiPermissionMetadata::getPath)
                         .contains("/v1/form/leave_demo/schema", "/v1/form/leave_demo/{id}");
@@ -109,10 +114,10 @@ class FormApiPermissionTest {
                                 "form:leave_demo:edit",
                                 "form:leave_demo:delete");
                 registry.replaceLocal(List.of(new PermissionFileMetadata()), "form-app");
-                assertThat(registry.getReportedApis("form-app")).hasSize(7);
+                assertThat(registry.getReportedApis("form-app")).hasSize(9);
                 assertThat(registry.getApplications()).contains("form-app");
                 definition.setPublishedVersion(2L);
-                assertThat(registry.getReportedApis("form-app")).hasSize(7);
+                assertThat(registry.getReportedApis("form-app")).hasSize(9);
                 when(forms.selectList(any())).thenReturn(List.of());
                 assertThat(registry.getReportedApis("form-app")).isEmpty();
             }

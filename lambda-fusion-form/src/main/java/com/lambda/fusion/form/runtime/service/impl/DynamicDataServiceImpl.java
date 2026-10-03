@@ -11,6 +11,7 @@ import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.support.FormAction;
 import com.lambda.fusion.form.runtime.support.FormFieldValidator;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
@@ -119,6 +120,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String create(FormModel model, Map<String, Object> data) {
+        rejectListModeSubData(model, data);
         String id = IdWorker.getIdStr();
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
@@ -168,6 +170,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(FormModel model, String id, Map<String, Object> data) {
+        rejectListModeSubData(model, data);
         getById(model, id);
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, false, tableColumns);
@@ -279,6 +282,76 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return subModel;
     }
 
+    /** 按子表单标识定位主从关系；不存在即非法参数 */
+    private FormRelation requireRelation(FormModel model, String subFormKey) {
+        return model.relations().stream()
+                .filter(relation -> relation.subFormKey().equals(subFormKey))
+                .findFirst()
+                .orElseThrow(() -> new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主从关系不存在：" + subFormKey));
+    }
+
+    /** 台账式子行独立增删改，不随主表提交；显式携带子表键即拒绝 */
+    private void rejectListModeSubData(FormModel model, Map<String, Object> data) {
+        for (FormRelation relation : model.relations()) {
+            if (relation.listMode() && data.containsKey(relation.subFormKey())) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "台账式子表数据不随主表提交：" + relation.subFormKey());
+            }
+        }
+    }
+
+    @Override
+    public PageView<Map<String, Object>> pageSubRows(
+            FormModel model, String id, String subFormKey, long pageNum, long pageSize) {
+        FormRelation relation = requireRelation(model, subFormKey);
+        FormModel subModel = requireSubModel(relation);
+        targetTableContract.validateAccess(subModel);
+        Map<String, Object> params = new HashMap<>();
+        params.put("fkValue", id);
+        String whereSql = activeRows(subModel) + " AND " + relation.foreignKey() + " = #{params.fkValue}";
+        long page = Math.max(1, pageNum);
+        long size = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
+        long total = dynamicTableMapper.countBy(subModel.tableName(), whereSql, params);
+        if (total == 0) {
+            return PageView.<Map<String, Object>>builder()
+                    .pageNum(page)
+                    .pageSize(size)
+                    .total(0)
+                    .totalPages(0)
+                    .records(List.of())
+                    .build();
+        }
+        List<Map<String, Object>> records = dynamicTableMapper
+                .selectList(
+                        subModel.tableName(),
+                        String.join(", ", selectColumns(subModel)),
+                        whereSql,
+                        " ORDER BY ID ASC LIMIT " + size + " OFFSET " + ((page - 1) * size),
+                        params)
+                .stream()
+                .map(row -> project(subModel, row))
+                .toList();
+        return PageView.<Map<String, Object>>builder()
+                .pageNum(page)
+                .pageSize(size)
+                .total(total)
+                .totalPages((total + size - 1) / size)
+                .records(records)
+                .build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void createSubRow(FormModel model, String id, String subFormKey, Map<String, Object> data) {
+        FormRelation relation = requireRelation(model, subFormKey);
+        FormModel subModel = requireSubModel(relation);
+        // 从主表详情入口写子表数据：主表新增权限由端点路径校验，子表数据写权限在此显式校验
+        AuthUtils.checkPermission(FormAction.ADD.permission(subFormKey));
+        getById(model, id);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        insertSubRows(relation, subModel, subColumns, id, List.of(data));
+    }
+
     /**
      * 子表是否存在引用记录（外键列已由 {@link #requireSubModel} 校验）
      */
@@ -359,13 +432,18 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     /**
      * 两段式读组装：主行 id 集合按外键 in 查回子行，投影后挂到主行（key=subFormKey）。
-     * 子表单不可用（未发布/未映射）时跳过该关系并置空，不阻断主表读取。
+     * 台账式关系不分页不嵌套（载荷有界），仅置空占位；子表单不可用（未发布/未映射）时跳过该关系并置空，
+     * 均不阻断主表读取。
      */
     private void attachSubRows(FormModel model, List<Map<String, Object>> rows) {
         if (model.relations().isEmpty() || rows.isEmpty()) {
             return;
         }
         for (FormRelation relation : model.relations()) {
+            if (relation.listMode()) {
+                rows.forEach(row -> row.put(relation.subFormKey(), List.of()));
+                continue;
+            }
             FormModel subModel;
             try {
                 subModel = requireSubModel(relation);

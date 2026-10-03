@@ -395,6 +395,22 @@ class FormLifecycleIntegrationTest {
                 .satisfies(error -> assertRelationDetail(error, "子表列表列未在子表单映射"));
     }
 
+    @Test
+    void saveRejectsInvalidRelationMode() {
+        FormDefSaveCommand sub = command();
+        sub.setFormKey("sub_form");
+        design.save(sub);
+
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
+        relation.setMode("GRID");
+        command.setRelations(List.of(relation));
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "主从呈现方式非法"));
+    }
+
     /** 业务异常的中文明细存于 args 而非 message，据此断言具体拦截原因 */
     private static void assertRelationDetail(Throwable error, String expectedDetail) {
         assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0])).contains(expectedDetail);
@@ -520,7 +536,7 @@ class FormLifecycleIntegrationTest {
             jdbc.execute(
                     """
                     CREATE TABLE la_form_relation (ID VARCHAR(32) PRIMARY KEY, FORM_ID VARCHAR(32), SUB_FORM_KEY VARCHAR(64),
-                    FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16), SUB_TABLE_CONFIG VARCHAR(2048)
+                    FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16), RELATION_MODE VARCHAR(16) DEFAULT 'INLINE' NOT NULL, SUB_TABLE_CONFIG VARCHAR(2048)
                     """
                             + audit);
             jdbc.execute(

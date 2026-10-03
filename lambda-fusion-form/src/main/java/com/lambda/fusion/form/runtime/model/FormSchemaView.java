@@ -57,6 +57,9 @@ public class FormSchemaView {
         @Schema(description = "CASCADE_DELETE / FORBID_DELETE")
         private String cascadeStrategy;
 
+        @Schema(description = "呈现方式：INLINE 内联编辑 / LIST 台账式（详情页分页展示、子行独立增删改）")
+        private String mode;
+
         @Schema(description = "子表列表呈现配置 JSON：{columns:[{field,width}]}，field 为子表单字段标识（未配置=全量可见字段）")
         private String subTableConfig;
     }
