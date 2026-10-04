@@ -426,6 +426,30 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void clientSuppliedForeignKeyIsStrippedAndOverriddenByServerBinding() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("CASCADE_DELETE");
+
+        // 子行数据携带外键字段（如子表单把外键列设计为可编辑字段）：服务端绑定优先，
+        // 不再与提交值产生重复列，也不被伪造值覆盖
+        String id = service.create(
+                master,
+                Map.of(
+                        "personName",
+                        "Alice",
+                        "leave_item",
+                        List.of(Map.of("itemName", "A1", "leaveId", "forged"), Map.of("itemName", "A2"))));
+        assertThat(jdbc.queryForObject("SELECT DISTINCT LEAVE_ID FROM LA_TEST_SUB", String.class))
+                .isEqualTo(id);
+        service.update(
+                master,
+                id,
+                Map.of("personName", "Alice2", "leave_item", List.of(Map.of("itemName", "B1", "leaveId", "forged2"))));
+        assertThat(jdbc.queryForObject("SELECT DISTINCT LEAVE_ID FROM LA_TEST_SUB", String.class))
+                .isEqualTo(id);
+    }
+
+    @Test
     void masterSubForbidStrategyRejectsDeleteWhenChildRowsExist() {
         when(modelProvider.require("leave_item")).thenReturn(subModel());
         FormModel master = masterSubModel("FORBID_DELETE");

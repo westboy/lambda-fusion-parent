@@ -394,6 +394,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             List<Map<String, Object>> rows) {
         for (Map<String, Object> item : rows) {
             Map<String, Object> row = normalize(subModel, item, true, subColumns);
+            // 外键由服务端绑定为主行 id：先剥离客户端提交的外键列，避免与绑定列重复（也不被伪造）
+            row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
             List<String> columns = new ArrayList<>();
             List<String> values = new ArrayList<>();
             Map<String, Object> params = new HashMap<>();
