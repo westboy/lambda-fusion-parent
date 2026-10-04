@@ -241,6 +241,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             }
             FieldConfigs.validate(objectMapper, item.getQueryConfig(), item.getListConfig(), item.getFormConfig());
         }
+        validateColumnsExist(command);
         if (command.getLogicDeleteColumn() != null
                 && !command.getLogicDeleteColumn().isBlank()) {
             if (!FormConstants.isIdentifier(command.getLogicDeleteColumn())) {
@@ -401,6 +402,29 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                     .anyMatch(item -> item.getFieldName().equals(tree.nodeIdField()));
             if (!nodeIdMapped) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "树节点字段未映射或未落库：" + tree.nodeIdField());
+            }
+        }
+    }
+
+    /**
+     * 落库字段的映射列必须真实存在于目标表（把发布/预览期目标表契约的「缺少列」前置到草稿保存）。
+     * 手改列名或更换目标表后未重新导列都会在此拦截，错误信息给出可操作指引。
+     */
+    private void validateColumnsExist(FormDefSaveCommand command) {
+        Set<String> physicalColumns = tableMetadataReader.listColumns(command.getTableName()).stream()
+                .map(TableColumnView::getColumnName)
+                .map(column -> column.toUpperCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        for (FormFieldItem item : command.getFields()) {
+            if (Boolean.FALSE.equals(item.getPersisted())) {
+                continue;
+            }
+            String column = item.getColumnName().toUpperCase(Locale.ROOT);
+            if (!physicalColumns.contains(column)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER,
+                        "字段 " + item.getFieldName() + " 映射的列 " + column + " 在目标表 " + command.getTableName()
+                                + " 中不存在，请修正列名或重新「选表导列」");
             }
         }
     }

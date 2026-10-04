@@ -398,6 +398,16 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
+    void saveRejectsMappedColumnMissingInTargetTable() {
+        FormDefSaveCommand command = command();
+        command.getFields().getFirst().setColumnName("PARENT_ID");
+        assertThatThrownBy(() -> design.save(command))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertRelationDetail(error, "PARENT_ID"));
+        assertThat(count("la_form_def")).isZero();
+    }
+
+    @Test
     void saveRejectsInvalidRelationMode() {
         FormDefSaveCommand sub = command();
         sub.setFormKey("sub_form");
