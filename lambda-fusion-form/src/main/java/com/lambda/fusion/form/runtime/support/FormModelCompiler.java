@@ -194,6 +194,13 @@ public class FormModelCompiler {
         if (fields.stream().noneMatch(f -> f.column().equals(nodeColumn))) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点列未映射字段：" + nodeColumn);
         }
+        // 呈现方式缺省左树右表；TREE_TABLE 仅 SELF 支持
+        String viewMode = tree.viewMode() == null || tree.viewMode().isBlank()
+                ? TreeConfig.VIEW_MODE_LEFT_TREE
+                : tree.viewMode().toUpperCase(Locale.ROOT);
+        if (!TreeConfig.VIEW_MODE_LEFT_TREE.equals(viewMode) && !TreeConfig.VIEW_MODE_TREE_TABLE.equals(viewMode)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树呈现方式非法：" + tree.viewMode());
+        }
         return new TreeConfig(
                 FormConstants.TREE_SOURCE_SELF,
                 parentColumn,
@@ -201,7 +208,8 @@ public class FormModelCompiler {
                 null,
                 tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT),
                 null,
-                null);
+                null,
+                viewMode);
     }
 
     /** FORM 关联树表单：引用另一 TREE 表单作左树数据源，本表须有落库的节点 id 字段；跨表单存在性由保存期校验 */
@@ -213,7 +221,8 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联树表单不能是自身");
         }
         String nodeIdField = requireNodeIdField(tree, fields);
-        return new TreeConfig(FormConstants.TREE_SOURCE_FORM, null, null, null, null, tree.treeFormKey(), nodeIdField);
+        return new TreeConfig(
+                FormConstants.TREE_SOURCE_FORM, null, null, null, null, tree.treeFormKey(), nodeIdField, null);
     }
 
     /** DICT 字典树：按字典编码取层级数据，本表节点 id 字段存字典项代码 */
@@ -222,7 +231,8 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字典树缺少 dictType");
         }
         String nodeIdField = requireNodeIdField(tree, fields);
-        return new TreeConfig(FormConstants.TREE_SOURCE_DICT, null, null, tree.dictType(), null, null, nodeIdField);
+        return new TreeConfig(
+                FormConstants.TREE_SOURCE_DICT, null, null, tree.dictType(), null, null, nodeIdField, null);
     }
 
     /** FORM/DICT 来源共用的本表节点 id 字段校验：标识合法、已映射且落库，返回字段标识 */

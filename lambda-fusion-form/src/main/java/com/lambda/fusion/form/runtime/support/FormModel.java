@@ -176,6 +176,7 @@ public record FormModel(
      * @param filterColumn 树过滤作用于业务表的列（默认取 parentColumn 同名列，仅 SELF）
      * @param treeFormKey 关联的树表单 formKey（仅 FORM）
      * @param nodeIdField 本表存储树节点 id 的字段标识（FORM/DICT）
+     * @param viewMode 呈现方式：LEFT_TREE 左树右表（默认）/ TREE_TABLE 整页缩进树表格（仅 SELF）
      */
     public record TreeConfig(
             String sourceType,
@@ -184,7 +185,12 @@ public record FormModel(
             String dictType,
             String filterColumn,
             String treeFormKey,
-            String nodeIdField) {
+            String nodeIdField,
+            String viewMode) {
+
+        public static final String VIEW_MODE_LEFT_TREE = "LEFT_TREE";
+
+        public static final String VIEW_MODE_TREE_TABLE = "TREE_TABLE";
 
         /** SELF 自关联：树行即本表业务行 */
         public boolean selfRelation() {
@@ -199,6 +205,11 @@ public record FormModel(
         /** DICT 字典树：左树读字典层级数据，本表字段存字典项代码 */
         public boolean dictSource() {
             return FormConstants.TREE_SOURCE_DICT.equalsIgnoreCase(sourceType);
+        }
+
+        /** 呈现方式：整页缩进树表格（仅 SELF 自关联支持，默认左树右表） */
+        public boolean treeTableView() {
+            return VIEW_MODE_TREE_TABLE.equalsIgnoreCase(viewMode);
         }
     }
 }

@@ -1,7 +1,9 @@
 package com.lambda.fusion.form.runtime.assembler;
 
+import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.support.FormModel;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -9,6 +11,13 @@ import org.springframework.stereotype.Component;
 /** 已编译模型的唯一渲染协议出口，供运行页和设计预览共用。 */
 @Component
 public class FormSchemaAssembler {
+
+    private final FormModelProvider modelProvider;
+
+    public FormSchemaAssembler(FormModelProvider modelProvider) {
+        this.modelProvider = modelProvider;
+    }
+
     public FormSchemaView assemble(FormModel model) {
         FormSchemaView view = new FormSchemaView();
         view.setFormKey(model.formKey());
@@ -32,6 +41,21 @@ public class FormSchemaAssembler {
             // nodeIdField 配置即字段标识（编译期按字段名校验），直接透传
             tree.setNodeIdField(model.tree().nodeIdField());
             tree.setDictType(model.tree().dictType());
+            tree.setViewMode(model.tree().viewMode());
+            // FORM 来源：左树行来自树表单模型，formLabelField 下发树表单的节点展示字段标识供前端取标签
+            if (model.tree().formSource()) {
+                try {
+                    FormModel treeModel = modelProvider.require(model.tree().treeFormKey());
+                    tree.setFormLabelField(
+                            treeModel.tree() != null && treeModel.tree().nodeColumn() != null
+                                    ? fieldNameOfColumn(
+                                            treeModel, treeModel.tree().nodeColumn())
+                                    : null);
+                } catch (FormBusinessException error) {
+                    // 树表单未发布等异常不阻断主 schema 组装，左树前端自行降级
+                    tree.setFormLabelField(null);
+                }
+            }
             view.setTree(tree);
         }
         model.relations().forEach(relation -> {

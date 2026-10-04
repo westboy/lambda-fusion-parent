@@ -265,7 +265,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         // parentValue 为 null 或空串都表示根节点（parent IS NULL），供前端懒加载首层
         String condition = StringUtils.hasText(parentValue) ? " = " + bind("p0", parentValue, params) : " IS NULL";
         String whereSql = activeRows(model) + " AND " + model.tree().parentColumn() + condition;
-        return dynamicTableMapper
+        List<Map<String, Object>> rows = dynamicTableMapper
                 .selectList(
                         model.tableName(),
                         String.join(", ", selectColumns(model)),
@@ -274,7 +274,38 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         params)
                 .stream()
                 .map(row -> project(model, row))
-                .toList();
+                .collect(Collectors.toList());
+        // 树表格呈现需判断哪行可展开：按父列分组计数附加 __childCount（双下划线前缀，字段命名规则不会撞）
+        if (!rows.isEmpty()) {
+            String parentColumn = model.tree().parentColumn();
+            List<String> rowIds = rows.stream()
+                    .map(row -> String.valueOf(columnValue(row, FormConstants.COLUMN_ID)))
+                    .toList();
+            Map<String, Object> countParams = new HashMap<>();
+            String countIn = rowIds.stream()
+                    .map(id -> bind("c" + countParams.size(), id, countParams))
+                    .collect(Collectors.joining(", "));
+            Map<String, Long> countsByParent = new HashMap<>();
+            dynamicTableMapper
+                    .selectList(
+                            model.tableName(),
+                            parentColumn + ", COUNT(*) AS __CNT",
+                            activeRows(model) + " AND " + parentColumn + " IN (" + countIn + ")",
+                            " GROUP BY " + parentColumn,
+                            countParams)
+                    .forEach(row -> {
+                        Object parent = columnValue(row, parentColumn);
+                        Object count = columnValue(row, "__CNT");
+                        if (parent != null && count != null) {
+                            countsByParent.put(parent.toString(), Long.parseLong(String.valueOf(count)));
+                        }
+                    });
+            rows.forEach(row -> {
+                String id = String.valueOf(columnValue(row, FormConstants.COLUMN_ID));
+                row.put("__childCount", countsByParent.getOrDefault(id, 0L));
+            });
+        }
+        return rows;
     }
 
     /**
