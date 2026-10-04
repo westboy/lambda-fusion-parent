@@ -67,8 +67,18 @@ public class FormModelCompiler {
             if (!FormConstants.isIdentifier(field.getColumnName())) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列名非法：" + field.getColumnName());
             }
-            if (FormConstants.isSystemColumn(field.getColumnName()) || "id".equalsIgnoreCase(field.getFieldName())) {
+            // 租户列结构性禁映射；字段名 id 会覆盖行标识，同样禁止。
+            // 主键与审计列由引擎独占写入，仅允许映射为不落库的展示字段（主键值本就投影在行上）
+            boolean persistedField = !Boolean.FALSE.equals(field.getPersisted());
+            String mappedColumn = field.getColumnName().toUpperCase(Locale.ROOT);
+            if (FormConstants.COLUMN_TENANT_ID.equals(mappedColumn) || "id".equalsIgnoreCase(field.getFieldName())) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.getColumnName());
+            }
+            boolean engineWritten =
+                    FormConstants.COLUMN_ID.equals(mappedColumn) || FormConstants.AUDIT_COLUMNS.contains(mappedColumn);
+            if (engineWritten && persistedField) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "列 " + field.getColumnName() + " 由引擎写入，仅可作为不落库的展示字段（落库=否）");
             }
             if (!fieldNames.add(field.getFieldName())
                     || !columns.add(field.getColumnName().toUpperCase(Locale.ROOT))) {

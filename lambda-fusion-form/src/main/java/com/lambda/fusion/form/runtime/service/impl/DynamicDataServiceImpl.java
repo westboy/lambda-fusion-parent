@@ -30,6 +30,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -531,10 +532,11 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 目标表列清单（白名单：ID + 已映射字段）
      */
     private List<String> selectColumns(FormModel model) {
-        List<String> columns = new ArrayList<>();
+        // 字段可能映射主键列（不落库展示），与引擎的 ID 去重避免 SELECT 同列两次
+        Set<String> columns = new LinkedHashSet<>();
         columns.add(FormConstants.COLUMN_ID);
         model.fields().forEach(field -> columns.add(field.column()));
-        return columns;
+        return new ArrayList<>(columns);
     }
 
     /**
@@ -545,11 +547,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> source = data == null ? Map.of() : data;
         Map<String, Object> row = new LinkedHashMap<>();
         for (FormField field : model.fields()) {
-            if (FormConstants.isSystemColumn(field.column()) || "id".equalsIgnoreCase(field.name())) {
-                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.column());
-            }
+            // 不落库展示字段（可映射主键/审计列）不参与写入，先于系统列守卫放行
             if (!field.persisted() || field.column().equalsIgnoreCase(model.logicDeleteColumn())) {
                 continue;
+            }
+            if (FormConstants.isSystemColumn(field.column()) || "id".equalsIgnoreCase(field.name())) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.column());
             }
             boolean submitted = source.containsKey(field.name());
             if (!create && !submitted) {

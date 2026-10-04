@@ -283,6 +283,34 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void idDisplayFieldProjectsPrimaryKeyValueWithoutDuplicateColumns() {
+        // 主键映射为不落库展示字段：SELECT 列去重，行内投影主键值
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_form");
+        snapshot.setFormName("主键展示");
+        snapshot.setFormType("SINGLE");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setFields(List.of(field("personName", "PERSON_NAME", "STRING", false), idDisplayField()));
+        FormModel model = compile(snapshot);
+        String id = service.create(model, Map.of("personName", "Alice"));
+        assertThat(service.getById(model, id)).containsEntry("id", id).containsEntry("rowId", id);
+        assertThat(service.page(model, query(null, null, null)).getRecords().getFirst())
+                .containsEntry("rowId", id);
+    }
+
+    /** 主键展示字段：映射 ID 列、不落库 */
+    private static FormDefSnapshot.Field idDisplayField() {
+        FormDefSnapshot.Field field = new FormDefSnapshot.Field();
+        field.setFieldName("rowId");
+        field.setColumnName("ID");
+        field.setFieldType("STRING");
+        field.setNullable(true);
+        field.setPersisted(Boolean.FALSE);
+        field.getQuery().setShow(true);
+        return field;
+    }
+
+    @Test
     void bindsEachInValueAndTreatsSqlTextAsData() {
         FormModel model = model(false, false, false);
         String special = "x') OR 1=1 --";

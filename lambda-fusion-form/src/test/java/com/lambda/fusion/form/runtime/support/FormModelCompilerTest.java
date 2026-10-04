@@ -342,13 +342,30 @@ class FormModelCompilerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"ID", "TENANT_ID", "created_by", "CREATED_AT", "UPDATED_BY", "UPDATED_AT"})
+    @ValueSource(strings = {"TENANT_ID"})
     void rejectsReservedColumnsEvenForReadOnlyMappings(String column) {
+        // 租户列结构性禁映射（任何落库形态）；主键/审计列只读映射已合法（见 auditColumnsAllowedOnlyAsDisplayFields）
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
         FormDefSnapshot.Field reserved = field("businessField", column, "STRING", 0);
         reserved.setPersisted(false);
         snapshot.setFields(List.of(reserved));
         assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void idColumnAllowedOnlyAsDisplayField() {
+        // 不落库展示：允许映射主键列（值本就投影在行上），字段名不得为 id
+        FormDefSnapshot display = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field rowId = field("rowId", "ID", "STRING", 1);
+        rowId.setPersisted(Boolean.FALSE);
+        display.setFields(List.of(rowId));
+        FormModel model = compiler.compile(snapshotJson.write(display), 1L);
+        assertThat(model.fields().getFirst().persisted()).isFalse();
+
+        // 落库映射主键：拒绝
+        FormDefSnapshot writable = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        writable.setFields(List.of(field("rowId", "ID", "STRING", 1)));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(writable), 1L), FormErrorCode.FORM_TABLE_INVALID);
     }
 
     @Test
@@ -396,5 +413,21 @@ class FormModelCompilerTest {
         field.setFieldType(type);
         field.setSort(sort);
         return field;
+    }
+
+    @Test
+    void auditColumnsAllowedOnlyAsDisplayFields() {
+        // 不落库展示字段：允许映射审计列
+        FormDefSnapshot display = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field createdAt = field("createdAt", "CREATED_AT", "DATETIME", 1);
+        createdAt.setPersisted(Boolean.FALSE);
+        display.setFields(List.of(createdAt));
+        FormModel model = compiler.compile(snapshotJson.write(display), 1L);
+        assertThat(model.fields().getFirst().persisted()).isFalse();
+
+        // 落库映射审计列：拒绝（写入由引擎独占）
+        FormDefSnapshot writable = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        writable.setFields(List.of(field("createdAt", "CREATED_AT", "DATETIME", 1)));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(writable), 1L), FormErrorCode.FORM_TABLE_INVALID);
     }
 }

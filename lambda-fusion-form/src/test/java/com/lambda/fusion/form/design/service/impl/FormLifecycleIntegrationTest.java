@@ -298,6 +298,20 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
+    void saveAcceptsAuditColumnsAsDisplayOnlyFields() {
+        FormDefSaveCommand command = command();
+        FormFieldItem audit = new FormFieldItem();
+        audit.setFieldName("createdAt");
+        audit.setColumnName("CREATED_AT");
+        audit.setFieldType("DATETIME");
+        audit.setPersisted(false);
+        command.setFields(List.of(command().getFields().getFirst(), audit));
+        String id = design.save(command);
+        assertThat(count("la_form_field")).isEqualTo(2);
+        assertThat(definitions.selectById(id)).isNotNull();
+    }
+
+    @Test
     void saveRejectsTablesOutsideExplicitAllowList() {
         FormDefSaveCommand command = command();
         command.setTableName("la_area");
