@@ -113,12 +113,49 @@ class FormModelCompilerTest {
     }
 
     @Test
-    void rejectsNonSelfTreeSource() {
+    void rejectsUnknownTreeSource() {
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_TREE);
         snapshot.setFields(List.of(field("parent_id", "parent_id", "STRING", 1)));
-        snapshot.setTreeConfig("{\"sourceType\":\"DICT\",\"dictType\":\"leave_type\"}");
+        snapshot.setTreeConfig("{\"sourceType\":\"EXTERNAL\"}");
 
         assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void compilesFormAndDictTreeSourcesWithMappedNodeIdField() {
+        FormDefSnapshot formSource = snapshot(FormConstants.FORM_TYPE_TREE);
+        formSource.setFields(List.of(field("orgId", "ORG_ID", "STRING", 1)));
+        formSource.setTreeConfig("{\"sourceType\":\"FORM\",\"treeFormKey\":\"org_tree\",\"nodeIdField\":\"orgId\"}");
+        FormModel formModel = compiler.compile(snapshotJson.write(formSource), 1L);
+        assertThat(formModel.tree().formSource()).isTrue();
+        assertThat(formModel.tree().treeFormKey()).isEqualTo("org_tree");
+        assertThat(formModel.tree().nodeIdField()).isEqualTo("orgId");
+
+        FormDefSnapshot dictSource = snapshot(FormConstants.FORM_TYPE_TREE);
+        dictSource.setFields(List.of(field("orgId", "ORG_ID", "STRING", 1)));
+        dictSource.setTreeConfig("{\"sourceType\":\"DICT\",\"dictType\":\"area_type\",\"nodeIdField\":\"orgId\"}");
+        FormModel dictModel = compiler.compile(snapshotJson.write(dictSource), 1L);
+        assertThat(dictModel.tree().dictSource()).isTrue();
+        assertThat(dictModel.tree().dictType()).isEqualTo("area_type");
+    }
+
+    @Test
+    void rejectsFormSourceSelfReferenceAndUnmappedNodeIdField() {
+        FormDefSnapshot selfRef = snapshot(FormConstants.FORM_TYPE_TREE);
+        selfRef.setFields(List.of(field("orgId", "ORG_ID", "STRING", 1)));
+        // 快照自身 formKey 为 leave_demo，引用自身即拒绝
+        selfRef.setTreeConfig("{\"sourceType\":\"FORM\",\"treeFormKey\":\"leave_demo\",\"nodeIdField\":\"orgId\"}");
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(selfRef), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        FormDefSnapshot unmapped = snapshot(FormConstants.FORM_TYPE_TREE);
+        unmapped.setFields(List.of(field("name", "name", "STRING", 1)));
+        unmapped.setTreeConfig("{\"sourceType\":\"FORM\",\"treeFormKey\":\"org_tree\",\"nodeIdField\":\"orgId\"}");
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(unmapped), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        FormDefSnapshot noDictType = snapshot(FormConstants.FORM_TYPE_TREE);
+        noDictType.setFields(List.of(field("orgId", "ORG_ID", "STRING", 1)));
+        noDictType.setTreeConfig("{\"sourceType\":\"DICT\",\"nodeIdField\":\"orgId\"}");
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(noDictType), 1L), FormErrorCode.FORM_TABLE_INVALID);
     }
 
     @Test

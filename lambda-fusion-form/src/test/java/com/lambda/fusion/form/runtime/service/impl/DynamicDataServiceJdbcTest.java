@@ -354,7 +354,7 @@ class DynamicDataServiceJdbcTest {
         service.create(model, Map.of("personName", "Outsider"));
 
         FormDataPageQuery treeQuery = query(null, null, null);
-        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root));
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root, null));
         var page = service.page(model, treeQuery);
         assertThat(page.getTotal()).isEqualTo(3);
         assertThat(page.getRecords())
@@ -362,7 +362,7 @@ class DynamicDataServiceJdbcTest {
                 .containsExactlyInAnyOrder("Root", "Child", "Grandson");
 
         // 越选叶子只剩自身子树；懒加载根节点返回全部根（Root 与 Outsider 都是根）
-        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(child));
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(child, null));
         assertThat(service.page(model, treeQuery).getTotal()).isEqualTo(2);
         assertThat(service.tree(model, null))
                 .extracting(row -> row.get("personName"))
@@ -370,7 +370,7 @@ class DynamicDataServiceJdbcTest {
 
         // 上限 maxTreeDescendants=3：root 的子孙集（Root+Child+Grandson=3）触顶，再多即拒绝
         formProperties.setMaxTreeDescendants(2);
-        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root));
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter(root, null));
         assertThatThrownBy(() -> service.page(model, treeQuery))
                 .isInstanceOf(FormBusinessException.class)
                 .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
@@ -381,7 +381,7 @@ class DynamicDataServiceJdbcTest {
     void treeNodeFilterIsRejectedOnNonTreeForms() {
         FormModel model = model(false, false, false);
         FormDataPageQuery treeQuery = query(null, null, null);
-        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter("any"));
+        treeQuery.setTreeNode(new FormDataPageQuery.TreeNodeFilter("any", null));
         assertThatThrownBy(() -> service.page(model, treeQuery)).isInstanceOf(FormBusinessException.class);
     }
 

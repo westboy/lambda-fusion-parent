@@ -237,7 +237,9 @@ class FormLifecycleIntegrationTest {
     void invalidModelDoesNotPublishSnapshotOrChangePointer() {
         FormDefSaveCommand command = command();
         command.setFormType("TREE");
-        command.setTreeConfig("{}");
+        // 保存期只做来源与映射校验；filterColumn 合法性由编译期拦截（模拟快照被篡改的发布失败路径）
+        command.setTreeConfig(
+                "{\"sourceType\":\"SELF\",\"parentColumn\":\"PERSON_NAME\",\"nodeColumn\":\"PERSON_NAME\",\"filterColumn\":\"BAD COLUMN\"}");
         String id = design.save(command);
         try (var permissions = mockStatic(AuthUtils.class)) {
             assertThatThrownBy(() -> publish.publish(id)).isInstanceOf(FormBusinessException.class);
@@ -319,7 +321,7 @@ class FormLifecycleIntegrationTest {
         FormDefSaveCommand sub = command();
         sub.setFormKey("tree_sub");
         sub.setFormType("TREE");
-        sub.setTreeConfig("{}");
+        sub.setTreeConfig("{\"sourceType\":\"SELF\",\"parentColumn\":\"PERSON_NAME\",\"nodeColumn\":\"PERSON_NAME\"}");
         design.save(sub);
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");

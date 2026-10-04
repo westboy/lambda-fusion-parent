@@ -87,4 +87,13 @@ public final class FormConstants {
     public static final String RELATION_MODE_LIST = "LIST";
 
     public static final Set<String> RELATION_MODES = Set.of(RELATION_MODE_INLINE, RELATION_MODE_LIST);
+
+    /** 树来源：SELF 自关联（树=本表数据） / FORM 关联树表单（左树读另一 TREE 表单） / DICT 字典树 */
+    public static final String TREE_SOURCE_SELF = "SELF";
+
+    public static final String TREE_SOURCE_FORM = "FORM";
+
+    public static final String TREE_SOURCE_DICT = "DICT";
+
+    public static final Set<String> TREE_SOURCES = Set.of(TREE_SOURCE_SELF, TREE_SOURCE_FORM, TREE_SOURCE_DICT);
 }

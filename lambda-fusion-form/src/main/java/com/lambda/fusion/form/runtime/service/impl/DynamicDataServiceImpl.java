@@ -16,6 +16,7 @@ import com.lambda.fusion.form.runtime.support.FormFieldValidator;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
 import com.lambda.fusion.form.runtime.support.FormModel.FormRelation;
+import com.lambda.fusion.form.runtime.support.FormModel.TreeConfig;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedCondition;
@@ -248,6 +249,14 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     @Override
     public List<Map<String, Object>> tree(FormModel model, String parentValue) {
+        // FORM 来源：左树即关联树表单的数据，直接委派它的树端点（其权限由它自己的端点路径承担）
+        if (model.tree() != null && model.tree().formSource()) {
+            return tree(modelProvider.require(model.tree().treeFormKey()), parentValue);
+        }
+        // DICT 来源：层级数据由前端从字典构建，不走业务表树端点
+        if (model.tree() != null && model.tree().dictSource()) {
+            return List.of();
+        }
         targetTableContract.validateAccess(model);
         if (model.tree() == null || !model.tree().selfRelation()) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单不是自关联树类型");
@@ -660,11 +669,74 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (treeNode == null || treeNode.value() == null) {
             return "";
         }
-        if (model.tree() == null || !model.tree().selfRelation()) {
-            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单不是自关联树类型");
+        if (model.tree() == null) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "该表单未配置树");
         }
+        // SELF/FORM 由引擎解析子树；DICT 层级在字典侧，前端随请求携带子树代码集，引擎只做 IN 过滤
+        if (model.tree().dictSource()) {
+            return buildDictTreeFilter(model, treeNode, params);
+        }
+        if (model.tree().formSource()) {
+            return buildFormTreeFilter(model, treeNode.value(), params);
+        }
+        return buildSelfTreeFilter(model, treeNode.value(), params);
+    }
+
+    /** SELF 自关联：在业务表上按父列逐层收集「自身 + 全部子孙」的主键，按主键 IN 过滤 */
+    private String buildSelfTreeFilter(FormModel model, String nodeValue, Map<String, Object> params) {
+        Set<String> ids = resolveSubtreeIds(model, nodeValue, params);
+        String inSql = ids.stream().map(id -> bind(nextKey(params), id, params)).collect(Collectors.joining(", "));
+        return " AND " + FormConstants.COLUMN_ID + " IN (" + inSql + ")";
+    }
+
+    /**
+     * FORM 关联树表单：先在树表单的表上解析「节点 + 子孙」的节点 id 集（其父子结构由它自己的树配置决定），
+     * 再按本表的节点字段 IN 过滤；上限与 SELF 同口径
+     */
+    private String buildFormTreeFilter(FormModel model, String nodeValue, Map<String, Object> params) {
+        TreeConfig tree = model.tree();
+        FormModel treeModel = modelProvider.require(tree.treeFormKey());
+        if (treeModel.tree() == null || !treeModel.tree().selfRelation()) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联树表单须为自关联树类型：" + tree.treeFormKey());
+        }
+        Set<String> nodeIds = resolveSubtreeIds(treeModel, nodeValue, params);
+        String nodeIdColumn = requireNodeIdColumn(model);
+        String inSql =
+                nodeIds.stream().map(id -> bind(nextKey(params), id, params)).collect(Collectors.joining(", "));
+        return " AND " + nodeIdColumn + " IN (" + inSql + ")";
+    }
+
+    /** DICT 字典树：子树代码集由前端从已载入的字典层级计算，引擎校验数量后按节点字段 IN 过滤 */
+    private String buildDictTreeFilter(
+            FormModel model, FormDataPageQuery.TreeNodeFilter treeNode, Map<String, Object> params) {
+        List<String> codes = treeNode.values();
+        if (codes == null || codes.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "字典树过滤缺少子树代码集");
+        }
+        if (codes.size() > formProperties.getMaxTreeDescendants()) {
+            throw new FormBusinessException(FormErrorCode.FORM_TREE_DESCENDANT_LIMIT);
+        }
+        String nodeIdColumn = requireNodeIdColumn(model);
+        String inSql =
+                codes.stream().map(code -> bind(nextKey(params), code, params)).collect(Collectors.joining(", "));
+        return " AND " + nodeIdColumn + " IN (" + inSql + ")";
+    }
+
+    /** 本表存储树节点 id 的列（FORM/DICT 来源），按节点字段标识解析 */
+    private String requireNodeIdColumn(FormModel model) {
+        return model.fields().stream()
+                .filter(field -> field.name().equals(model.tree().nodeIdField()))
+                .findFirst()
+                .orElseThrow(() -> new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID,
+                        "树节点字段未映射：" + model.tree().nodeIdField()))
+                .column();
+    }
+
+    /** 在树模型（自关联）上解析「节点 + 全部子孙」的主键集合，逐层参数化 in 查询，超限即拒绝 */
+    private Set<String> resolveSubtreeIds(FormModel treeModel, String nodeValue, Map<String, Object> params) {
         Set<String> ids = new HashSet<>();
-        List<String> frontier = List.of(treeNode.value());
+        List<String> frontier = List.of(nodeValue);
         int max = formProperties.getMaxTreeDescendants();
         while (!frontier.isEmpty()) {
             if (ids.size() + frontier.size() > max) {
@@ -674,9 +746,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     .map(value -> bind(nextKey(params), value, params))
                     .collect(Collectors.joining(", "));
             List<Map<String, Object>> children = dynamicTableMapper.selectList(
-                    model.tableName(),
-                    FormConstants.COLUMN_ID + ", " + model.tree().parentColumn(),
-                    activeRows(model) + " AND " + model.tree().parentColumn() + " IN (" + inSql + ")",
+                    treeModel.tableName(),
+                    FormConstants.COLUMN_ID + ", " + treeModel.tree().parentColumn(),
+                    activeRows(treeModel) + " AND " + treeModel.tree().parentColumn() + " IN (" + inSql + ")",
                     null,
                     params);
             // 原始行键大小写随驱动漂移，与 project() 同样归一后再取 ID
@@ -687,10 +759,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     .filter(ids::add)
                     .collect(Collectors.toList());
         }
-        ids.add(treeNode.value());
-        // SELF 自关联：树行即业务行，子树按主键过滤；filterColumn 预留给 DICT 等外部树来源
-        String inSql = ids.stream().map(id -> bind(nextKey(params), id, params)).collect(Collectors.joining(", "));
-        return " AND " + FormConstants.COLUMN_ID + " IN (" + inSql + ")";
+        ids.add(nodeValue);
+        return ids;
     }
 
     private String buildOrder(List<ResolvedSort> sorts, Map<String, TableColumnView> tableColumns) {

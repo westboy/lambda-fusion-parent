@@ -18,8 +18,20 @@ public class FormSchemaAssembler {
         view.setLogicDeleteColumn(model.logicDeleteColumn());
         if (model.tree() != null) {
             FormSchemaView.TreeSchema tree = new FormSchemaView.TreeSchema();
-            tree.setLabelField(fieldNameOfColumn(model, model.tree().nodeColumn()));
-            tree.setParentField(fieldNameOfColumn(model, model.tree().parentColumn()));
+            tree.setSourceType(model.tree().sourceType());
+            // SELF：label/parent 为本表字段；FORM/DICT：本表节点字段 + 来源信息，label 由前端从树来源侧解析
+            tree.setLabelField(
+                    model.tree().nodeColumn() == null
+                            ? null
+                            : fieldNameOfColumn(model, model.tree().nodeColumn()));
+            tree.setParentField(
+                    model.tree().parentColumn() == null
+                            ? null
+                            : fieldNameOfColumn(model, model.tree().parentColumn()));
+            tree.setTreeFormKey(model.tree().treeFormKey());
+            // nodeIdField 配置即字段标识（编译期按字段名校验），直接透传
+            tree.setNodeIdField(model.tree().nodeIdField());
+            tree.setDictType(model.tree().dictType());
             view.setTree(tree);
         }
         model.relations().forEach(relation -> {

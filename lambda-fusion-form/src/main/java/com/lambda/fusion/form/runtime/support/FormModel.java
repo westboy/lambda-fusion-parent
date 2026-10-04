@@ -169,17 +169,36 @@ public record FormModel(
     /**
      * TREE 类型树配置
      *
-     * @param sourceType 数据源类型：SELF 自关联 / DICT 字典
-     * @param parentColumn 自关联父列
-     * @param nodeColumn 自关联节点列（展示列）
-     * @param dictType 字典编码（DICT 类型）
-     * @param filterColumn 树过滤作用于业务表的列（默认取 parentColumn 同名列）
+     * @param sourceType 数据源类型：SELF 自关联 / FORM 关联树表单 / DICT 字典
+     * @param parentColumn 自关联父列（仅 SELF）
+     * @param nodeColumn 自关联节点列（展示列，仅 SELF）
+     * @param dictType 字典编码（仅 DICT）
+     * @param filterColumn 树过滤作用于业务表的列（默认取 parentColumn 同名列，仅 SELF）
+     * @param treeFormKey 关联的树表单 formKey（仅 FORM）
+     * @param nodeIdField 本表存储树节点 id 的字段标识（FORM/DICT）
      */
     public record TreeConfig(
-            String sourceType, String parentColumn, String nodeColumn, String dictType, String filterColumn) {
+            String sourceType,
+            String parentColumn,
+            String nodeColumn,
+            String dictType,
+            String filterColumn,
+            String treeFormKey,
+            String nodeIdField) {
 
+        /** SELF 自关联：树行即本表业务行 */
         public boolean selfRelation() {
-            return "SELF".equalsIgnoreCase(sourceType);
+            return FormConstants.TREE_SOURCE_SELF.equalsIgnoreCase(sourceType);
+        }
+
+        /** FORM 关联树表单：左树读另一 TREE 表单的数据 */
+        public boolean formSource() {
+            return FormConstants.TREE_SOURCE_FORM.equalsIgnoreCase(sourceType);
+        }
+
+        /** DICT 字典树：左树读字典层级数据，本表字段存字典项代码 */
+        public boolean dictSource() {
+            return FormConstants.TREE_SOURCE_DICT.equalsIgnoreCase(sourceType);
         }
     }
 }

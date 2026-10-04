@@ -26,6 +26,7 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormLayouts;
+import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Comparator;
@@ -210,6 +211,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 && (command.getTreeConfig() == null || command.getTreeConfig().isBlank())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "TREE 类型必须配置 treeConfig");
         }
+        validateTree(command);
         if (FormConstants.FORM_TYPE_MASTER_SUB.equals(command.getFormType())
                 && command.getRelations().isEmpty()) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "MASTER_SUB 类型必须配置主从关系");
@@ -323,6 +325,82 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                         throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表列表列未在子表单映射：" + column);
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 树配置保存期校验：SELF 的父列/节点列须已映射；FORM 的关联树表单须存在且为 TREE 类型（不得自引用）、
+     * DICT 的字典编码必填；FORM/DICT 的节点字段须在本表映射且落库。结构细节由编译期统一校验。
+     */
+    private void validateTree(FormDefSaveCommand command) {
+        if (!FormConstants.FORM_TYPE_TREE.equals(command.getFormType())
+                || command.getTreeConfig() == null
+                || command.getTreeConfig().isBlank()) {
+            return;
+        }
+        final FormModel.TreeConfig tree;
+        try {
+            tree = objectMapper.readValue(command.getTreeConfig(), FormModel.TreeConfig.class);
+        } catch (JacksonException e) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "treeConfig 不是合法 JSON");
+        }
+        String sourceType = tree.sourceType() == null || tree.sourceType().isBlank()
+                ? FormConstants.TREE_SOURCE_SELF
+                : tree.sourceType().toUpperCase(Locale.ROOT);
+        if (!FormConstants.TREE_SOURCES.contains(sourceType)) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "树来源非法：" + tree.sourceType());
+        }
+        Set<String> mappedColumns = command.getFields().stream()
+                .filter(item -> !Boolean.FALSE.equals(item.getPersisted()))
+                .map(item -> item.getColumnName().toUpperCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        switch (sourceType) {
+            case FormConstants.TREE_SOURCE_FORM -> {
+                if (!FormConstants.isFormKey(tree.treeFormKey())) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "关联树表单标识非法或缺失");
+                }
+                if (tree.treeFormKey().equals(command.getFormKey())) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "关联树表单不能是自身");
+                }
+                FormDefEntity treeDef = getBaseMapper()
+                        .selectOne(new LambdaQueryWrapper<FormDefEntity>()
+                                .eq(FormDefEntity::getFormKey, tree.treeFormKey()));
+                if (treeDef == null) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "关联树表单不存在：" + tree.treeFormKey());
+                }
+                if (!FormConstants.FORM_TYPE_TREE.equals(treeDef.getFormType())) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "关联树表单须为左树右表类型：" + tree.treeFormKey());
+                }
+            }
+            case FormConstants.TREE_SOURCE_DICT -> {
+                if (tree.dictType() == null || tree.dictType().isBlank()) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "字典树必须配置字典编码");
+                }
+            }
+            default -> {
+                if (tree.parentColumn() == null
+                        || tree.parentColumn().isBlank()
+                        || tree.nodeColumn() == null
+                        || tree.nodeColumn().isBlank()) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "自关联树缺少父列/节点展示列");
+                }
+                if (!mappedColumns.contains(tree.parentColumn().toUpperCase(Locale.ROOT))
+                        || !mappedColumns.contains(tree.nodeColumn().toUpperCase(Locale.ROOT))) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "自关联树父列/节点列未映射字段");
+                }
+            }
+        }
+        if (FormConstants.TREE_SOURCE_FORM.equals(sourceType) || FormConstants.TREE_SOURCE_DICT.equals(sourceType)) {
+            if (tree.nodeIdField() == null || !FormConstants.isIdentifier(tree.nodeIdField())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "树节点字段非法或缺失");
+            }
+            boolean nodeIdMapped = command.getFields().stream()
+                    .filter(item -> !Boolean.FALSE.equals(item.getPersisted()))
+                    .anyMatch(item -> item.getFieldName().equals(tree.nodeIdField()));
+            if (!nodeIdMapped) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "树节点字段未映射或未落库：" + tree.nodeIdField());
             }
         }
     }

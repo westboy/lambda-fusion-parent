@@ -160,12 +160,21 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "TREE 类型缺少 treeConfig");
         }
         TreeConfig tree = snapshotJson.readTreeConfig(snapshot.getTreeConfig());
-        if (tree.sourceType() == null) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "treeConfig 缺少 sourceType");
+        String sourceType = tree.sourceType() == null || tree.sourceType().isBlank()
+                ? FormConstants.TREE_SOURCE_SELF
+                : tree.sourceType().toUpperCase(Locale.ROOT);
+        if (!FormConstants.TREE_SOURCES.contains(sourceType)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树来源非法：" + tree.sourceType());
         }
-        if (!tree.selfRelation()) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "treeConfig.sourceType 暂只支持 SELF");
-        }
+        return switch (sourceType) {
+            case FormConstants.TREE_SOURCE_FORM -> compileFormSourceTree(snapshot, tree, fields);
+            case FormConstants.TREE_SOURCE_DICT -> compileDictSourceTree(tree, fields);
+            default -> compileSelfTree(snapshot, tree, fields);
+        };
+    }
+
+    /** SELF 自关联：父列/节点列须为本表已映射字段，过滤列缺省取父列 */
+    private TreeConfig compileSelfTree(FormDefSnapshot snapshot, TreeConfig tree, List<FormField> fields) {
         if (tree.parentColumn() == null || tree.nodeColumn() == null) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "自关联树缺少 parentColumn/nodeColumn");
         }
@@ -186,11 +195,47 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点列未映射字段：" + nodeColumn);
         }
         return new TreeConfig(
-                "SELF",
+                FormConstants.TREE_SOURCE_SELF,
                 parentColumn,
                 nodeColumn,
                 null,
-                tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT));
+                tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT),
+                null,
+                null);
+    }
+
+    /** FORM 关联树表单：引用另一 TREE 表单作左树数据源，本表须有落库的节点 id 字段；跨表单存在性由保存期校验 */
+    private TreeConfig compileFormSourceTree(FormDefSnapshot snapshot, TreeConfig tree, List<FormField> fields) {
+        if (!FormConstants.isFormKey(tree.treeFormKey())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联树表单标识非法或缺失");
+        }
+        if (tree.treeFormKey().equals(snapshot.getFormKey())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联树表单不能是自身");
+        }
+        String nodeIdField = requireNodeIdField(tree, fields);
+        return new TreeConfig(FormConstants.TREE_SOURCE_FORM, null, null, null, null, tree.treeFormKey(), nodeIdField);
+    }
+
+    /** DICT 字典树：按字典编码取层级数据，本表节点 id 字段存字典项代码 */
+    private TreeConfig compileDictSourceTree(TreeConfig tree, List<FormField> fields) {
+        if (tree.dictType() == null || tree.dictType().isBlank()) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字典树缺少 dictType");
+        }
+        String nodeIdField = requireNodeIdField(tree, fields);
+        return new TreeConfig(FormConstants.TREE_SOURCE_DICT, null, null, tree.dictType(), null, null, nodeIdField);
+    }
+
+    /** FORM/DICT 来源共用的本表节点 id 字段校验：标识合法、已映射且落库，返回字段标识 */
+    private String requireNodeIdField(TreeConfig tree, List<FormField> fields) {
+        if (tree.nodeIdField() == null || !FormConstants.isIdentifier(tree.nodeIdField())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点字段非法或缺失");
+        }
+        boolean mapped = fields.stream().filter(field -> field.persisted()).anyMatch(field -> field.name()
+                .equals(tree.nodeIdField()));
+        if (!mapped) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点字段未映射或未落库：" + tree.nodeIdField());
+        }
+        return tree.nodeIdField();
     }
 
     /** 列表配置编译：列宽范围、对齐与格式化枚举、冻结方向、排序方向 */

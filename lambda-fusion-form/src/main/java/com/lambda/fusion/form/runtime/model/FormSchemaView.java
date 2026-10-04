@@ -68,11 +68,23 @@ public class FormSchemaView {
     @Data
     public static class TreeSchema {
 
-        @Schema(description = "节点展示字段标识")
+        @Schema(description = "树来源：SELF 自关联 / FORM 关联树表单 / DICT 字典树")
+        private String sourceType;
+
+        @Schema(description = "节点展示字段标识（SELF 自关联时为本表字段）")
         private String labelField;
 
-        @Schema(description = "父列字段标识")
+        @Schema(description = "父列字段标识（仅 SELF）")
         private String parentField;
+
+        @Schema(description = "关联树表单 formKey（仅 FORM，左树读它的树端点）")
+        private String treeFormKey;
+
+        @Schema(description = "本表存储树节点 id 的字段标识（FORM/DICT）")
+        private String nodeIdField;
+
+        @Schema(description = "字典编码（仅 DICT）")
+        private String dictType;
     }
 
     @Schema(description = "逻辑删除列名（空=物理删除）")
