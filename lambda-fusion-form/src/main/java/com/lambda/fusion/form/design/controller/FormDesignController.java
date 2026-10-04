@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -90,6 +91,14 @@ public class FormDesignController {
     @Operation(summary = "按预览模型查询真实业务数据")
     public PageView<Map<String, Object>> previewPage(@Valid @RequestBody FormPreviewDataCommand command) {
         return formPreviewService.page(command.source(), command.query());
+    }
+
+    @SaCheckPermission("form:design:preview")
+    @PostMapping("preview/data/tree")
+    @Operation(summary = "按预览模型读取树节点（树表/左树预览数据源）")
+    public List<Map<String, Object>> previewTree(
+            @Valid @RequestBody FormPreviewSource source, @RequestParam(required = false) String parentValue) {
+        return formPreviewService.tree(source, parentValue);
     }
 
     @SaCheckPermission("form:design:preview")

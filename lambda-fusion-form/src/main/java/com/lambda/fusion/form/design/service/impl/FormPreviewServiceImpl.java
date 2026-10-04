@@ -26,6 +26,7 @@ import com.lambda.fusion.form.runtime.support.FormModelCompiler;
 import com.lambda.fusion.form.runtime.support.SnapshotJson;
 import com.lambda.fusion.form.runtime.support.TargetTableContract;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -82,6 +83,12 @@ public class FormPreviewServiceImpl implements FormPreviewService {
     @Transactional(readOnly = true)
     public PageView<Map<String, Object>> page(FormPreviewSource source, FormDataPageQuery query) {
         return dataService.page(dataModel(source, FormAction.PAGE), query == null ? new FormDataPageQuery() : query);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> tree(FormPreviewSource source, String parentValue) {
+        return dataService.tree(dataModel(source, FormAction.PAGE), parentValue);
     }
 
     @Override
