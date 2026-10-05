@@ -36,6 +36,22 @@ public class FormProperties {
     /** 树子孙节点 id 集上限 */
     private int maxTreeDescendants = 500;
 
+    /** FILE 字段上传大小上限（MB） */
+    private long uploadMaxSizeMb = 10;
+
+    /** FILE 字段上传允许的扩展名（小写，不含点） */
+    private List<String> uploadAllowedExtensions = List.of(
+            "jpg", "jpeg", "png", "gif", "webp", "bmp", "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "zip");
+
+    public List<String> getUploadAllowedExtensions() {
+        return List.copyOf(uploadAllowedExtensions);
+    }
+
+    public void setUploadAllowedExtensions(List<String> uploadAllowedExtensions) {
+        this.uploadAllowedExtensions =
+                uploadAllowedExtensions == null ? List.of() : List.copyOf(uploadAllowedExtensions);
+    }
+
     /** 选表导列与发布校验的表名排除正则（元数据表自身与 Liquibase 系统表默认不可映射） */
     private String tableExcludePattern = "la_form_.*|databasechangelog.*|qrtz_.*";
 

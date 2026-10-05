@@ -111,7 +111,7 @@ public class FormDesignController {
         return formPreviewService.detail(source, recordId);
     }
 
-    @SaCheckPermission("form:design:preview")
+    @SaCheckPermission("form:design:preview:write")
     @PostMapping("preview/data")
     @Operation(summary = "按预览模型新增真实业务记录")
     @OperationLog(module = "动态表单", value = "预览新增业务数据")
@@ -119,7 +119,7 @@ public class FormDesignController {
         return formPreviewService.create(command.source(), command.data());
     }
 
-    @SaCheckPermission("form:design:preview")
+    @SaCheckPermission("form:design:preview:write")
     @PutMapping("preview/data/{recordId}")
     @Operation(summary = "按预览模型修改真实业务记录")
     @OperationLog(module = "动态表单", value = "预览修改业务数据")
@@ -127,7 +127,7 @@ public class FormDesignController {
         formPreviewService.update(command.source(), recordId, command.data());
     }
 
-    @SaCheckPermission("form:design:preview")
+    @SaCheckPermission("form:design:preview:write")
     @DeleteMapping("preview/data/{recordId}")
     @Operation(summary = "按预览模型删除真实业务记录")
     @OperationLog(module = "动态表单", value = "预览删除业务数据")

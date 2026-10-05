@@ -8,6 +8,7 @@ import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import com.lambda.fusion.upload.service.AttachmentService;
@@ -73,8 +74,9 @@ public class FormConfigure {
     @ConditionalOnBean(AttachmentService.class)
     static class UploadIntegration {
         @Bean
-        FormUploadController formUploadController(AttachmentService attachments) {
-            return new FormUploadController(attachments);
+        FormUploadController formUploadController(
+                AttachmentService attachments, FormModelProvider modelProvider, FormProperties properties) {
+            return new FormUploadController(attachments, modelProvider, properties);
         }
     }
 }

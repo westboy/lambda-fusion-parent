@@ -47,14 +47,21 @@ class FormApiPermissionTest {
         assertThat(historical.getPermissions()).containsExactly("form:design:preview");
         for (var endpoint : List.of(
                 List.of("POST", "/v1/form-design/preview/data/page"),
-                List.of("POST", "/v1/form-design/preview/data/r1/detail"),
+                List.of("POST", "/v1/form-design/preview/data/r1/detail"))) {
+            assertThat(matcher.match(registry.getLocalApis(), endpoint.get(0), endpoint.get(1))
+                            .orElseThrow()
+                            .getPermissions())
+                    .containsExactly("form:design:preview");
+        }
+        // 预览写（增删改真实业务记录）与预览读分离：独立权限码 form:design:preview:write
+        for (var endpoint : List.of(
                 List.of("POST", "/v1/form-design/preview/data"),
                 List.of("PUT", "/v1/form-design/preview/data/r1"),
                 List.of("DELETE", "/v1/form-design/preview/data/r1"))) {
             assertThat(matcher.match(registry.getLocalApis(), endpoint.get(0), endpoint.get(1))
                             .orElseThrow()
                             .getPermissions())
-                    .containsExactly("form:design:preview");
+                    .containsExactly("form:design:preview:write");
         }
     }
 

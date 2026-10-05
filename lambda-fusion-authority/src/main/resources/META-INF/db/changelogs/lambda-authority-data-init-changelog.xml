@@ -1030,4 +1030,18 @@
             where not exists (select 1 from la_resources where RES_PATH = 'form:design:route');
         ]]></sql>
     </changeSet>
+
+    <!-- 预览写（预览中增删改真实业务数据）与预览读分离：只读自验不再需要数据写权限。 -->
+    <changeSet id="lambda-authority-202610050001" author="Zx">
+        <preConditions onFail="HALT">
+            <tableExists tableName="la_resources"/>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_MODE,
+                                      METHOD, HIDDEN, PARENT_KEYS, IS_DEV, KEEP_ALIVE, ORDER_NO)
+            select 'FmDsgW001', 'FmDesign001', '预览写数据', 'form:design:preview:write', 2147483647, 3, 0,
+                   '', 0, 'FmTop00001-FmDesign001', 0, 0, 10
+            where not exists (select 1 from la_resources where RES_PATH = 'form:design:preview:write');
+        ]]></sql>
+    </changeSet>
 </databaseChangeLog>

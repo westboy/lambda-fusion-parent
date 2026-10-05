@@ -268,7 +268,13 @@ class FormAuthorizationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body)))
                 .hasRootCauseInstanceOf(NotPermissionException.class);
+        // 预览读 + 业务写权限但无预览写权限：预览写端点仍拒绝（读写权限分离）
         permissions = List.of("form:design:preview", "form:test_form:add");
+        assertThatThrownBy(() -> mvc.perform(post("/v1/form-design/preview/data")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body)))
+                .hasRootCauseInstanceOf(NotPermissionException.class);
+        permissions = List.of("form:design:preview", "form:design:preview:write", "form:test_form:add");
         mvc.perform(post("/v1/form-design/preview/data")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
