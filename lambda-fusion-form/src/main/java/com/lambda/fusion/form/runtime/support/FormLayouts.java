@@ -15,13 +15,13 @@ public final class FormLayouts {
 
     public static FormLayout read(ObjectMapper mapper, String json) {
         if (json == null || json.isBlank()) {
-            return new FormLayout(2, List.of());
+            return new FormLayout(2, List.of(), null);
         }
         try {
             var node = mapper.readTree(json);
             if (!node.isObject()
-                    || node.properties().stream()
-                            .anyMatch(entry -> !Set.of("columns", "items").contains(entry.getKey()))) {
+                    || node.properties().stream().anyMatch(entry -> !Set.of("columns", "items", "labelPosition")
+                            .contains(entry.getKey()))) {
                 throw invalid("布局必须是包含 columns、items 的对象");
             }
             if (!node.path("columns").isIntegralNumber() || !node.path("items").isArray()) {
@@ -43,7 +43,7 @@ public final class FormLayouts {
     }
 
     public static FormLayout compile(FormLayout layout, List<String> fields) {
-        FormLayout source = layout == null ? new FormLayout(2, List.of()) : layout;
+        FormLayout source = layout == null ? new FormLayout(2, List.of(), null) : layout;
         if (source.columns() < 1 || source.columns() > 4) {
             throw invalid("布局列数必须在 1 到 4 之间");
         }
@@ -62,7 +62,7 @@ public final class FormLayouts {
         fields.stream()
                 .filter(field -> !seen.contains(field))
                 .forEach(field -> items.add(new FormLayout.Item(field, 1)));
-        return new FormLayout(source.columns(), items);
+        return new FormLayout(source.columns(), items, source.labelPosition());
     }
 
     private static FormBusinessException invalid(String message) {

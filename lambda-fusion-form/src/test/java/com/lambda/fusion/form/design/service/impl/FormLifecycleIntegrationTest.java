@@ -134,7 +134,7 @@ class FormLifecycleIntegrationTest {
         FormDefSaveCommand command = command();
         command.getFields().getFirst().setLabel("区域名称");
         command.setFormLayout("{\"columns\":2,\"items\":[{\"field\":\"personName\",\"span\":2}]}");
-        FormLayout original = new FormLayout(2, List.of(new FormLayout.Item("personName", 2)));
+        FormLayout original = new FormLayout(2, List.of(new FormLayout.Item("personName", 2)), null);
         try (var permissions = mockStatic(AuthUtils.class)) {
             assertThat(preview.preview(new FormPreviewSource(null, null, null, command))
                             .getFormLayout())
