@@ -221,8 +221,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
-        // 主从子表替换式更新：仅当请求显式携带子表键（key=subFormKey）时才整组替换，
-        // 未携带表示不触碰子表；客户端子行 id 一律不被信任（提交行全部重新生成）。
+        // 主从子表差量更新：仅当请求显式携带子表键（key=subFormKey）时才比对子行集合——
+        // 带 id 且属于本主单的既有子行更新、无 id 新增、既有但未提交的删除；
+        // 子行 id 保持稳定，外部引用与逻辑删除历史不再因编辑主单而作废。
         // FLAT 一对一扁平：从表字段平铺在主提交里，按外键找既有从行做单条 upsert。
         for (FormRelation relation : model.relations()) {
             if (relation.flatMode()) {
@@ -234,9 +235,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             }
             FormModel subModel = requireSubModel(relation);
             Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
-            deleteSubRows(subModel, relation, id);
-            List<Map<String, Object>> rows = subRows(data, relation);
-            insertSubRows(relation, subModel, subColumns, id, rows);
+            diffSubRows(subModel, relation, subColumns, id, subRows(data, relation), expectedEtag != null);
         }
         interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterUpdate(model, id, data));
     }
@@ -425,8 +424,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (subColumns.containsKey("UPDATED_AT")) {
             assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
         }
-        dynamicTableMapper.updateDynamic(
-                subModel.tableName(), String.join(", ", assignments), activeRows(subModel), params);
+        if (dynamicTableMapper.updateDynamic(
+                        subModel.tableName(), String.join(", ", assignments), activeRows(subModel), params)
+                == 0) {
+            // 从行在预读后被并发删除：整笔事务回滚，不静默丢失本次更新
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
     }
 
     @Override
@@ -512,6 +515,117 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             rows.add((Map<String, Object>) item);
         }
         return rows;
+    }
+
+    /**
+     * INLINE 子表差量更新：提交行带 id 且命中本主单既有活跃子行 → 更新；无 id → 新增；
+     * 既有但未提交 → 删除（尊重子表逻辑删除语义）。子行 id 仅在属于本主单时才被信任。
+     * 防线：提交空数组（清空全部子行）仅在携带行指纹（__etag，证明提交者看到了当前数据）
+     * 或本就无子行时放行，避免旧客户端/误提交静默清空。
+     */
+    private void diffSubRows(
+            FormModel subModel,
+            FormRelation relation,
+            Map<String, TableColumnView> subColumns,
+            String mainId,
+            List<Map<String, Object>> rows,
+            boolean etagPresent) {
+        Map<String, Map<String, Object>> existing = activeSubRowsById(subModel, relation, mainId);
+        if (rows.isEmpty()) {
+            if (!existing.isEmpty() && !etagPresent) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "清空全部子行需携带行指纹（__etag）");
+            }
+            existing.keySet().forEach(subRowId -> deleteSubRow(subModel, subColumns, subRowId));
+            return;
+        }
+        Set<String> submittedIds = new HashSet<>();
+        for (Map<String, Object> item : rows) {
+            Object subId = item.get("id");
+            if (subId == null || subId.toString().isBlank()) {
+                insertSubRows(relation, subModel, subColumns, mainId, List.of(item));
+                continue;
+            }
+            String subRowId = subId.toString();
+            if (!existing.containsKey(subRowId)) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "子行不存在或不属于该主单：" + subRowId);
+            }
+            submittedIds.add(subRowId);
+            updateSubRow(subModel, relation, subColumns, subRowId, item);
+        }
+        for (String staleId : existing.keySet()) {
+            if (!submittedIds.contains(staleId)) {
+                deleteSubRow(subModel, subColumns, staleId);
+            }
+        }
+    }
+
+    /** 本主单的既有活跃子行（key=子行 id；两段式读组装的同一口径） */
+    private Map<String, Map<String, Object>> activeSubRowsById(
+            FormModel subModel, FormRelation relation, String mainId) {
+        List<Map<String, Object>> raw = dynamicTableMapper.selectByFk(
+                subModel.tableName(),
+                String.join(", ", selectColumns(subModel)),
+                relation.foreignKey(),
+                List.of(mainId),
+                activeRows(subModel),
+                null);
+        Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        raw.forEach(row -> byId.put(String.valueOf(project(subModel, row).get("id")), row));
+        return byId;
+    }
+
+    /** 单条子行部分更新：外键列不可改（剥离后由服务端关系保持绑定），无字段变化则不触碰 */
+    private void updateSubRow(
+            FormModel subModel,
+            FormRelation relation,
+            Map<String, TableColumnView> subColumns,
+            String subRowId,
+            Map<String, Object> item) {
+        Map<String, Object> row = normalize(subModel, item, false, subColumns);
+        row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
+        if (row.isEmpty()) {
+            return;
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subRowId);
+        List<String> assignments = new ArrayList<>();
+        row.forEach((column, value) -> assignments.add(column + " = " + bind("p" + params.size(), value, params)));
+        if (subColumns.containsKey("UPDATED_BY")) {
+            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+        }
+        if (subColumns.containsKey("UPDATED_AT")) {
+            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+        }
+        if (dynamicTableMapper.updateDynamic(
+                        subModel.tableName(), String.join(", ", assignments), activeRows(subModel), params)
+                == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
+    }
+
+    /** 删除单条子行：子表有逻辑删除列时置删除标记，否则物理删除 */
+    private void deleteSubRow(FormModel subModel, Map<String, TableColumnView> subColumns, String subRowId) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subRowId);
+        if (StringUtils.hasText(subModel.logicDeleteColumn())) {
+            List<String> assignments = new ArrayList<>();
+            assignments.add(subModel.logicDeleteColumn() + " = 1");
+            if (subColumns.containsKey("UPDATED_BY")) {
+                assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+            }
+            if (subColumns.containsKey("UPDATED_AT")) {
+                assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+            }
+            if (dynamicTableMapper.updateDynamic(
+                            subModel.tableName(), String.join(", ", assignments), activeRows(subModel), params)
+                    == 0) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+            }
+            return;
+        }
+        if (dynamicTableMapper.deleteById(subModel.tableName(), activeRows(subModel), params) == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
     }
 
     /** 逐行写入子表：外键回填主表 id，复用子模型校验、逻辑删除初始化与审计填充（租户由插件承担） */

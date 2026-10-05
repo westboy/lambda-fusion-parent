@@ -467,7 +467,7 @@ class DynamicDataServiceJdbcTest {
         assertThat(page.getTotal()).isEqualTo(1);
         assertThat((List<?>) page.getRecords().getFirst().get("leave_item")).hasSize(2);
 
-        // 替换式更新：显式携带键才整组替换（客户端子行 id 不被信任）
+        // 差量更新：显式携带键才比对子行集合（无 id 的提交行按新增处理，未提交的既有行删除）
         service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of(Map.of("itemName", "B1"))));
         assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
                 .isEqualTo("B1");
@@ -477,6 +477,71 @@ class DynamicDataServiceJdbcTest {
 
         // CASCADE_DELETE：删除主行级联清理子行
         service.delete(master, id);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(0);
+    }
+
+    @Test
+    void inlineSubRowsDiffUpdateKeepsIdsDefendsEmptyClearAndRejectsForeignSubId() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("CASCADE_DELETE");
+        String id = service.create(
+                master,
+                Map.of(
+                        "personName",
+                        "Alice",
+                        "leave_item",
+                        List.of(Map.of("itemName", "A1"), Map.of("itemName", "A2"))));
+        List<?> subs = (List<?>) service.getById(master, id).get("leave_item");
+        String firstSubId = (String) ((Map<?, ?>) subs.get(0)).get("id");
+        String secondSubId = (String) ((Map<?, ?>) subs.get(1)).get("id");
+
+        // 防线一：无行指纹的空数组（清空全部子行）拒绝，既有子行不动
+        Map<String, Object> clearWithoutEtag = new HashMap<>();
+        clearWithoutEtag.put("personName", "X");
+        clearWithoutEtag.put("leave_item", List.of());
+        assertThatThrownBy(() -> service.update(master, id, clearWithoutEtag))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(2);
+
+        // 防线二：不属于本主单的子行 id 拒绝（防越权改他单子行）
+        Map<String, Object> foreignRow = new HashMap<>(Map.of("itemName", "HACK"));
+        foreignRow.put("id", "999999999999");
+        Map<String, Object> forged = new HashMap<>();
+        forged.put("personName", "X");
+        forged.put("leave_item", List.of(foreignRow));
+        assertThatThrownBy(() -> service.update(master, id, forged))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
+
+        // 差量：第一行带 id 更新、第二行不提交（删除）、第三行无 id 新增
+        String etag = (String) service.getById(master, id).get("__etag");
+        Map<String, Object> keep = new HashMap<>(Map.of("itemName", "A1-updated"));
+        keep.put("id", firstSubId);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("personName", "Alice2");
+        payload.put("leave_item", List.of(keep, Map.of("itemName", "A3")));
+        payload.put("__etag", etag);
+        service.update(master, id, payload);
+
+        // 既有子行 id 稳定：更新不换新 id；未提交的既有行被删除；新增行获得新 id
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE ID=?", String.class, firstSubId))
+                .isEqualTo("A1-updated");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE ID=?", Integer.class, secondSubId))
+                .isEqualTo(0);
+        List<?> after = (List<?>) service.getById(master, id).get("leave_item");
+        assertThat(after).hasSize(2);
+
+        // 携带行指纹的空数组：提交者看到了当前数据，允许清空
+        Map<String, Object> clearWithEtag = new HashMap<>();
+        clearWithEtag.put("personName", "Alice3");
+        clearWithEtag.put("leave_item", List.of());
+        clearWithEtag.put("__etag", service.getById(master, id).get("__etag"));
+        service.update(master, id, clearWithEtag);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
                 .isEqualTo(0);
     }
