@@ -19,6 +19,9 @@ import java.util.Set;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,6 +31,10 @@ import org.springframework.stereotype.Component;
  * {@link FormProperties#getTableExcludePattern()} 过滤。只读取当前连接的 catalog/schema，
  * 转义 JDBC 模式字符并核对返回的表名，不跨库合并同名表。
  *
+ * <p>列元数据走 {@code formTableMeta} 短 TTL 缓存（lambda-cloud-starter-cache，TTL 由
+ * {@code lambda.cache.caches.form-table-meta} 配置，默认 60s）：目标表结构演进走正常部署，
+ * DDL 变更后最长一个 TTL 周期生效。CacheManager 缺失（缓存 starter 未装配）时直通实时读取。
+ *
  * @author Zx
  */
 @Slf4j
@@ -36,8 +43,12 @@ import org.springframework.stereotype.Component;
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class TableMetadataReader {
 
+    /** 表元数据内省缓存名（lambda.cache.caches 下按名配置 TTL） */
+    public static final String CACHE_NAME = "formTableMeta";
+
     private final DataSource dataSource;
     private final FormProperties properties;
+    private final ObjectProvider<CacheManager> cacheManagerProvider;
 
     /**
      * 列出可映射的物理表名（排除元数据表与系统表）
@@ -75,6 +86,31 @@ public class TableMetadataReader {
         if (isExcluded(tableName)) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不可映射：" + tableName);
         }
+        Cache cache = metadataCache();
+        if (cache != null) {
+            Cache.ValueWrapper hit = cache.get(tableName);
+            if (hit != null) {
+                @SuppressWarnings("unchecked")
+                List<TableColumnView> cached = (List<TableColumnView>) hit.get();
+                if (cached != null) {
+                    return cached;
+                }
+            }
+        }
+        List<TableColumnView> columns = readColumns(tableName);
+        if (cache != null) {
+            cache.put(tableName, new ArrayList<>(columns));
+        }
+        return columns;
+    }
+
+    /** 元数据缓存（缓存 starter 未装配时为 null，直通实时读取） */
+    private Cache metadataCache() {
+        CacheManager manager = cacheManagerProvider.getIfAvailable();
+        return manager == null ? null : manager.getCache(CACHE_NAME);
+    }
+
+    private List<TableColumnView> readColumns(String tableName) {
         List<TableColumnView> columns = new ArrayList<>();
         try (Connection connection = dataSource.getConnection()) {
             DatabaseMetaData metaData = connection.getMetaData();

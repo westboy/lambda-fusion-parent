@@ -49,6 +49,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -118,7 +120,12 @@ class DynamicDataServiceJdbcTest {
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
                 modelProvider,
-                new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties),
+                new TargetTableContract(
+                        new TableMetadataReader(
+                                dataSource,
+                                properties,
+                                new StaticListableBeanFactory().getBeanProvider(CacheManager.class)),
+                        mybatisProperties),
                 formProperties,
                 new FormDataInterceptors(new GenericApplicationContext()),
                 new ObjectMapper());
@@ -236,6 +243,18 @@ class DynamicDataServiceJdbcTest {
         assertThat(service.page(model, desc).getRecords())
                 .extracting(row -> row.get("personName"))
                 .containsExactly("B", "A");
+    }
+
+    @Test
+    void likeWildcardsAreEscapedAndMatchLiterally() {
+        FormModel model = model(false, true, false);
+        service.create(model, Map.of("personName", "100%"));
+        service.create(model, Map.of("personName", "1008"));
+        // % 与 _ 按字面匹配而非通配：like '100%' 只命中含百分号的行，like '100_' 只命中含下划线的行
+        assertThat(service.page(model, query("personName", "like", "100%")).getTotal())
+                .isEqualTo(1);
+        assertThat(service.page(model, query("personName", "like", "100_")).getTotal())
+                .isEqualTo(0);
     }
 
     @Test

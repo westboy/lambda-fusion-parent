@@ -118,6 +118,31 @@ public interface DynamicTableMapper {
             @Param("orderSql") String orderSql);
 
     /**
+     * 按外键批量查子行并限制每个外键组的行数（窗口函数 ROW_NUMBER 分组截断；
+     * 主从读组装防海量子行整页加载，跨库可移植）
+     */
+    @Select(
+            """
+            <script>
+            SELECT ${selectColumns} FROM (
+                SELECT ${selectColumns}, ROW_NUMBER() OVER (PARTITION BY ${fkColumn} ORDER BY ID ${windowOrder}) AS RN_
+                FROM ${tableName} WHERE ${fkColumn} IN
+                <foreach collection="values" item="v" open="(" separator="," close=")">#{v}</foreach>
+                <if test="whereSql != null">${whereSql}</if>
+            ) T_ WHERE T_.RN_ &lt;= #{maxPerGroup}
+            ORDER BY T_.ID
+            </script>
+            """)
+    List<Map<String, Object>> selectByFkWindowed(
+            @Param("tableName") String tableName,
+            @Param("selectColumns") String selectColumns,
+            @Param("fkColumn") String fkColumn,
+            @Param("values") Collection<String> values,
+            @Param("whereSql") String whereSql,
+            @Param("maxPerGroup") long maxPerGroup,
+            @Param("windowOrder") String windowOrder);
+
+    /**
      * 按外键列删除子行（CASCADE 物理/替换式更新清理）
      */
     @Delete("<script>DELETE FROM ${tableName} WHERE ${fkColumn} = #{params.value}"

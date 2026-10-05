@@ -50,6 +50,12 @@
             <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-cloud-starter-logger</artifactId>
         </dependency>
+        <!-- 表元数据内省缓存：缺失 CacheManager 时直通实时读取（行为与未引入一致） -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-cloud-starter-cache</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- 现有可选集成依赖；运行模型状态与版本由数据库逐次核对。 -->
         <dependency>
             <groupId>com.lambda.cloud</groupId>

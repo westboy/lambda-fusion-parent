@@ -33,6 +33,15 @@ public class FormProperties {
     /** 查询条件数上限 */
     private int maxConditionCount = 20;
 
+    /** 单个 IN 条件的值数上限（防低成本全表扫描） */
+    private int maxInValues = 500;
+
+    /** 深分页页码上限（超出钳制到上限） */
+    private long maxPageNum = 10000;
+
+    /** INLINE 子表随主行加载的每主行子行上限（超出截断，完整数据走台账式端点） */
+    private long maxInlineSubRows = 200;
+
     /** 树子孙节点 id 集上限 */
     private int maxTreeDescendants = 500;
 

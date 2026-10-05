@@ -3,6 +3,7 @@ package com.lambda.fusion.form.design.model;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 物理表列元数据视图（选表导列）
@@ -10,6 +11,7 @@ import lombok.Data;
  * @author Zx
  */
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "物理表列元数据")
 public class TableColumnView {

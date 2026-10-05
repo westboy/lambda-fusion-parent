@@ -90,7 +90,7 @@ class DynamicDataServiceImplTest {
         ArgumentCaptor<String> whereSql = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
         verify(mapper).selectList(eq(TABLE), anyString(), whereSql.capture(), anyString(), params.capture());
-        assertThat(whereSql.getValue()).isEqualTo(" AND APPLICANT LIKE #{params.p0}");
+        assertThat(whereSql.getValue()).isEqualTo(" AND APPLICANT LIKE #{params.p0} ESCAPE '\\'");
         assertThat(whereSql.getValue()).doesNotContain("张").doesNotContain(FormConstants.COLUMN_TENANT_ID);
         assertThat(params.getValue()).containsValue("%张%");
         assertThat(view.getTotal()).isEqualTo(1L);

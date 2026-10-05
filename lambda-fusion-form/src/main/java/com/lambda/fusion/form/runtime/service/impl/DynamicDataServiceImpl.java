@@ -733,13 +733,16 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             }
             List<String> ids =
                     rows.stream().map(row -> String.valueOf(row.get("id"))).toList();
-            List<Map<String, Object>> subRows = dynamicTableMapper.selectByFk(
+            // FLAT 一对一每主行只取最新一条（窗口降序取首行）；INLINE 内联每主行截断到上限（完整数据走台账式端点）
+            boolean flat = relation.flatMode();
+            List<Map<String, Object>> subRows = dynamicTableMapper.selectByFkWindowed(
                     subModel.tableName(),
                     String.join(", ", selectColumns(subModel)),
                     relation.foreignKey(),
                     ids,
                     activeRows(subModel),
-                    " ORDER BY ID ASC");
+                    flat ? 1 : formProperties.getMaxInlineSubRows(),
+                    flat ? "DESC" : "ASC");
             Map<String, List<Map<String, Object>>> grouped = new HashMap<>();
             for (Map<String, Object> subRow : subRows) {
                 Object fk = columnValue(subRow, relation.foreignKey());
@@ -989,11 +992,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                             .append(column)
                             .append(" <> ")
                             .append(bind(nextKey(params), condition.value(), params));
-                case "like" ->
+                case "like" -> {
+                    // 转义通配符，避免用户输入 %/_ 构造低成本全表扫描
+                    String pattern = "%" + escapeLike(String.valueOf(condition.value())) + "%";
                     sql.append(" AND ")
                             .append(column)
                             .append(" LIKE ")
-                            .append(bind(nextKey(params), "%" + condition.value() + "%", params));
+                            .append(bind(nextKey(params), pattern, params))
+                            .append(" ESCAPE '\\'");
+                }
                 case "ge" ->
                     sql.append(" AND ")
                             .append(column)
@@ -1168,16 +1175,26 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 + ", ID DESC";
     }
 
+    /** LIKE 通配符转义（配合 ESCAPE '\'） */
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     private Collection<?> asCollection(Object value) {
-        if (value instanceof Collection<?> collection
-                && !collection.isEmpty()
-                && collection.stream().noneMatch(java.util.Objects::isNull)) {
-            return collection;
+        Collection<?> collection;
+        if (value instanceof Collection<?> list
+                && !list.isEmpty()
+                && list.stream().noneMatch(java.util.Objects::isNull)) {
+            collection = list;
+        } else if (value instanceof Object[] array) {
+            collection = asCollection(Arrays.asList(array));
+        } else {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "in 操作符需要不含 null 的非空数组");
         }
-        if (value instanceof Object[] array) {
-            return asCollection(Arrays.asList(array));
+        if (collection.size() > formProperties.getMaxInValues()) {
+            throw new FormBusinessException(FormErrorCode.FORM_QUERY_CONDITION_LIMIT, "in 条件值数超过上限");
         }
-        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "in 操作符需要不含 null 的非空数组");
+        return collection;
     }
 
     private List<Object> asRange(Object value) {
@@ -1191,7 +1208,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     private long currentPage(FormDataPageQuery query) {
         Long pageNum = query.getPageNum() == null ? 1L : query.getPageNum().longValue();
-        return Math.max(1L, pageNum);
+        // 深分页钳制：超出上限的页码按上限处理（OFFSET 深度由此封顶）
+        return Math.min(Math.max(1L, pageNum), formProperties.getMaxPageNum());
     }
 
     private long pageSize(FormDataPageQuery query) {

@@ -20,6 +20,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.ObjectMapper;
@@ -39,9 +42,32 @@ class TargetTableContractTest {
         jdbc = new JdbcTemplate(source);
         FormProperties properties = new FormProperties();
         properties.setAllowedTables(List.of("TARGET_TABLE"));
-        reader = new TableMetadataReader(source, properties);
+        reader = new TableMetadataReader(
+                source, properties, new StaticListableBeanFactory().getBeanProvider(CacheManager.class));
         mybatisProperties = new MybatisPlusExtendProperties();
         contract = new TargetTableContract(reader, mybatisProperties);
+    }
+
+    @Test
+    void listColumnsServesFromCacheUntilEvicted() {
+        var factory = new StaticListableBeanFactory();
+        var manager = new ConcurrentMapCacheManager(TableMetadataReader.CACHE_NAME);
+        factory.addBean("cacheManager", manager);
+        FormProperties cachedProperties = new FormProperties();
+        cachedProperties.setAllowedTables(List.of("CACHED_TABLE"));
+        var cachingReader =
+                new TableMetadataReader(dataSource(), cachedProperties, factory.getBeanProvider(CacheManager.class));
+        jdbc.execute("CREATE TABLE CACHED_TABLE (ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(64))");
+        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(2);
+        // 缓存期内 DDL 变更不可见；失效后立即读到新结构
+        jdbc.execute("ALTER TABLE CACHED_TABLE ADD EXTRA VARCHAR(64)");
+        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(2);
+        manager.getCache(TableMetadataReader.CACHE_NAME).evict("CACHED_TABLE");
+        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(3);
+    }
+
+    private javax.sql.DataSource dataSource() {
+        return jdbc.getDataSource();
     }
 
     @AfterEach
