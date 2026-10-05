@@ -16,7 +16,6 @@ import java.util.Map;
  * @param fields 字段定义（按 sort 升序）
  * @param relations 主从关系
  * @param tree TREE 类型树配置（可空）
- * @param treeConfig TREE 类型原始配置 JSON（透传设计端，可空）
  */
 @SuppressFBWarnings("EI_EXPOSE_REP")
 public record FormModel(
@@ -30,8 +29,7 @@ public record FormModel(
         FormLayout formLayout,
         List<FormField> fields,
         List<FormRelation> relations,
-        TreeConfig tree,
-        String treeConfig) {
+        TreeConfig tree) {
 
     /**
      * 字段定义
@@ -114,20 +112,11 @@ public record FormModel(
     /**
      * 列表级配置
      *
-     * @param layout 布局 NORMAL / TREE_LEFT / TREE_GRID
      * @param pageSizes 分页条数选项
-     * @param advancedQuery 高级查询开关
-     * @param fullQuery 全量查询开关
      * @param showSeq 显示序号列
      * @param buttons 按钮显隐与文案
      */
-    public record ListConfig(
-            String layout,
-            List<Integer> pageSizes,
-            boolean advancedQuery,
-            boolean fullQuery,
-            boolean showSeq,
-            List<ButtonConfig> buttons) {
+    public record ListConfig(List<Integer> pageSizes, boolean showSeq, List<ButtonConfig> buttons) {
 
         public List<Integer> pageSizes() {
             return pageSizes == null || pageSizes.isEmpty() ? List.of(20, 50, 100, 500) : pageSizes;
@@ -185,7 +174,6 @@ public record FormModel(
      * @param parentColumn 自关联父列（仅 SELF）
      * @param nodeColumn 自关联节点列（展示列，仅 SELF）
      * @param dictType 字典编码（仅 DICT）
-     * @param filterColumn 树过滤作用于业务表的列（默认取 parentColumn 同名列，仅 SELF）
      * @param treeFormKey 关联的树表单 formKey（仅 FORM）
      * @param nodeIdField 本表存储树节点 id 的字段标识（FORM/DICT）
      * @param viewMode 呈现方式：LEFT_TREE 左树右表（默认）/ TREE_TABLE 整页缩进树表格（仅 SELF）
@@ -195,7 +183,6 @@ public record FormModel(
             String parentColumn,
             String nodeColumn,
             String dictType,
-            String filterColumn,
             String treeFormKey,
             String nodeIdField,
             String viewMode) {

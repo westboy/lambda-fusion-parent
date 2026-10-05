@@ -98,17 +98,11 @@ public class FormDefSnapshot {
         private Integer sortOrder = 0;
     }
 
-    /** 列表级配置：布局、分页、按钮等 */
+    /** 列表级配置：分页、按钮等 */
     @Data
     public static class ListConfig {
-        /** 布局：NORMAL / TREE_LEFT / TREE_GRID */
-        private String layout = "NORMAL";
         /** 分页条数选项 */
         private List<Integer> pageSizes = List.of(20, 50, 100, 500);
-        /** 是否显示高级查询 */
-        private Boolean advancedQuery = Boolean.FALSE;
-        /** 是否显示全量查询 */
-        private Boolean fullQuery = Boolean.FALSE;
         /** 是否显示序号列 */
         private Boolean showSeq = Boolean.TRUE;
         /** 操作按钮显隐与文案 */

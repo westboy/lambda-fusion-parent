@@ -298,14 +298,13 @@ class DynamicDataServiceImplTest {
                 FormConstants.FORM_TYPE_SINGLE,
                 TABLE,
                 null,
-                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                new FormModel.ListConfig(List.of(), true, List.of()),
                 null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", true, true, true, "eq", 2),
                         field("remark", "REMARK", "TEXT", true, true, false, "like", 3)),
                 List.of(),
-                null,
                 null);
     }
 
@@ -317,11 +316,10 @@ class DynamicDataServiceImplTest {
                 FormConstants.FORM_TYPE_MASTER_SUB,
                 TABLE,
                 null,
-                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                new FormModel.ListConfig(List.of(), true, List.of()),
                 null,
                 model().fields(),
                 List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy, null, null)),
-                null,
                 null);
     }
 
@@ -333,11 +331,10 @@ class DynamicDataServiceImplTest {
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave_item",
                 null,
-                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                new FormModel.ListConfig(List.of(), true, List.of()),
                 null,
                 List.of(field("leaveId", "LEAVE_ID", "STRING", false, false, false, "eq", 0)),
                 List.of(),
-                null,
                 null);
     }
 

@@ -784,8 +784,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     /**
      * TREE 类型左树选中节点时过滤「自身 + 全部子孙」：按 parentColumn 逐层递归取 id 集
-     * （每层一条参数化 in 查询），对 filterColumn 列 in 过滤；子孙集上限
-     * lambda.fusion.form.tree.max-descendants，超限抛 FORM_TREE_DESCENDANT_LIMIT。
+     * （每层一条参数化 in 查询），对主键 ID in 过滤；子孙集上限
+     * lambda.fusion.form.max-tree-descendants，超限抛 FORM_TREE_DESCENDANT_LIMIT。
      * 环状数据由上限兜底终止（无环时集合收敛即停）。
      */
     private String buildTreeFilter(

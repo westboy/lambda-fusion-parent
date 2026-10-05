@@ -33,7 +33,7 @@ class FormModelProviderTest {
     void setUp() {
         properties = new FormProperties();
         properties.setAllowedTables(List.of("la_demo_leave"));
-        cache = new FormModelCache(properties);
+        cache = new FormModelCache();
         json = new SnapshotJson(new ObjectMapper());
         compiler = new FormModelCompiler(json);
         FormDefMapper definitions = mock(FormDefMapper.class);

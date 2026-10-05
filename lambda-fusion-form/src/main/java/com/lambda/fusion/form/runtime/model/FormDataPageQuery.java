@@ -50,7 +50,7 @@ public class FormDataPageQuery extends PageQuery<Map<String, Object>> {
      * <p>DICT 来源：层级在字典侧，前端可整棵载入，故随请求携带子树代码集（含自身），
      * 引擎只做白名单列的 IN 过滤；SELF/FORM 由引擎解析子树，忽略 values。
      *
-     * @param value 树节点值（对应 filterColumn 列的值）
+     * @param value 树节点值（SELF/FORM 为节点 id，DICT 为字典项代码）
      * @param values DICT 来源的子树代码集（含自身，数量有上限）
      */
     @Schema(description = "树节点过滤")

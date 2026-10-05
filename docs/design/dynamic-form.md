@@ -105,8 +105,7 @@ FormModel = {
               list:  { show, width, align, format },  // 列表列配置
               form:  { show, component, props, rules, readonly } } ],  // 表单与详情配置
   relations: [ { subFormKey, foreignKey, cascadeStrategy } ],
-  tree: { sourceType, parentColumn, nodeColumn, dictType, filterColumn },  // TREE 类型
-  treeConfig                                          // 设计端原始 JSON，透传给前端
+  tree: { sourceType, parentColumn, nodeColumn, dictType, treeFormKey, nodeIdField, viewMode }  // TREE 类型
 }
 ```
 
@@ -116,11 +115,11 @@ FormModel = {
 
 - 每次 `FormModelProvider.require` 经框架租户 Mapper 查询当前定义，检查停用、生效指针和目标表允许清单；DB 是状态与生效版本的唯一事实来源；
 - 缓存 key = 数据库表单 ID，只有缓存模型版本与本次查得的 `published_version` 相同才命中；同名但不同租户的表单不会共用条目；
-- 发布/停用/回滚在事务提交后清除本节点条目。旧请求晚到回填旧版本时，下次请求因版本不匹配重新编译，不会将旧模型作为新版本使用；
-- TTL（`lambda.fusion.form.cache-ttl-seconds`）只控制编译结果的复用时间，状态和版本正确性不依赖 TTL 或广播；草稿字段不进入运行模型缓存；
+- 发布/停用/回滚/删除在事务提交后清除本节点条目（释放内存）。旧请求晚到回填旧版本时，下次请求因版本不匹配重新编译，不会将旧模型作为新版本使用；
+- 缓存无 TTL：版本精确匹配已使旧条目不可服务，过期机制对正确性是冗余；草稿字段不进入运行模型缓存；
 - 模型字段和关系列表、组件属性和规则外层 Map 为只读视图；嵌套配置按只读方式消费。
 
-**当前边界**：节点内采用 `ConcurrentHashMap` + TTL，尚无容量上限或主动清理。各节点逐次查 DB，无需广播才能识别已提交的停用和版本切换；已经取得模型的在途操作不会被强制取消。目标表结构变更仍需正常部署和处理在途请求（§13 R4）。
+**当前边界**：节点内采用 `ConcurrentHashMap`，容量随已发布表单数自然有界（仅缓存当前生效版本）。各节点逐次查 DB，无需广播才能识别已提交的停用和版本切换；已经取得模型的在途操作不会被强制取消。目标表结构变更仍需正常部署和处理在途请求（§13 R4）。
 
 ### 4.3 查询 AST 白名单（安全红线，契约 §16）
 
@@ -157,14 +156,14 @@ FormModel = {
 
 - **写路径**（MASTER_SUB）：同事务先写主表取回 id，回填子表外键批量写；删除按 `la_form_relation.cascade_strategy`——`CASCADE_DELETE` 级联删子表、`FORBID_DELETE` 存在子表数据时抛 `FORM_SUB_DELETE_FORBIDDEN`；
 - **读路径**：两段式——主表分页出 id 集 → 子表/关联表 `in` 查回内存组装。**不做**动态多表 JOIN：AST 白名单控制 JOIN 的复杂度收益不抵风险，两段式慢查询可控、租户条件天然分别生效；
-- **树过滤**（TREE）：左树选中节点时过滤其全部子孙——按 `tree_config` 数据源递归取回子孙 id 集，对树关联列 `in` 过滤；子孙集上限 `lambda.fusion.form.tree.max-descendants`（m1 用独立关系表维护树闭包，本设计自关联/字典场景直接递归查询，规模由该上限兜底）。
+- **树过滤**（TREE）：左树选中节点时过滤其全部子孙——按 `tree_config` 数据源递归取回子孙 id 集，对树关联列 `in` 过滤；子孙集上限 `lambda.fusion.form.max-tree-descendants`（m1 用独立关系表维护树闭包，本设计自关联/字典场景直接递归查询，规模由该上限兜底）。
 
 **P1 交付（2026-10-03）**：TREE 左树右表与 MASTER_SUB 主从已全部交付，§4.4 全部条款生效——
 
 - **主从写路径**：同事务先写主表取回 id，再按关系回填子表外键逐行写入（复用子模型校验、子表逻辑删除初始化与审计填充，租户由插件承担）。子行数据嵌套在提交体中（key=subFormKey，值为子行对象数组）；客户端子行 id 一律不被信任。更新采用**替换式**：仅当请求显式携带子表键时整组替换（删除既有活跃子行后重插），未携带表示不触碰子表。
 - **主从读路径**：两段式——主表分页出 id 集 → 按外键 `in` 查回子行（子模型投影），挂到主行（key=subFormKey）；`getById` 同语义。子表单不可用（未发布/未映射/表未开放）时读取跳过该关系并置空，写入则直接拒绝。
 - **级联删除**：`CASCADE_DELETE` 先按子表语义清理子行（有逻辑删除列则置删除标记，否则物理删除），再删主行；`FORBID_DELETE` 存在活跃子行时抛 `FORM_SUB_DELETE_FORBIDDEN`。子表单须为单表类型且外键已映射（运行时校验），关系不能自引用或重复（编译期校验）。
-- **树过滤**（TREE）：左树选中节点时过滤「自身 + 全部子孙」——按 `parentColumn` 逐层递归取回子孙 id 集，对主键 `ID` in 过滤；子孙集上限 `lambda.fusion.form.tree.max-descendants`，超限抛 `FORM_TREE_DESCENDANT_LIMIT`(18123)，环状数据由上限兜底终止；`parentColumn` 引用父行 ID，`filterColumn` 预留给 DICT 等外部树来源（仍仅支持 `SELF`）。
+- **树过滤**（TREE）：左树选中节点时过滤「自身 + 全部子孙」——SELF 按 `parentColumn` 逐层递归取回子孙 id 集，对主键 `ID` in 过滤；FORM/DICT 按本表节点 id 字段（`nodeIdField`）in 过滤（DICT 子树代码集由前端随请求携带）；子孙集上限 `lambda.fusion.form.max-tree-descendants`，超限抛 `FORM_TREE_DESCENDANT_LIMIT`(18123)，环状数据由上限兜底终止。
 
 ### 4.5 系统字段与逻辑删除
 
@@ -473,10 +472,9 @@ Controller 只编排（契约 §9.3），权限在 Cloud 统一注解鉴权链�
 | key | 默认 | 说明 |
 | --- | --- | --- |
 | `lambda.fusion.form.enabled` | `true` | 总开关（契约 §19） |
-| `lambda.fusion.form.cache-ttl-seconds` | `300` | 快照编译结果 TTL；状态和生效版本每次查 DB（§4.2） |
 | `lambda.fusion.form.allowed-tables` | `[]` | 允许动态读写的物理表名，精确匹配、默认拒绝；startup 仅配置 `la_demo_leave` |
 | `lambda.fusion.form.max-condition-count` | `20` | AST 条件数上限（§4.3） |
-| `lambda.fusion.form.tree.max-descendants` | `500` | 树子孙 id 集上限（已生效：TREE 列表子孙过滤 §4.4） |
+| `lambda.fusion.form.max-tree-descendants` | `500` | 树子孙 id 集上限（已生效：TREE 列表子孙过滤 §4.4） |
 | `lambda.fusion.form.table-exclude-pattern` | `la_form_.*\|databasechangelog.*\|qrtz_.*` | 对允许清单追加的排除规则，大小写不敏感；设计、发布和运行共同检查（§5.5） |
 
 租户开关沿用基础框架配置，不新增表单私有开关：

@@ -27,6 +27,7 @@ import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormLayouts;
 import com.lambda.fusion.form.runtime.support.FormModel;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Comparator;
@@ -67,6 +68,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private final TableMetadataReader tableMetadataReader;
     private final ObjectMapper objectMapper;
     private final FormPublishService formPublishService;
+    private final FormModelProvider formModelProvider;
 
     @Override
     public PageView<FormDefView> page(FormDefPage page) {
@@ -149,6 +151,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         formDefVersionMapper.delete(
                 new LambdaQueryWrapper<FormDefVersionEntity>().eq(FormDefVersionEntity::getFormId, id));
         removeById(id);
+        // 停用表单删除后释放可能残留的编译结果缓存
+        formModelProvider.evictAfterCommit(id);
     }
 
     @Override

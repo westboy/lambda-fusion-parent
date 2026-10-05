@@ -35,9 +35,6 @@ public class FormSchemaView {
     @Schema(description = "字段渲染描述")
     private List<FieldSchema> fields = new ArrayList<>();
 
-    @Schema(description = "TREE 类型树配置（原样透传设计端 treeConfig）")
-    private String treeConfig;
-
     @Schema(description = "TREE 类型运行时树配置（字段标识视角，物理列名不出服务端）")
     private TreeSchema tree;
 
@@ -96,7 +93,7 @@ public class FormSchemaView {
     @Schema(description = "逻辑删除列名（空=物理删除）")
     private String logicDeleteColumn;
 
-    @Schema(description = "列表级配置：布局/分页/按钮等")
+    @Schema(description = "列表级配置：分页/按钮等")
     private ListConfig listConfig = new ListConfig();
 
     @Schema(description = "新增、编辑、详情共用布局")
@@ -180,17 +177,8 @@ public class FormSchemaView {
     @Schema(description = "列表级配置")
     public static class ListConfig {
 
-        @Schema(description = "布局 NORMAL / TREE_LEFT / TREE_GRID")
-        private String layout;
-
         @Schema(description = "分页条数选项")
         private List<Integer> pageSizes;
-
-        @Schema(description = "高级查询开关")
-        private Boolean advancedQuery;
-
-        @Schema(description = "全量查询开关")
-        private Boolean fullQuery;
 
         @Schema(description = "显示序号列")
         private Boolean showSeq;

@@ -68,7 +68,6 @@ public class FormSchemaAssembler {
             view.getRelations().add(view1);
         });
         view.setListConfig(toListConfig(model.listConfig()));
-        view.setTreeConfig(model.treeConfig());
         view.setFormLayout(model.formLayout());
         List<FormSchemaView.FieldSchema> fields = new ArrayList<>();
         model.fields().forEach(field -> {
@@ -94,10 +93,7 @@ public class FormSchemaAssembler {
 
     private FormSchemaView.ListConfig toListConfig(FormModel.ListConfig config) {
         FormSchemaView.ListConfig view = new FormSchemaView.ListConfig();
-        view.setLayout(config.layout());
         view.setPageSizes(config.pageSizes());
-        view.setAdvancedQuery(config.advancedQuery());
-        view.setFullQuery(config.fullQuery());
         view.setShowSeq(config.showSeq());
         view.setButtons(config.buttons().stream()
                 .map(b -> {

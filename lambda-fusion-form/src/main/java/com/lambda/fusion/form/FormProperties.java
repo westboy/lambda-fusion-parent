@@ -19,9 +19,6 @@ public class FormProperties {
     /** 总开关 */
     private boolean enabled = true;
 
-    /** 不可变快照编译结果缓存 TTL（秒）；状态与生效版本每次从数据库核对 */
-    private long cacheTtlSeconds = 300;
-
     /** 允许动态读写的物理表名（精确匹配），默认不开放任何业务表。 */
     private List<String> allowedTables = List.of();
 

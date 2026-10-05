@@ -160,8 +160,7 @@ public class FormModelCompiler {
                         fields.stream().map(FormField::name).toList()),
                 List.copyOf(fields),
                 List.copyOf(relations),
-                tree,
-                snapshot.getTreeConfig());
+                tree);
     }
 
     private TreeConfig compileTree(FormDefSnapshot snapshot, List<FormField> fields) {
@@ -194,9 +193,6 @@ public class FormModelCompiler {
             throw new FormBusinessException(
                     FormErrorCode.FORM_TABLE_INVALID, "树配置列非法：" + tree.parentColumn() + "/" + tree.nodeColumn());
         }
-        if (tree.filterColumn() != null && !FormConstants.isIdentifier(tree.filterColumn())) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树过滤列非法：" + tree.filterColumn());
-        }
         String parentColumn = tree.parentColumn().toUpperCase(Locale.ROOT);
         String nodeColumn = tree.nodeColumn().toUpperCase(Locale.ROOT);
         boolean parentMapped = fields.stream().anyMatch(f -> f.column().equals(parentColumn));
@@ -213,15 +209,7 @@ public class FormModelCompiler {
         if (!TreeConfig.VIEW_MODE_LEFT_TREE.equals(viewMode) && !TreeConfig.VIEW_MODE_TREE_TABLE.equals(viewMode)) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树呈现方式非法：" + tree.viewMode());
         }
-        return new TreeConfig(
-                FormConstants.TREE_SOURCE_SELF,
-                parentColumn,
-                nodeColumn,
-                null,
-                tree.filterColumn() == null ? parentColumn : tree.filterColumn().toUpperCase(Locale.ROOT),
-                null,
-                null,
-                viewMode);
+        return new TreeConfig(FormConstants.TREE_SOURCE_SELF, parentColumn, nodeColumn, null, null, null, viewMode);
     }
 
     /** FORM 关联树表单：引用另一 TREE 表单作左树数据源，本表须有落库的节点 id 字段；跨表单存在性由保存期校验 */
@@ -233,8 +221,7 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联树表单不能是自身");
         }
         String nodeIdField = requireNodeIdField(tree, fields);
-        return new TreeConfig(
-                FormConstants.TREE_SOURCE_FORM, null, null, null, null, tree.treeFormKey(), nodeIdField, null);
+        return new TreeConfig(FormConstants.TREE_SOURCE_FORM, null, null, null, tree.treeFormKey(), nodeIdField, null);
     }
 
     /** DICT 字典树：按字典编码取层级数据，本表节点 id 字段存字典项代码 */
@@ -243,8 +230,7 @@ public class FormModelCompiler {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字典树缺少 dictType");
         }
         String nodeIdField = requireNodeIdField(tree, fields);
-        return new TreeConfig(
-                FormConstants.TREE_SOURCE_DICT, null, null, tree.dictType(), null, null, nodeIdField, null);
+        return new TreeConfig(FormConstants.TREE_SOURCE_DICT, null, null, tree.dictType(), null, nodeIdField, null);
     }
 
     /** FORM/DICT 来源共用的本表节点 id 字段校验：标识合法、已映射且落库，返回字段标识 */
@@ -294,11 +280,7 @@ public class FormModelCompiler {
     /** 列表级配置编译（缺省归一） */
     private FormModel.ListConfig compileListConfig(FormDefSnapshot.ListConfig config) {
         if (config == null) {
-            return new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of());
-        }
-        String layout = config.getLayout() == null ? "NORMAL" : config.getLayout();
-        if (!Set.of("NORMAL", "TREE_LEFT", "TREE_GRID").contains(layout)) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "列表布局非法：" + layout);
+            return new FormModel.ListConfig(List.of(), true, List.of());
         }
         List<Integer> pageSizes =
                 config.getPageSizes() == null || config.getPageSizes().isEmpty()
@@ -313,13 +295,7 @@ public class FormModelCompiler {
                                 !Boolean.FALSE.equals(b.getShow()),
                                 b.getLabel()))
                         .toList();
-        return new FormModel.ListConfig(
-                layout,
-                pageSizes,
-                Boolean.TRUE.equals(config.getAdvancedQuery()),
-                Boolean.TRUE.equals(config.getFullQuery()),
-                !Boolean.FALSE.equals(config.getShowSeq()),
-                buttons);
+        return new FormModel.ListConfig(pageSizes, !Boolean.FALSE.equals(config.getShowSeq()), buttons);
     }
 
     /** 逻辑删除列：如配置，必须是已映射字段的列 */

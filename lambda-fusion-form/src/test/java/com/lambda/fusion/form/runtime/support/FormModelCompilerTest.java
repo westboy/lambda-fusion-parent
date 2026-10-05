@@ -178,7 +178,7 @@ class FormModelCompilerTest {
     }
 
     @Test
-    void compilesSelfTreeWithFilterColumnDefaultingToParentColumn() {
+    void compilesSelfTree() {
         String treeConfig = "{\"sourceType\":\"SELF\",\"parentColumn\":\"parent_id\",\"nodeColumn\":\"name\"}";
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_TREE);
         snapshot.setFields(List.of(field("name", "name", "STRING", 1), field("parentId", "parent_id", "STRING", 2)));
@@ -190,9 +190,7 @@ class FormModelCompilerTest {
         assertThat(model.tree().sourceType()).isEqualTo("SELF");
         assertThat(model.tree().parentColumn()).isEqualTo("PARENT_ID");
         assertThat(model.tree().nodeColumn()).isEqualTo("NAME");
-        assertThat(model.tree().filterColumn()).isEqualTo("PARENT_ID");
         assertThat(model.tree().selfRelation()).isTrue();
-        assertThat(model.treeConfig()).isEqualTo(treeConfig);
     }
 
     @Test

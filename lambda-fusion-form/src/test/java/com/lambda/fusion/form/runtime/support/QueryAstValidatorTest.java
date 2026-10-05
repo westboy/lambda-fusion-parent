@@ -156,14 +156,13 @@ class QueryAstValidatorTest {
                 FormConstants.FORM_TYPE_SINGLE,
                 "la_demo_leave",
                 null,
-                new FormModel.ListConfig("NORMAL", List.of(), false, false, true, List.of()),
+                new FormModel.ListConfig(List.of(), true, List.of()),
                 null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", true, true, "like", 1),
                         field("days", "DAYS", "DECIMAL", false, true, "eq", 2),
                         field("remark", "REMARK", "TEXT", true, false, "like", 3)),
                 List.of(),
-                null,
                 null);
     }
 
