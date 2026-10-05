@@ -2,6 +2,7 @@ package com.lambda.fusion.form.runtime.service;
 
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +19,7 @@ public interface FormRuntimeService {
      */
     FormSchemaView schema(String formKey);
 
-    PageView<Map<String, Object>> page(String formKey, FormDataPageQuery query);
+    FormDataPageView page(String formKey, FormDataPageQuery query);
 
     List<Map<String, Object>> tree(String formKey, String parentValue);
 

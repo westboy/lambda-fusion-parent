@@ -1,8 +1,8 @@
 package com.lambda.fusion.form.design.service;
 
-import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.design.model.FormPreviewSource;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +15,7 @@ public interface FormPreviewService {
 
     FormSchemaView previewVersion(String id, long version);
 
-    PageView<Map<String, Object>> page(FormPreviewSource source, FormDataPageQuery query);
+    FormDataPageView page(FormPreviewSource source, FormDataPageQuery query);
 
     List<Map<String, Object>> tree(FormPreviewSource source, String parentValue);
 

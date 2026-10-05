@@ -122,6 +122,10 @@ public class FormSchemaAssembler {
         schema.setWidth(field.list().width());
         schema.setAlign(field.list().align());
         schema.setFormat(field.list().format());
+        schema.setFrozen(field.list().frozen());
+        schema.setSummary(field.list().summary());
+        schema.setDefaultSort(field.list().defaultSort());
+        schema.setSortOrder(field.list().sortOrder());
         schema.setFormShow(field.form().show());
         schema.setComponent(field.form().component());
         schema.setProps(field.form().props());

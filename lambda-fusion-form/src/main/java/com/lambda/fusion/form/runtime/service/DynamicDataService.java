@@ -2,6 +2,7 @@ package com.lambda.fusion.form.runtime.service;
 
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +17,7 @@ public interface DynamicDataService {
     /**
      * 分页查询（AST 条件 + 白名单排序）
      */
-    PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query);
+    FormDataPageView page(FormModel model, FormDataPageQuery query);
 
     /**
      * 详情

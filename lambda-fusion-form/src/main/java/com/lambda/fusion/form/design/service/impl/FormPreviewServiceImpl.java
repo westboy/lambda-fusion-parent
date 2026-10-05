@@ -1,7 +1,6 @@
 package com.lambda.fusion.form.design.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.design.assembler.FormSnapshotAssembler;
@@ -18,6 +17,7 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.support.FormAction;
@@ -81,7 +81,7 @@ public class FormPreviewServiceImpl implements FormPreviewService {
 
     @Override
     @Transactional(readOnly = true)
-    public PageView<Map<String, Object>> page(FormPreviewSource source, FormDataPageQuery query) {
+    public FormDataPageView page(FormPreviewSource source, FormDataPageQuery query) {
         return dataService.page(dataModel(source, FormAction.PAGE), query == null ? new FormDataPageQuery() : query);
     }
 

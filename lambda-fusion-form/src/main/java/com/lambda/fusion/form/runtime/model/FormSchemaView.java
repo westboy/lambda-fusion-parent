@@ -148,6 +148,18 @@ public class FormSchemaView {
         @Schema(description = "列格式化（date/datetime/dict，可空按类型推断）")
         private String format;
 
+        @Schema(description = "冻结方向（left/right，可空）")
+        private String frozen;
+
+        @Schema(description = "参与合计（数值列 SUM、其余 COUNT，全量口径）")
+        private Boolean summary;
+
+        @Schema(description = "默认排序方向（asc/desc，可空）")
+        private String defaultSort;
+
+        @Schema(description = "默认排序优先级（越小越优先）")
+        private Integer sortOrder;
+
         @Schema(description = "表单/详情显示")
         private Boolean formShow;
 

@@ -4,6 +4,7 @@ import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.service.FormRuntimeService;
@@ -45,7 +46,7 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     }
 
     @Override
-    public PageView<Map<String, Object>> page(String formKey, FormDataPageQuery query) {
+    public FormDataPageView page(String formKey, FormDataPageQuery query) {
         return dynamicDataService.page(modelProvider.require(formKey), query);
     }
 

@@ -4,6 +4,7 @@ import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.runtime.interceptor.FormPermission;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.service.FormRuntimeService;
 import com.lambda.fusion.form.runtime.support.FormAction;
@@ -48,8 +49,7 @@ public class FormDataController {
     @PostMapping("{formKey}/page")
     @FormPermission(FormAction.PAGE)
     @Operation(summary = "分页查询（AST 条件 + 白名单排序）")
-    public PageView<Map<String, Object>> page(
-            @PathVariable String formKey, @Valid @RequestBody FormDataPageQuery query) {
+    public FormDataPageView page(@PathVariable String formKey, @Valid @RequestBody FormDataPageQuery query) {
         return formRuntimeService.page(formKey, query);
     }
 

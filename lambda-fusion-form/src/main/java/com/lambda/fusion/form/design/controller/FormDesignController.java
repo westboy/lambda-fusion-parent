@@ -17,6 +17,7 @@ import com.lambda.fusion.form.design.service.FormPreviewService;
 import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.service.FormRouteService;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -91,7 +92,7 @@ public class FormDesignController {
     @SaCheckPermission("form:design:preview")
     @PostMapping("preview/data/page")
     @Operation(summary = "按预览模型查询真实业务数据")
-    public PageView<Map<String, Object>> previewPage(@Valid @RequestBody FormPreviewDataCommand command) {
+    public FormDataPageView previewPage(@Valid @RequestBody FormPreviewDataCommand command) {
         return formPreviewService.page(command.source(), command.query());
     }
 

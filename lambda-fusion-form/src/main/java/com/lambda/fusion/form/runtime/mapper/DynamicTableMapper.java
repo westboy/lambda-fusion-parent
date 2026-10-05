@@ -49,12 +49,28 @@ public interface DynamicTableMapper {
     @Select(
             """
             <script>
-            SELECT COUNT(1) FROM ${tableName} WHERE 1 = 1
+            SELECT COUNT(1) FROM ${tableName} WHERE 1=1
             <if test="whereSql != null">${whereSql}</if>
             </script>
             """)
     long countBy(
             @Param("tableName") String tableName,
+            @Param("whereSql") String whereSql,
+            @Param("params") Map<String, Object> params);
+
+    /**
+     * 合计聚合（selectSql 为服务端拼装的 SUM/COUNT 表达式，列名全部来自服务端模型白名单）
+     */
+    @Select(
+            """
+            <script>
+            SELECT ${selectSql} FROM ${tableName} WHERE 1=1
+            <if test="whereSql != null">${whereSql}</if>
+            </script>
+            """)
+    Map<String, Object> aggregate(
+            @Param("tableName") String tableName,
+            @Param("selectSql") String selectSql,
             @Param("whereSql") String whereSql,
             @Param("params") Map<String, Object> params);
 

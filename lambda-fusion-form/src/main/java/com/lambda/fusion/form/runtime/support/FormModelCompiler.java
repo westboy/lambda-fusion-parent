@@ -90,6 +90,10 @@ public class FormModelCompiler {
             FormDefSnapshot.ListConf list = field.getList() == null ? new FormDefSnapshot.ListConf() : field.getList();
             FormDefSnapshot.FormConf formConf =
                     field.getForm() == null ? new FormDefSnapshot.FormConf() : field.getForm();
+            if (Boolean.TRUE.equals(list.getSummary()) && (!persistedField || field.getSubFormKey() != null)) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "合计仅支持主表落库字段：" + field.getFieldName());
+            }
             fields.add(new FormField(
                     field.getFieldName(),
                     field.getLabel() == null || field.getLabel().isBlank() ? field.getFieldName() : field.getLabel(),

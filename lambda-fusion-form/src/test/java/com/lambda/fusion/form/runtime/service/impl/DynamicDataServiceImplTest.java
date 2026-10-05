@@ -12,7 +12,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
@@ -22,6 +21,7 @@ import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
@@ -85,7 +85,7 @@ class DynamicDataServiceImplTest {
         when(mapper.selectList(eq(TABLE), anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(List.of(Map.of("ID", "1")));
 
-        PageView<Map<String, Object>> view = service.page(model(), query(condition("applicant", "like", "张")));
+        FormDataPageView view = service.page(model(), query(condition("applicant", "like", "张")));
 
         ArgumentCaptor<String> whereSql = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
@@ -120,7 +120,7 @@ class DynamicDataServiceImplTest {
         FormDataPageQuery query = new FormDataPageQuery();
         query.setPageSize(5000);
 
-        PageView<Map<String, Object>> view = service.page(model(), query);
+        FormDataPageView view = service.page(model(), query);
 
         assertThat(view.getPageSize()).isEqualTo(500L);
         assertThat(view.getTotal()).isZero();

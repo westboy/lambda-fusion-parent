@@ -11,6 +11,7 @@ import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.support.FormAction;
 import com.lambda.fusion.form.runtime.support.FormFieldValidator;
@@ -78,7 +79,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     private final ObjectMapper objectMapper;
 
     @Override
-    public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
+    public FormDataPageView page(FormModel model, FormDataPageQuery query) {
         Map<String, TableColumnView> tableColumns = targetTableContract.validateAccess(model);
         astValidator.validate(model, query);
         String selectColumns = String.join(", ", selectColumns(model));
@@ -86,18 +87,20 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         String whereSql = activeRows(model)
                 + buildWhere(astValidator.resolve(model, query.getConditions()), params)
                 + buildTreeFilter(model, query.getTreeNode(), params);
-        String orderSql = buildOrder(astValidator.resolveSorts(model, query.getSorts()), tableColumns);
+        String orderSql = buildOrder(model, astValidator.resolveSorts(model, query.getSorts()), tableColumns);
+        Map<String, Object> summaries = summaries(model, whereSql, params);
 
         long pageNum = currentPage(query);
         long pageSize = pageSize(query);
         long total = dynamicTableMapper.countBy(model.tableName(), whereSql, params);
         if (total == 0) {
-            return PageView.<Map<String, Object>>builder()
+            return FormDataPageView.builder()
                     .pageNum(pageNum)
                     .pageSize(pageSize)
                     .total(0)
                     .totalPages(0)
                     .records(List.of())
+                    .summaries(summaries)
                     .build();
         }
         String pageSql = orderSql + " LIMIT " + pageSize + " OFFSET " + ((pageNum - 1) * pageSize);
@@ -107,13 +110,42 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 records.stream().map(row -> project(model, row)).toList();
         attachSubRows(model, projected);
         projected.forEach(row -> row.put(ETAG_KEY, etagOf(row)));
-        return PageView.<Map<String, Object>>builder()
+        return FormDataPageView.builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
                 .total(total)
                 .totalPages((total + pageSize - 1) / pageSize)
                 .records(projected)
+                .summaries(summaries)
                 .build();
+    }
+
+    /**
+     * 合计行（list.summary=true 的主表落库字段）：数值列 SUM、其余 COUNT，按筛选后的全量集合计算。
+     * 列名全部来自模型白名单，值参数化沿用 where 的绑定。
+     */
+    private Map<String, Object> summaries(FormModel model, String whereSql, Map<String, Object> params) {
+        List<FormField> summaryFields = model.fields().stream()
+                .filter(field -> field.subFormKey() == null
+                        && field.persisted()
+                        && field.list().summary())
+                .toList();
+        if (summaryFields.isEmpty()) {
+            return Map.of();
+        }
+        String selectSql = summaryFields.stream()
+                .map(field -> {
+                    boolean numeric = "INT".equals(field.type()) || "DECIMAL".equals(field.type());
+                    return (numeric ? "SUM(" : "COUNT(") + field.column() + ") AS " + field.column();
+                })
+                .collect(Collectors.joining(", "));
+        Map<String, Object> row = dynamicTableMapper.aggregate(model.tableName(), selectSql, whereSql, params);
+        if (row == null) {
+            return Map.of();
+        }
+        Map<String, Object> byField = new LinkedHashMap<>();
+        summaryFields.forEach(field -> byField.put(field.name(), row.get(field.column())));
+        return byField;
     }
 
     @Override
@@ -1109,8 +1141,21 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return ids;
     }
 
-    private String buildOrder(List<ResolvedSort> sorts, Map<String, TableColumnView> tableColumns) {
+    private String buildOrder(FormModel model, List<ResolvedSort> sorts, Map<String, TableColumnView> tableColumns) {
         if (sorts.isEmpty()) {
+            // 客户端未排序时按设计期默认排序（sortOrder 升序定优先级），均未配置再回退创建时间
+            List<FormField> defaultSorts = model.fields().stream()
+                    .filter(field -> field.sortable() && field.list().defaultSort() != null)
+                    .sorted(Comparator.comparingInt(field -> field.list().sortOrder()))
+                    .toList();
+            if (!defaultSorts.isEmpty()) {
+                return " ORDER BY "
+                        + defaultSorts.stream()
+                                .map(field -> field.column()
+                                        + ("asc".equals(field.list().defaultSort()) ? " ASC" : " DESC"))
+                                .collect(Collectors.joining(", "))
+                        + ", ID DESC";
+            }
             // 默认排序按目标表是否含 CREATED_AT 自动适配
             return tableColumns != null && tableColumns.containsKey("CREATED_AT")
                     ? " ORDER BY CREATED_AT DESC, ID DESC"

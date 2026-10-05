@@ -209,6 +209,36 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void defaultSortAppliesWhenClientDoesNotSortAndSummariesAggregateFilteredSet() {
+        FormModel model = listCapabilityModel();
+        service.create(model, Map.of("personName", "B", "amount", "10"));
+        service.create(model, Map.of("personName", "A", "amount", "5.5"));
+        String removed = service.create(model, Map.of("personName", "C", "amount", "2"));
+        service.delete(model, removed);
+
+        // 客户端未排序：按设计期默认排序（personName ASC）；合计为全量口径且不含已删除行
+        var page = service.page(model, query(null, null, null));
+        assertThat(page.getRecords()).extracting(row -> row.get("personName")).containsExactly("A", "B");
+        assertThat(page.getSummaries().get("amount"))
+                .isInstanceOfSatisfying(
+                        java.math.BigDecimal.class, sum -> assertThat(sum).isEqualByComparingTo("15.5"));
+        assertThat(page.getSummaries().get("personName")).isEqualTo(2L);
+
+        // 筛选收窄后合计跟随筛选集合
+        var filtered = service.page(model, query("personName", "eq", "A"));
+        assertThat(filtered.getSummaries().get("amount"))
+                .isInstanceOfSatisfying(
+                        java.math.BigDecimal.class, sum -> assertThat(sum).isEqualByComparingTo("5.5"));
+
+        // 客户端显式排序优先于设计期默认排序
+        FormDataPageQuery desc = query(null, null, null);
+        desc.setSorts(List.of(new FormDataPageQuery.SortItem("personName", false)));
+        assertThat(service.page(model, desc).getRecords())
+                .extracting(row -> row.get("personName"))
+                .containsExactly("B", "A");
+    }
+
+    @Test
     void uniqueFieldRejectsDuplicateAndFreesValueAfterDelete() {
         FormModel model = uniqueModel();
         String first = service.create(model, Map.of("personName", "AB"));
@@ -823,6 +853,23 @@ class DynamicDataServiceJdbcTest {
         FormDefSnapshot.Field personName = field("personName", "PERSON_NAME", "STRING", false);
         personName.getForm().setRules(Map.of("unique", true));
         snapshot.setFields(List.of(personName));
+        return compile(snapshot);
+    }
+
+    /** 列表能力演示模型：personName 默认升序+计数合计，amount 求和合计，DELETED 逻辑删除 */
+    private static FormModel listCapabilityModel() {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_list");
+        snapshot.setFormName("列表能力");
+        snapshot.setFormType("SINGLE");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        FormDefSnapshot.Field personName = field("personName", "PERSON_NAME", "STRING", false);
+        personName.getList().setDefaultSort("asc");
+        personName.getList().setSummary(true);
+        FormDefSnapshot.Field amount = field("amount", "AMOUNT", "DECIMAL", true);
+        amount.getList().setSummary(true);
+        snapshot.setFields(List.of(personName, amount, field("deleted", "DELETED", "INT", false)));
         return compile(snapshot);
     }
 
