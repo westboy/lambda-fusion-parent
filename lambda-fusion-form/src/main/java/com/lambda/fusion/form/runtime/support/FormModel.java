@@ -47,6 +47,7 @@ public record FormModel(
      * @param query 查询区配置
      * @param list 列表列配置
      * @param form 表单与详情配置
+     * @param subFormKey 一对一扁平模式的从表归属（null=主表字段；从表字段不支持查询条件与排序）
      */
     public record FormField(
             String name,
@@ -58,18 +59,24 @@ public record FormModel(
             String dictType,
             int sort,
             boolean persisted,
+            String subFormKey,
             QueryConf query,
             ListConf list,
             FormConf form) {
 
-        /** 是否允许出现在查询白名单 */
+        /** 是否允许出现在查询白名单（从表字段不参与：查询 SQL 只在主表上执行） */
         public boolean queryable() {
-            return query.show();
+            return query.show() && subFormKey == null;
         }
 
         /** 是否允许出现在列表与排序白名单 */
         public boolean listVisible() {
             return list.show();
+        }
+
+        /** 是否允许出现在排序白名单（从表字段不参与：排序 SQL 只在主表上执行） */
+        public boolean sortable() {
+            return list.show() && subFormKey == null;
         }
     }
 
@@ -163,6 +170,11 @@ public record FormModel(
         /** 台账式子表：详情页分页展示、子行独立增删改，不随主表提交 */
         public boolean listMode() {
             return FormConstants.RELATION_MODE_LIST.equals(mode);
+        }
+
+        /** 一对一扁平：从表字段并入主表呈现，单条 upsert（存在改/不存在增） */
+        public boolean flatMode() {
+            return FormConstants.RELATION_MODE_FLAT.equals(mode);
         }
     }
 

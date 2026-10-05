@@ -544,6 +544,64 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void masterSubFlatModeWritesSubRowUpsertAndReadsMergedFlat() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterFlatModel();
+
+        // 平铺提交：从表字段随主表字段一起，写入拆分为「主行 + 从行」单条 upsert（外键回填）
+        String id = service.create(master, Map.of("personName", "Alice", "itemName", "S1"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
+                .isEqualTo("S1");
+
+        // 读取扁平合并：从行字段提升到主行顶层（无嵌套键）
+        assertThat(service.getById(master, id))
+                .containsEntry("personName", "Alice")
+                .containsEntry("itemName", "S1")
+                .doesNotContainKeys("leave_item");
+
+        // 编辑从字段：从行单条更新而非重复插入（一对一 upsert）
+        service.update(master, id, Map.of("personName", "Alice2", "itemName", "S2"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
+                .isEqualTo("S2");
+
+        // 嵌套子表键按扁平协议拒绝
+        assertThatThrownBy(() -> service.update(
+                        master, id, Map.of("personName", "Alice3", "leave_item", List.of(Map.of("itemName", "X")))))
+                .isInstanceOf(FormBusinessException.class);
+
+        // 历史多行从数据：取最新一条融合展示（不静默删数）
+        jdbc.update("INSERT INTO LA_TEST_SUB (ID, ITEM_NAME, LEAVE_ID) VALUES (?, ?, ?)", "legacy-sub", "OLD", id);
+        assertThat(service.getById(master, id)).containsEntry("itemName", "S2");
+    }
+
+    /** 一对一扁平主表：personName 为主表字段，itemName 为 FLAT 标记的从表字段（列在 LA_TEST_SUB） */
+    private static FormModel masterFlatModel() {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_flat");
+        snapshot.setFormName("扁平演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        FormDefSnapshot.Field itemName = field("itemName", "ITEM_NAME", "STRING", true);
+        itemName.setSubFormKey("leave_item");
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                itemName));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setForeignKey("LEAVE_ID");
+        relation.setCascadeStrategy("CASCADE_DELETE");
+        relation.setMode(FormConstants.RELATION_MODE_FLAT);
+        snapshot.setRelations(List.of(relation));
+        return compile(snapshot);
+    }
+
+    @Test
     void cannotSetDeleteFlagThroughNormalUpdate() {
         FormModel model = model(true, false, false);
         String id = service.create(model, Map.of("personName", "Alice"));

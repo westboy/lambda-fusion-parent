@@ -66,6 +66,10 @@ public class FormFieldEntity extends BaseEntity {
     @TableField("PERSISTED")
     private Boolean persisted;
 
+    /** 一对一扁平模式的从表归属（null/空=主表字段；FLAT 关系时为子表单 formKey，写入拆分按它归组） */
+    @TableField("SUB_FORM_KEY")
+    private String subFormKey;
+
     @TableField("SORT")
     private Integer sort;
 

@@ -30,6 +30,7 @@ import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -216,6 +217,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 && command.getRelations().isEmpty()) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "MASTER_SUB 类型必须配置主从关系");
         }
+        validateFlatRelations(command);
         long distinctNames = command.getFields().stream()
                 .map(FormFieldItem::getFieldName)
                 .distinct()
@@ -341,6 +343,35 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     }
 
     /**
+     * 一对一扁平（FLAT）保存期校验：标记字段须对应一条 FLAT 关系；从表字段不支持查询条件与排序
+     * （它们的查询/排序 SQL 只落在主表上）。字段标识全局唯一由调用方校验兜住。
+     */
+    private void validateFlatRelations(FormDefSaveCommand command) {
+        Set<String> flatKeys = command.getRelations().stream()
+                .filter(item -> FormConstants.RELATION_MODE_FLAT.equals(item.getMode()))
+                .map(FormRelationItem::getSubFormKey)
+                .collect(Collectors.toSet());
+        Set<String> markedKeys = command.getFields().stream()
+                .map(FormFieldItem::getSubFormKey)
+                .filter(key -> key != null && !key.isBlank())
+                .collect(Collectors.toSet());
+        for (String key : markedKeys) {
+            if (!flatKeys.contains(key)) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段标记无对应 FLAT 关系：" + key);
+            }
+        }
+        for (FormFieldItem item : command.getFields()) {
+            if (item.getSubFormKey() == null || item.getSubFormKey().isBlank()) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(FieldConfigs.toQueryConf(objectMapper, item.getQueryConfig())
+                    .getShow())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段不支持查询条件：" + item.getFieldName());
+            }
+        }
+    }
+
+    /**
      * 树配置保存期校验：SELF 的父列/节点列须已映射；FORM 的关联树表单须存在且为 TREE 类型（不得自引用）、
      * DICT 的字典编码必填；FORM/DICT 的节点字段须在本表映射且落库。结构细节由编译期统一校验。
      */
@@ -420,21 +451,43 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
      * 落库字段的映射列必须真实存在于目标表（把发布/预览期目标表契约的「缺少列」前置到草稿保存）。
      * 手改列名或更换目标表后未重新导列都会在此拦截，错误信息给出可操作指引。
      */
+    /** 落库字段的映射列须存在于各自的目标表：主表字段对照本表，FLAT 从表字段对照其子表单的目标表 */
     private void validateColumnsExist(FormDefSaveCommand command) {
         Set<String> physicalColumns = tableMetadataReader.listColumns(command.getTableName()).stream()
                 .map(TableColumnView::getColumnName)
                 .map(column -> column.toUpperCase(Locale.ROOT))
                 .collect(Collectors.toSet());
+        Map<String, Set<String>> subColumns = new HashMap<>();
         for (FormFieldItem item : command.getFields()) {
             if (Boolean.FALSE.equals(item.getPersisted())) {
                 continue;
             }
+            String subKey = item.getSubFormKey();
             String column = item.getColumnName().toUpperCase(Locale.ROOT);
-            if (!physicalColumns.contains(column)) {
+            if (subKey == null || subKey.isBlank()) {
+                if (!physicalColumns.contains(column)) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER,
+                            "字段 " + item.getFieldName() + " 映射的列 " + column + " 在目标表 " + command.getTableName()
+                                    + " 中不存在，请修正列名或重新「选表导列」");
+                }
+                continue;
+            }
+            Set<String> subPhysical = subColumns.computeIfAbsent(subKey, key -> {
+                FormDefEntity subDef = getBaseMapper()
+                        .selectOne(new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, key));
+                if (subDef == null) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段归属的子表单不存在：" + key);
+                }
+                return tableMetadataReader.listColumns(subDef.getTableName()).stream()
+                        .map(TableColumnView::getColumnName)
+                        .map(name -> name.toUpperCase(Locale.ROOT))
+                        .collect(Collectors.toSet());
+            });
+            if (!subPhysical.contains(column)) {
                 throw new FormBusinessException(
                         FormErrorCode.INVALID_PARAMETER,
-                        "字段 " + item.getFieldName() + " 映射的列 " + column + " 在目标表 " + command.getTableName()
-                                + " 中不存在，请修正列名或重新「选表导列」");
+                        "从表字段 " + item.getFieldName() + " 映射的列 " + column + " 在子表单 " + subKey + " 的目标表中不存在，请修正列名或重新并入");
             }
         }
     }

@@ -142,6 +142,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         fillAudit(tableColumns, columns, values, params, true);
         dynamicTableMapper.insertDynamic(model.tableName(), columns, values, params);
         for (FormRelation relation : model.relations()) {
+            if (relation.flatMode()) {
+                upsertFlatSubRow(model, relation, id, data, true);
+                continue;
+            }
             List<Map<String, Object>> rows = subRows(data, relation);
             if (rows.isEmpty()) {
                 continue;
@@ -152,6 +156,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         List<FormField> defaulted = model.fields().stream()
                 .filter(field -> field.persisted()
+                        && field.subFormKey() == null
                         && !field.column().equals(model.logicDeleteColumn())
                         && !row.containsKey(field.column())
                         && TargetTableContract.hasDefault(tableColumns.get(field.column())))
@@ -195,8 +200,13 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
         // 主从子表替换式更新：仅当请求显式携带子表键（key=subFormKey）时才整组替换，
-        // 未携带表示不触碰子表；客户端子行 id 一律不被信任（提交行全部重新生成）
+        // 未携带表示不触碰子表；客户端子行 id 一律不被信任（提交行全部重新生成）。
+        // FLAT 一对一扁平：从表字段平铺在主提交里，按外键找既有从行做单条 upsert。
         for (FormRelation relation : model.relations()) {
+            if (relation.flatMode()) {
+                upsertFlatSubRow(model, relation, id, data, false);
+                continue;
+            }
             if (!data.containsKey(relation.subFormKey())) {
                 continue;
             }
@@ -331,14 +341,66 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 .orElseThrow(() -> new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主从关系不存在：" + subFormKey));
     }
 
-    /** 台账式子行独立增删改，不随主表提交；显式携带子表键即拒绝 */
+    /** 台账式子行独立增删改、扁平式从字段平铺提交：显式携带子表键即拒绝 */
     private void rejectListModeSubData(FormModel model, Map<String, Object> data) {
         for (FormRelation relation : model.relations()) {
             if (relation.listMode() && data.containsKey(relation.subFormKey())) {
                 throw new FormBusinessException(
                         FormErrorCode.INVALID_PARAMETER, "台账式子表数据不随主表提交：" + relation.subFormKey());
             }
+            if (relation.flatMode() && data.containsKey(relation.subFormKey())) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "扁平模式从表字段随主表平铺提交，不接受子表键：" + relation.subFormKey());
+            }
         }
+    }
+
+    /**
+     * 一对一扁平从行单条 upsert：从表字段平铺在主提交里，按外键找既有从行——
+     * 存在则部分更新（仅提交的字段）、不存在则插入（外键回填主行 id）；
+     * 未提交任何从表字段即不触碰；历史多行按外键取最新一条。
+     */
+    private void upsertFlatSubRow(
+            FormModel model, FormRelation relation, String mainId, Map<String, Object> data, boolean create) {
+        Map<String, Object> subData = new LinkedHashMap<>();
+        for (FormField field : model.fields()) {
+            if (relation.subFormKey().equals(field.subFormKey()) && data.containsKey(field.name())) {
+                subData.put(field.name(), data.get(field.name()));
+            }
+        }
+        if (subData.isEmpty()) {
+            return;
+        }
+        FormModel subModel = requireSubModel(relation);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        List<Map<String, Object>> existing = dynamicTableMapper.selectByFk(
+                subModel.tableName(),
+                FormConstants.COLUMN_ID,
+                relation.foreignKey(),
+                List.of(mainId),
+                activeRows(subModel),
+                " ORDER BY ID DESC");
+        if (existing.isEmpty()) {
+            insertSubRows(relation, subModel, subColumns, mainId, List.of(subData));
+            return;
+        }
+        Map<String, Object> row = normalize(subModel, subData, false, subColumns);
+        if (row.isEmpty()) {
+            return;
+        }
+        String subId = String.valueOf(columnValue(existing.getFirst(), FormConstants.COLUMN_ID));
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subId);
+        List<String> assignments = new ArrayList<>();
+        row.forEach((column, value) -> assignments.add(column + " = " + bind("p" + params.size(), value, params)));
+        if (subColumns.containsKey("UPDATED_BY")) {
+            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+        }
+        if (subColumns.containsKey("UPDATED_AT")) {
+            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+        }
+        dynamicTableMapper.updateDynamic(
+                subModel.tableName(), String.join(", ", assignments), activeRows(subModel), params);
     }
 
     @Override
@@ -512,6 +574,22 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 }
                 grouped.computeIfAbsent(fk.toString(), key -> new ArrayList<>()).add(project(subModel, subRow));
             }
+            if (relation.flatMode()) {
+                // FLAT 一对一：从行字段提升到主行顶层（id 不覆盖主行标识；历史多行取最新一条）
+                for (Map<String, Object> row : rows) {
+                    List<Map<String, Object>> subs = grouped.get(String.valueOf(row.get("id")));
+                    if (subs == null || subs.isEmpty()) {
+                        continue;
+                    }
+                    Map<String, Object> latest = subs.getLast();
+                    for (Map.Entry<String, Object> entry : latest.entrySet()) {
+                        if (!"id".equals(entry.getKey())) {
+                            row.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+                }
+                continue;
+            }
             for (Map<String, Object> row : rows) {
                 row.put(relation.subFormKey(), grouped.getOrDefault(String.valueOf(row.get("id")), List.of()));
             }
@@ -532,10 +610,15 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 目标表列清单（白名单：ID + 已映射字段）
      */
     private List<String> selectColumns(FormModel model) {
-        // 字段可能映射主键列（不落库展示），与引擎的 ID 去重避免 SELECT 同列两次
+        // 字段可能映射主键列（不落库展示），与引擎的 ID 去重避免 SELECT 同列两次；
+        // FLAT 从表字段的列在子表上，主表查询不带
         Set<String> columns = new LinkedHashSet<>();
         columns.add(FormConstants.COLUMN_ID);
-        model.fields().forEach(field -> columns.add(field.column()));
+        model.fields().forEach(field -> {
+            if (field.subFormKey() == null) {
+                columns.add(field.column());
+            }
+        });
         return new ArrayList<>(columns);
     }
 
@@ -547,8 +630,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> source = data == null ? Map.of() : data;
         Map<String, Object> row = new LinkedHashMap<>();
         for (FormField field : model.fields()) {
-            // 不落库展示字段（可映射主键/审计列）不参与写入，先于系统列守卫放行
-            if (!field.persisted() || field.column().equalsIgnoreCase(model.logicDeleteColumn())) {
+            // 不落库展示字段（可映射主键/审计列）与 FLAT 从表字段都不参与本表写入，先于系统列守卫放行
+            if (!field.persisted()
+                    || field.subFormKey() != null
+                    || field.column().equalsIgnoreCase(model.logicDeleteColumn())) {
                 continue;
             }
             if (FormConstants.isSystemColumn(field.column()) || "id".equalsIgnoreCase(field.name())) {
@@ -584,7 +669,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> result = new LinkedHashMap<>();
         Object id = columns.get(FormConstants.COLUMN_ID);
         result.put("id", id == null ? null : id.toString());
-        model.fields().forEach(field -> result.put(field.name(), columns.get(field.column())));
+        // FLAT 从表字段由 attachSubRows 从子表读投影合并，本表投影跳过
+        model.fields().forEach(field -> {
+            if (field.subFormKey() == null) {
+                result.put(field.name(), columns.get(field.column()));
+            }
+        });
         return result;
     }
 

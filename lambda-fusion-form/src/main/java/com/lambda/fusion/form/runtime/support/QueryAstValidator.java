@@ -54,8 +54,9 @@ public class QueryAstValidator {
             }
         }
         List<FormDataPageQuery.SortItem> sorts = query.getSorts() == null ? List.of() : query.getSorts();
+        // 从表字段不参与排序（ORDER BY 只在主表上执行）
         Map<String, FormModel.FormField> sortable = model.fields().stream()
-                .filter(FormModel.FormField::listVisible)
+                .filter(FormModel.FormField::sortable)
                 .collect(Collectors.toMap(FormModel.FormField::name, Function.identity()));
         for (FormDataPageQuery.SortItem sort : sorts) {
             if (sort.field() == null || !sortable.containsKey(sort.field())) {

@@ -62,6 +62,9 @@ public class FormFieldItem extends BaseVO<FormFieldEntity> {
     @Schema(description = "是否落库（默认 true；false=不入库/纯展示或计算字段）")
     private Boolean persisted = Boolean.TRUE;
 
+    @Schema(description = "一对一扁平模式的从表归属（空=主表字段；FLAT 关系时为子表单 formKey）")
+    private String subFormKey;
+
     @Schema(description = "字段顺序")
     private Integer sort = 0;
 }

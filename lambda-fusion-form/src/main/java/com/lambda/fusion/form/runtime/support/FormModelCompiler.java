@@ -80,8 +80,9 @@ public class FormModelCompiler {
                 throw new FormBusinessException(
                         FormErrorCode.FORM_TABLE_INVALID, "列 " + field.getColumnName() + " 由引擎写入，仅可作为不落库的展示字段（落库=否）");
             }
-            if (!fieldNames.add(field.getFieldName())
-                    || !columns.add(field.getColumnName().toUpperCase(Locale.ROOT))) {
+            // 从表字段（FLAT）列唯一性按来源分别判定（跨表允许同名列），字段标识全局唯一（扁平投影无歧义）
+            String columnKey = (field.getSubFormKey() == null ? "" : field.getSubFormKey() + ":") + mappedColumn;
+            if (!fieldNames.add(field.getFieldName()) || !columns.add(columnKey)) {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "字段标识或列名重复：" + field.getFieldName());
             }
             FormDefSnapshot.QueryConf query =
@@ -99,6 +100,7 @@ public class FormModelCompiler {
                     field.getDictType(),
                     field.getSort() == null ? 0 : field.getSort(),
                     !Boolean.FALSE.equals(field.getPersisted()),
+                    field.getSubFormKey(),
                     new FormModel.QueryConf(
                             Boolean.TRUE.equals(query.getShow()),
                             resolveQueryOp(type, query.getOp()),

@@ -76,6 +76,10 @@ public class TargetTableContract {
             supplied.add(name);
         }
         for (FormField field : model.fields()) {
+            // FLAT 从表字段的列在子表上，主表契约不校验（存在性由保存期分来源校验兜住）
+            if (field.subFormKey() != null) {
+                continue;
+            }
             TableColumnView column = requireColumn(columns, field.column());
             if (!compatible(field, column)) {
                 throw invalid(field.name() + " 类型 " + field.type() + " 与列 " + column.getDbType() + " 不兼容");

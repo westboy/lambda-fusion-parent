@@ -65,6 +65,9 @@ public class FormDefSnapshot {
         /** 是否落库（false=不入库/纯展示或计算字段） */
         private Boolean persisted = Boolean.TRUE;
 
+        /** 一对一扁平模式的从表归属（null=主表字段；FLAT 关系时为子表单 formKey） */
+        private String subFormKey;
+
         private QueryConf query = new QueryConf();
         private ListConf list = new ListConf();
         private FormConf form = new FormConf();

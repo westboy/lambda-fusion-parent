@@ -274,12 +274,14 @@ public interface FormDataInterceptor {
 | `SUB_FORM_KEY` | varchar(64) NN | 子表单 formKey（同租户内解析） |
 | `FOREIGN_KEY` | varchar(64) NN | 子表外键列 |
 | `CASCADE_STRATEGY` | varchar(16) NN | `CASCADE_DELETE` / `FORBID_DELETE` |
-| `RELATION_MODE` | varchar(16) NN | 呈现方式：`INLINE` 内联编辑 / `LIST` 台账式（默认 `INLINE`） |
+| `RELATION_MODE` | varchar(16) NN | 呈现方式：`INLINE` 内联编辑 / `LIST` 台账式 / `FLAT` 一对一扁平（默认 `INLINE`） |
 | `SUB_TABLE_CONFIG` | json | 子表列表呈现配置 `{columns:[{field,width}]}`，field 为子表单字段标识（未配置=全量可见字段） |
 
 设计端保存期前置校验（2026-10-03）：草稿保存即拦截运行时 `requireSubModel` 才能发现的错误——子表单须存在（同租户）且为 `SINGLE` 类型、外键列须为子表单已映射且落库的字段，另拒绝自引用与重复 `SUB_FORM_KEY`；设计器关系配置为选择式（选子表单 → 自动加载其字段 → 外键下拉），不再手打 formKey。`SUB_TABLE_CONFIG` 经 `SubTableConfigs` 键白名单+值域校验（保存期对照子表单字段、编译期防篡改再拦一道），设计器子表区块拖拽定列（2026-10-03）。
 
 **呈现方式双模式（2026-10-03）**：`INLINE`（内联编辑）子行随主表整组提交、替换式写入，适合少量随主表生死的明细；`LIST`（台账式）面向数据量大、生命周期独立的子数据——主表详情页分页展示子行（列取子表单自己的列表设计），子行经专用端点独立新增（外键由服务端绑定主行 id，服务内显式校验子表单新增权限）、经子表单自己的编辑/删除端点独立修改；读取组装对台账式关系不再全量嵌套（仅置空占位，载荷有界），且随主表提交显式携带台账式子表键即拒绝。级联删除策略不受呈现方式影响。
+
+**一对一扁平（FLAT，2026-10-04）**：从表字段以 `la_form_field.SUB_FORM_KEY` 标记并入主表字段清单，列表/详情/编辑全部平铺呈现——写入时引擎按标记拆分：主字段写主表、从字段按外键找既有从行做单条 upsert（存在改/不存在增，同一事务，外键服务端绑定）；读取时从行字段提升到主行顶层（id 不覆盖主行标识，历史多行取最新一条，不静默删数）。从表字段不支持查询条件与排序（查询/排序 SQL 只落在主表上，保存期拦截）。设计阶段并入从表字段时撞名直接排除（主表字段优先并提示）。
 
 ### 5.4 `la_form_def_version` 发布快照
 
