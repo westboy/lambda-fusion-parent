@@ -4,7 +4,9 @@ import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
 import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
+import com.lambda.fusion.form.design.adapter.FormPathRegistry;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
+import com.lambda.fusion.form.design.adapter.WorkflowFormPathRegistry;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
@@ -12,6 +14,7 @@ import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import com.lambda.fusion.upload.service.AttachmentService;
+import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
@@ -47,6 +50,17 @@ public class FormConfigure {
         @Bean
         FormRouteGateway formRouteGateway(ResourceService resources, PermissionService permissions, ObjectMapper json) {
             return new AuthorityFormRouteGateway(resources, permissions, json);
+        }
+    }
+
+    /** 审批流注册表联动（workflow 模块在场时装配）：挂路由自动登记 la_workflow_form_path */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(FormPathManagerService.class)
+    @ConditionalOnBean(FormPathManagerService.class)
+    static class WorkflowIntegration {
+        @Bean
+        FormPathRegistry formPathRegistry(FormPathManagerService formPaths) {
+            return new WorkflowFormPathRegistry(formPaths);
         }
     }
 

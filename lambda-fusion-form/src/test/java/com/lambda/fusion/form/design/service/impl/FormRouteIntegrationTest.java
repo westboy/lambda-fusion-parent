@@ -113,6 +113,30 @@ class FormRouteIntegrationTest {
     }
 
     @Test
+    void routeSaveUpsertsAndRevokeRemovesWorkflowFormPathRegistration() {
+        try (var security = mockStatic(AuthUtils.class)) {
+            // 挂路由：注册表写入路径与显示名，启用态
+            routes.save("f1", command("/forms/leave"));
+            assertThat(jdbc.queryForObject(
+                            "SELECT COUNT(*) FROM la_workflow_form_path WHERE FORM_PATH='/forms/leave'", Integer.class))
+                    .isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                            "SELECT FORM_NAME FROM la_workflow_form_path WHERE FORM_PATH='/forms/leave'", String.class))
+                    .isEqualTo("请假");
+            // 换路径重挂：按新路径 upsert，旧路径不残留
+            routes.save("f1", command("/forms/leave-v2"));
+            assertThat(count("la_workflow_form_path")).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                            "SELECT COUNT(*) FROM la_workflow_form_path WHERE FORM_PATH='/forms/leave-v2'",
+                            Integer.class))
+                    .isEqualTo(1);
+            // 撤路由：注册表同步注销
+            routes.remove("f1");
+            assertThat(count("la_workflow_form_path")).isZero();
+        }
+    }
+
+    @Test
     void routeUpdateKeepsIdentityAndExplicitPermissionsWhileRevokeKeepsVersions() {
         try (var security = mockStatic(AuthUtils.class)) {
             FormRouteInfo first = routes.save("f1", command("/forms/leave"));
@@ -328,6 +352,11 @@ class FormRouteIntegrationTest {
                     "CREATE TABLE la_organization_resources (RESOURCE_ID VARCHAR(64), ORGANIZATION_ID VARCHAR(64))");
             jdbc.execute("CREATE TABLE la_applications (ID VARCHAR(64), STANDALONE INT)");
             jdbc.execute(
+                    "CREATE TABLE la_workflow_form_path (ID VARCHAR(32) PRIMARY KEY, FORM_NAME VARCHAR(100) NOT NULL, "
+                            + "FORM_PATH VARCHAR(255) NOT NULL, REMARKS VARCHAR(255), ENABLED INT, "
+                            + "TENANT_ID VARCHAR(32), CREATED_BY VARCHAR(64), CREATED_AT TIMESTAMP, "
+                            + "UPDATED_BY VARCHAR(64), UPDATED_AT TIMESTAMP)");
+            jdbc.execute(
                     "INSERT INTO la_resources(ID,RES_NAME,RES_PATH,RES_TYPE,RES_LEVEL,ORDER_NO,RES_MODE,PARENT_KEYS) VALUES ('parent','业务菜单','/parent',1,0,1,0,'')");
             jdbc.execute("INSERT INTO la_user_roles VALUES ('alice','R1')");
             return source;
@@ -351,6 +380,7 @@ class FormRouteIntegrationTest {
                     new XMLMapperBuilder(stream, configuration, location, configuration.getSqlFragments()).parse();
                 }
             }
+            configuration.addMapper(com.lambda.fusion.workflow.formpath.mapper.FormPathMapper.class);
             return factory;
         }
 
@@ -382,6 +412,23 @@ class FormRouteIntegrationTest {
         @Bean
         AuthenticationMapper authentication(SqlSessionTemplate template) {
             return template.getMapper(AuthenticationMapper.class);
+        }
+
+        @Bean
+        com.lambda.fusion.workflow.formpath.mapper.FormPathMapper workflowFormPaths(SqlSessionTemplate template) {
+            return template.getMapper(com.lambda.fusion.workflow.formpath.mapper.FormPathMapper.class);
+        }
+
+        @Bean
+        com.lambda.fusion.workflow.formpath.service.FormPathManagerService workflowFormPathManager(
+                com.lambda.fusion.workflow.formpath.mapper.FormPathMapper mapper) {
+            return new com.lambda.fusion.workflow.formpath.service.impl.FormPathManagerServiceImpl(mapper);
+        }
+
+        @Bean
+        com.lambda.fusion.form.design.adapter.FormPathRegistry formPathRegistry(
+                com.lambda.fusion.workflow.formpath.service.FormPathManagerService manager) {
+            return new com.lambda.fusion.form.design.adapter.WorkflowFormPathRegistry(manager);
         }
 
         @Bean

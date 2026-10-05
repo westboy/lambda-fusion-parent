@@ -78,6 +78,40 @@ public class FormPathManagerServiceImpl implements FormPathManagerService {
         formPathMapper.deleteById(id);
     }
 
+    @Override
+    public void upsert(String formName, String formPath, String remarks) {
+        if (StringUtils.isBlank(formPath)) {
+            return;
+        }
+        FormPathEntity existing =
+                formPathMapper
+                        .selectList(new LambdaQueryWrapper<FormPathEntity>().eq(FormPathEntity::getFormPath, formPath))
+                        .stream()
+                        .findFirst()
+                        .orElse(null);
+        if (existing == null) {
+            FormPathEntity entity = new FormPathEntity();
+            entity.setFormName(formName);
+            entity.setFormPath(formPath);
+            entity.setRemarks(remarks);
+            entity.setEnabled(ENABLED);
+            formPathMapper.insert(entity);
+            return;
+        }
+        existing.setFormName(formName);
+        existing.setRemarks(remarks);
+        existing.setEnabled(ENABLED);
+        formPathMapper.updateById(existing);
+    }
+
+    @Override
+    public void removeByPath(String formPath) {
+        if (StringUtils.isBlank(formPath)) {
+            return;
+        }
+        formPathMapper.delete(new LambdaQueryWrapper<FormPathEntity>().eq(FormPathEntity::getFormPath, formPath));
+    }
+
     private FormPathEntity requireExists(String id) {
         FormPathEntity entity = formPathMapper.selectById(id);
         if (entity == null) {

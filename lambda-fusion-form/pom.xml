@@ -68,6 +68,12 @@
             <artifactId>lambda-fusion-oss</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 审批流注册表（挂路由自动登记 la_workflow_form_path）：缺失时路由保存跳过登记 -->
+        <dependency>
+            <groupId>com.lambda.cloud</groupId>
+            <artifactId>lambda-fusion-workflow</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

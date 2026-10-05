@@ -27,4 +27,20 @@ public interface FormPathManagerService {
     void toggle(String id, boolean enabled);
 
     void remove(String id);
+
+    /**
+     * 按路径幂等注册/更新（动态表单挂路由时自动登记）：路径已存在则更新名称并启用，不存在则插入
+     *
+     * @param formName 表单名称（设计器下拉显示）
+     * @param formPath 表单路径（租户内唯一）
+     * @param remarks 备注
+     */
+    void upsert(String formName, String formPath, String remarks);
+
+    /**
+     * 按路径注销（撤路由时调用）：记录不存在时静默跳过
+     *
+     * @param formPath 表单路径
+     */
+    void removeByPath(String formPath);
 }
