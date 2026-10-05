@@ -70,6 +70,17 @@ public interface DynamicTableMapper {
             @Param("params") Map<String, Object> params);
 
     /**
+     * 行锁读取（乐观锁指纹比对的预读；须在事务内调用，锁随事务提交释放）
+     */
+    @Select("<script>SELECT ${selectColumns} FROM ${tableName} WHERE ID = #{params.id}"
+            + "<if test=\"whereSql != null\">${whereSql}</if> FOR UPDATE</script>")
+    Map<String, Object> selectForUpdate(
+            @Param("tableName") String tableName,
+            @Param("selectColumns") String selectColumns,
+            @Param("whereSql") String whereSql,
+            @Param("params") Map<String, Object> params);
+
+    /**
      * 按外键列批量查子行（主从两段式读组装；列名经服务端关系配置白名单，
      * 值为主表行 id 集参数化绑定）
      */

@@ -120,7 +120,8 @@ class DynamicDataServiceJdbcTest {
                 modelProvider,
                 new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties),
                 formProperties,
-                new FormDataInterceptors(new GenericApplicationContext()));
+                new FormDataInterceptors(new GenericApplicationContext()),
+                new ObjectMapper());
         TenantContextHolder.getInstance().setTenantId("tenantA");
     }
 
@@ -181,6 +182,30 @@ class DynamicDataServiceJdbcTest {
         clear.put("personName", "CD");
         String second = service.create(model, clear);
         assertThat(service.getById(model, second)).containsEntry("amount", null);
+    }
+
+    @Test
+    void updateWithStaleEtagIsRejectedAndCurrentEtagSucceeds() {
+        FormModel model = model(false, true, false);
+        String id = service.create(model, Map.of("personName", "AB"));
+        String etag = (String) service.getById(model, id).get("__etag");
+        assertThat(etag).isNotBlank();
+        // 另一会话先提交 → 旧指纹失效，携带它的更新被拒且数据不被覆盖
+        service.update(model, id, new HashMap<>(Map.of("personName", "CD")));
+        Map<String, Object> staleWrite = new HashMap<>(Map.of("personName", "EF"));
+        staleWrite.put("__etag", etag);
+        assertThatThrownBy(() -> service.update(model, id, staleWrite))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_CONFLICT.getCode()));
+        assertThat(service.getById(model, id)).containsEntry("personName", "CD");
+        // 重新读取拿到的新指纹可以通过；未携带指纹的旧客户端保持兼容（仅存在性校验）
+        Map<String, Object> freshWrite = new HashMap<>(Map.of("personName", "EF"));
+        freshWrite.put("__etag", service.getById(model, id).get("__etag"));
+        service.update(model, id, freshWrite);
+        assertThat(service.getById(model, id)).containsEntry("personName", "EF");
+        service.update(model, id, new HashMap<>(Map.of("personName", "GH")));
+        assertThat(service.getById(model, id)).containsEntry("personName", "GH");
     }
 
     @Test

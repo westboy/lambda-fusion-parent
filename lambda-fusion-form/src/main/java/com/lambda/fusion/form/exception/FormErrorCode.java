@@ -106,6 +106,11 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_DATA_INVALID(18132, "字段校验失败：{0}"),
 
+    /**
+     * 数据已被他人修改，请刷新后重试
+     */
+    FORM_DATA_CONFLICT(18133, "数据已被他人修改，请刷新后重试"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");

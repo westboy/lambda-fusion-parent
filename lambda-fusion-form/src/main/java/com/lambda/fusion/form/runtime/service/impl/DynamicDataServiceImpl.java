@@ -24,10 +24,12 @@ import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedConditio
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedSort;
 import com.lambda.fusion.form.runtime.support.TargetTableContract;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -37,12 +39,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 动态表单数据读写实现
@@ -61,12 +66,16 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     private static final int MAX_PAGE_SIZE = 500;
 
+    /** 行指纹在提交体中的保留键（下划线开头，不可能是合法字段标识） */
+    private static final String ETAG_KEY = "__etag";
+
     private final DynamicTableMapper dynamicTableMapper;
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
     private final TargetTableContract targetTableContract;
     private final FormProperties formProperties;
     private final FormDataInterceptors interceptors;
+    private final ObjectMapper objectMapper;
 
     @Override
     public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
@@ -97,6 +106,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         List<Map<String, Object>> projected =
                 records.stream().map(row -> project(model, row)).toList();
         attachSubRows(model, projected);
+        projected.forEach(row -> row.put(ETAG_KEY, etagOf(row)));
         return PageView.<Map<String, Object>>builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
@@ -118,6 +128,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         Map<String, Object> result = project(model, row);
         attachSubRows(model, List.of(result));
+        result.put(ETAG_KEY, etagOf(result));
         return result;
     }
 
@@ -182,7 +193,13 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public void update(FormModel model, String id, Map<String, Object> data) {
         rejectListModeSubData(model, data);
-        getById(model, id);
+        String expectedEtag = peekEtag(data);
+        if (expectedEtag == null) {
+            // 兼容未携带指纹的旧客户端：仅做存在性校验（无并发保护）
+            getById(model, id);
+        } else {
+            requireUnchanged(model, id, expectedEtag);
+        }
         interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeUpdate(model, id, data));
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, false, tableColumns);
@@ -685,6 +702,61 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             }
         });
         return result;
+    }
+
+    /** 读取提交体中的行指纹（保留键不参与字段归一，不改动调用方 Map） */
+    private String peekEtag(Map<String, Object> data) {
+        Object etag = data.get(ETAG_KEY);
+        return etag == null || etag.toString().isBlank() ? null : etag.toString();
+    }
+
+    /**
+     * 乐观锁：行锁预读后比对行指纹（投影口径与读取路径一致，覆盖主行与 INLINE 子行），
+     * 不一致说明读取后已被他人改过。行锁仅持有到本事务提交，串行化同一行的并发更新。
+     */
+    private void requireUnchanged(FormModel model, String id, String expectedEtag) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", id);
+        Map<String, Object> raw = dynamicTableMapper.selectForUpdate(
+                model.tableName(), String.join(", ", selectColumns(model)), activeRows(model), params);
+        if (raw == null) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
+        Map<String, Object> projected = project(model, raw);
+        attachSubRows(model, new ArrayList<>(List.of(projected)));
+        if (!etagOf(projected).equals(expectedEtag)) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_CONFLICT);
+        }
+    }
+
+    /** 行指纹：整行规范化 JSON 的 MD5（读取端随 __etag 下发，更新端回传比对） */
+    private String etagOf(Map<String, Object> row) {
+        return DigestUtils.md5DigestAsHex(
+                objectMapper.writeValueAsString(canonicalize(row)).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 规范化：Map 按键排序；元素全部带 id 的列表（INLINE 子行）按 id 排序，其余列表保序 */
+    private Object canonicalize(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sorted = new TreeMap<>();
+            map.forEach((key, item) -> {
+                if (!ETAG_KEY.equals(key)) {
+                    sorted.put(String.valueOf(key), canonicalize(item));
+                }
+            });
+            return sorted;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> items =
+                    new ArrayList<>(list.stream().map(this::canonicalize).toList());
+            boolean keyedSubRows = !items.isEmpty()
+                    && items.stream().allMatch(item -> item instanceof Map<?, ?> itemMap && itemMap.containsKey("id"));
+            if (keyedSubRows) {
+                items.sort(Comparator.comparing(item -> String.valueOf(((Map<?, ?>) item).get("id"))));
+            }
+            return items;
+        }
+        return value;
     }
 
     /** 逻辑删除统一约定：0 有效、1 已删除，由引擎维护。 */

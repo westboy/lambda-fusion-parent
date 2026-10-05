@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.support.GenericApplicationContext;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 动态数据读写引擎测试
@@ -71,7 +72,8 @@ class DynamicDataServiceImplTest {
                 modelProvider,
                 contract,
                 new FormProperties(),
-                new FormDataInterceptors(new GenericApplicationContext()));
+                new FormDataInterceptors(new GenericApplicationContext()),
+                new ObjectMapper());
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(1);
         when(mapper.deleteById(anyString(), anyString(), anyMap())).thenReturn(1);
