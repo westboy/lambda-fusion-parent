@@ -18,6 +18,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
@@ -35,6 +36,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.support.GenericApplicationContext;
 
 /**
  * 动态数据读写引擎测试
@@ -64,7 +66,12 @@ class DynamicDataServiceImplTest {
         when(contract.validateAccess(any()))
                 .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
         service = new DynamicDataServiceImpl(
-                mapper, new QueryAstValidator(new FormProperties()), modelProvider, contract, new FormProperties());
+                mapper,
+                new QueryAstValidator(new FormProperties()),
+                modelProvider,
+                contract,
+                new FormProperties(),
+                new FormDataInterceptors(new GenericApplicationContext()));
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(1);
         when(mapper.deleteById(anyString(), anyString(), anyMap())).thenReturn(1);
@@ -305,6 +312,7 @@ class DynamicDataServiceImplTest {
                         field("days", "DAYS", "DECIMAL", true, true, true, "eq", 2),
                         field("remark", "REMARK", "TEXT", true, true, false, "like", 3)),
                 List.of(),
+                null,
                 null);
     }
 
@@ -320,6 +328,7 @@ class DynamicDataServiceImplTest {
                 null,
                 model().fields(),
                 List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy, null, null)),
+                null,
                 null);
     }
 
@@ -335,6 +344,7 @@ class DynamicDataServiceImplTest {
                 null,
                 List.of(field("leaveId", "LEAVE_ID", "STRING", false, false, false, "eq", 0)),
                 List.of(),
+                null,
                 null);
     }
 

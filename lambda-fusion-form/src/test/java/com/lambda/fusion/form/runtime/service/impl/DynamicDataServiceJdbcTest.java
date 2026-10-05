@@ -21,6 +21,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.ObjectMapper;
@@ -117,7 +119,8 @@ class DynamicDataServiceJdbcTest {
                 new QueryAstValidator(new FormProperties()),
                 modelProvider,
                 new TargetTableContract(new TableMetadataReader(dataSource, properties), mybatisProperties),
-                formProperties);
+                formProperties,
+                new FormDataInterceptors(new GenericApplicationContext()));
         TenantContextHolder.getInstance().setTenantId("tenantA");
     }
 

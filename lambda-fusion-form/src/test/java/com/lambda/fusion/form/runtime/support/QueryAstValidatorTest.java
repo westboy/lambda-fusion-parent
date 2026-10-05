@@ -163,6 +163,7 @@ class QueryAstValidatorTest {
                         field("days", "DAYS", "DECIMAL", false, true, "eq", 2),
                         field("remark", "REMARK", "TEXT", true, false, "like", 3)),
                 List.of(),
+                null,
                 null);
     }
 

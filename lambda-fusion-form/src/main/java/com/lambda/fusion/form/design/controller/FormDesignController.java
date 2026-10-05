@@ -16,6 +16,7 @@ import com.lambda.fusion.form.design.service.FormDesignService;
 import com.lambda.fusion.form.design.service.FormPreviewService;
 import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.service.FormRouteService;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,6 +49,7 @@ public class FormDesignController {
     private final FormPublishService formPublishService;
     private final FormPreviewService formPreviewService;
     private final FormRouteService formRouteService;
+    private final FormDataInterceptors formDataInterceptors;
 
     @SaCheckPermission("form:design:page")
     @PostMapping("routes")
@@ -204,6 +206,13 @@ public class FormDesignController {
     @Operation(summary = "列元数据（选表导列一键生成字段草稿）")
     public List<TableColumnView> columns(@PathVariable String tableName) {
         return formDesignService.listColumns(tableName);
+    }
+
+    @SaCheckPermission("form:design:edit")
+    @GetMapping("interceptors")
+    @Operation(summary = "已注册的数据写入拦截器（设计器下拉）")
+    public List<FormDataInterceptors.InterceptorOption> interceptors() {
+        return formDataInterceptors.listAvailable();
     }
 
     @SaCheckPermission("form:design:publish")

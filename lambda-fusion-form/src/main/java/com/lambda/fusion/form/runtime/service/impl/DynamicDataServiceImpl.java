@@ -8,6 +8,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
@@ -65,6 +66,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     private final FormModelProvider modelProvider;
     private final TargetTableContract targetTableContract;
     private final FormProperties formProperties;
+    private final FormDataInterceptors interceptors;
 
     @Override
     public PageView<Map<String, Object>> page(FormModel model, FormDataPageQuery query) {
@@ -123,6 +125,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public String create(FormModel model, Map<String, Object> data) {
         rejectListModeSubData(model, data);
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeCreate(model, data));
         String id = IdWorker.getIdStr();
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
@@ -171,6 +174,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         tableColumns.get(field.column()), value, FormErrorCode.FORM_DATA_INVALID);
             });
         }
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterCreate(model, id, data));
         return id;
     }
 
@@ -179,6 +183,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     public void update(FormModel model, String id, Map<String, Object> data) {
         rejectListModeSubData(model, data);
         getById(model, id);
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeUpdate(model, id, data));
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, false, tableColumns);
         if (row.isEmpty()) {
@@ -216,6 +221,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             List<Map<String, Object>> rows = subRows(data, relation);
             insertSubRows(relation, subModel, subColumns, id, rows);
         }
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterUpdate(model, id, data));
     }
 
     @Override
@@ -236,6 +242,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeDelete(model, id));
         String logicDeleteColumn = model.logicDeleteColumn();
         if (logicDeleteColumn != null && !logicDeleteColumn.isBlank()) {
             List<String> assignments = new ArrayList<>();
@@ -251,11 +258,13 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     == 0) {
                 throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
             }
+            interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterDelete(model, id));
             return;
         }
         if (dynamicTableMapper.deleteById(model.tableName(), activeRows(model), params) == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
+        interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterDelete(model, id));
     }
 
     @Override

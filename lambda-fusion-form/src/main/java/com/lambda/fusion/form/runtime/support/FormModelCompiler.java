@@ -160,7 +160,8 @@ public class FormModelCompiler {
                         fields.stream().map(FormField::name).toList()),
                 List.copyOf(fields),
                 List.copyOf(relations),
-                tree);
+                tree,
+                snapshot.getInterceptor());
     }
 
     private TreeConfig compileTree(FormDefSnapshot snapshot, List<FormField> fields) {

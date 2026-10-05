@@ -34,16 +34,20 @@ import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptor;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.service.impl.DynamicDataServiceImpl;
 import com.lambda.fusion.form.runtime.support.FormLayout;
+import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelCache;
 import com.lambda.fusion.form.runtime.support.FormModelCompiler;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
 import com.lambda.fusion.form.runtime.support.SnapshotJson;
 import com.lambda.fusion.form.runtime.support.TargetTableContract;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -509,6 +513,75 @@ class FormLifecycleIntegrationTest {
         assertThat(count("la_form_def")).isZero();
     }
 
+    @Test
+    void interceptorHooksFireOnWritePathAndUnknownBeanIsRejectedAtSave() {
+        FormDefSaveCommand bad = command();
+        bad.setInterceptor("missingInterceptorBean");
+        assertThatThrownBy(() -> design.save(bad)).isInstanceOf(FormBusinessException.class);
+
+        FormDefSaveCommand command = command();
+        command.setInterceptor("recordingInterceptor");
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            String formId = design.save(command);
+            publish.publish(formId);
+            var model = models.require("test_form");
+            assertThat(model.interceptor()).isEqualTo("recordingInterceptor");
+            DynamicDataService data = context.getBean(DynamicDataService.class);
+            RecordingInterceptor recorder = context.getBean(RecordingInterceptor.class);
+            String rowId = data.create(model, new java.util.HashMap<>(Map.of("personName", "张三")));
+            data.update(model, rowId, new java.util.HashMap<>(Map.of("personName", "张三2")));
+            data.delete(model, rowId);
+            assertThat(recorder.events)
+                    .containsExactly(
+                            "beforeCreate",
+                            "afterCreate",
+                            "beforeUpdate",
+                            "afterUpdate",
+                            "beforeDelete",
+                            "afterDelete");
+        }
+    }
+
+    /** 录制钩子调用顺序的测试拦截器 */
+    static class RecordingInterceptor implements FormDataInterceptor {
+        final List<String> events = new ArrayList<>();
+
+        @Override
+        public String getName() {
+            return "录制拦截器";
+        }
+
+        @Override
+        public void beforeCreate(FormModel model, Map<String, Object> data) {
+            events.add("beforeCreate");
+        }
+
+        @Override
+        public void afterCreate(FormModel model, Object id, Map<String, Object> data) {
+            events.add("afterCreate");
+        }
+
+        @Override
+        public void beforeUpdate(FormModel model, Object id, Map<String, Object> data) {
+            events.add("beforeUpdate");
+        }
+
+        @Override
+        public void afterUpdate(FormModel model, Object id, Map<String, Object> data) {
+            events.add("afterUpdate");
+        }
+
+        @Override
+        public void beforeDelete(FormModel model, Object id) {
+            events.add("beforeDelete");
+        }
+
+        @Override
+        public void afterDelete(FormModel model, Object id) {
+            events.add("afterDelete");
+        }
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableTransactionManagement
     @Import({
@@ -528,12 +601,18 @@ class FormLifecycleIntegrationTest {
         FormModelProvider.class,
         FormModelCache.class,
         FormModelCompiler.class,
+        FormDataInterceptors.class,
         SnapshotJson.class
     })
     static class Config {
         @Bean
         MybatisPlusExtendProperties mybatisProperties() {
             return new MybatisPlusExtendProperties();
+        }
+
+        @Bean
+        RecordingInterceptor recordingInterceptor() {
+            return new RecordingInterceptor();
         }
 
         @Bean

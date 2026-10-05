@@ -16,6 +16,7 @@ import java.util.Map;
  * @param fields 字段定义（按 sort 升序）
  * @param relations 主从关系
  * @param tree TREE 类型树配置（可空）
+ * @param interceptor 数据写入拦截器 bean 名（可空，见 runtime/integration/FormDataInterceptor）
  */
 @SuppressFBWarnings("EI_EXPOSE_REP")
 public record FormModel(
@@ -29,7 +30,8 @@ public record FormModel(
         FormLayout formLayout,
         List<FormField> fields,
         List<FormRelation> relations,
-        TreeConfig tree) {
+        TreeConfig tree,
+        String interceptor) {
 
     /**
      * 字段定义

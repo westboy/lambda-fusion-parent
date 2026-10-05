@@ -24,6 +24,7 @@ import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.support.FieldConfigs;
 import com.lambda.fusion.form.runtime.support.FormLayouts;
 import com.lambda.fusion.form.runtime.support.FormModel;
@@ -69,6 +70,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private final ObjectMapper objectMapper;
     private final FormPublishService formPublishService;
     private final FormModelProvider formModelProvider;
+    private final FormDataInterceptors formDataInterceptors;
 
     @Override
     public PageView<FormDefView> page(FormDefPage page) {
@@ -202,6 +204,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private void validate(FormDefSaveCommand command) {
         if ("design".equalsIgnoreCase(command.getFormKey())) {
             throw new FormBusinessException(FormErrorCode.FORM_KEY_RESERVED);
+        }
+        if (command.getInterceptor() != null
+                && !command.getInterceptor().isBlank()
+                && formDataInterceptors.resolve(command.getInterceptor()).isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "拦截器未注册：" + command.getInterceptor());
         }
         if (!FormConstants.FORM_TYPES.contains(command.getFormType())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单类型非法：" + command.getFormType());
@@ -520,6 +527,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setTreeConfig(command.getTreeConfig());
         def.setFlowCode(command.getFlowCode());
         def.setTitleTemplate(command.getTitleTemplate());
+        def.setInterceptor(command.getInterceptor());
         def.setPublishOnSave(command.getPublishOnSave());
         def.setLogicDeleteColumn(command.getLogicDeleteColumn());
         def.setListConfig(command.getListConfig());

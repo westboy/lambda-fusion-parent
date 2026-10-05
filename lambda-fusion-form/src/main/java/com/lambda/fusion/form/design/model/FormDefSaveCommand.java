@@ -50,6 +50,10 @@ public class FormDefSaveCommand {
     @Schema(description = "流程标题模板")
     private String titleTemplate;
 
+    @Size(max = 128, message = "拦截器 bean 名不能超过 128 字符")
+    @Schema(description = "数据写入拦截器 bean 名（FormDataInterceptor 实现，可空）")
+    private String interceptor;
+
     @Size(max = 64, message = "逻辑删除列名不能超过 64 字符")
     @Schema(description = "逻辑删除列名（空=物理删除）；目标表必须含该列")
     private String logicDeleteColumn;

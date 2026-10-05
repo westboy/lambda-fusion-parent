@@ -38,6 +38,7 @@ import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.service.FormRouteService;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
 import com.lambda.fusion.form.runtime.controller.FormDataController;
+import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.interceptor.FormPermission;
 import com.lambda.fusion.form.runtime.interceptor.FormPermissionHandler;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
@@ -109,7 +110,8 @@ class FormAuthorizationIntegrationTest {
                                 design,
                                 publishing,
                                 context.getBean(FormPreviewService.class),
-                                mock(FormRouteService.class)),
+                                mock(FormRouteService.class),
+                                context.getBean(FormDataInterceptors.class)),
                         new FormDataController(runtime))
                 .defaultRequest(get("/").requestAttr(Constants.LOGIN_USER, operator))
                 .addFilters(new SaTokenContextFilterForJakartaServlet())
