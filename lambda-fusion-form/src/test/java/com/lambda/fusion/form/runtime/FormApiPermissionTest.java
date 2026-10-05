@@ -92,13 +92,13 @@ class FormApiPermissionTest {
                 assertThat(provider.getApis()).isEmpty();
                 verifyNoInteractions(forms);
             } else {
-                assertThat(provider.getApis()).hasSize(9);
+                assertThat(provider.getApis()).hasSize(10);
             }
             try (var tenant = TenantContextHolder.getInstance()) {
                 tenant.setTenantId("tenant-1");
                 var registry = new ApiPermissionRegistry(List.of(provider));
                 registry.replaceLocal(List.of(), "form-app");
-                assertThat(registry.getLocalApis()).hasSize(9);
+                assertThat(registry.getLocalApis()).hasSize(10);
                 assertThat(new ApiPermissionMatcher()
                                 .match(registry.getLocalApis(), "POST", "/v1/form/leave_demo")
                                 .orElseThrow()
@@ -119,12 +119,13 @@ class FormApiPermissionTest {
                                 "form:leave_demo:page",
                                 "form:leave_demo:add",
                                 "form:leave_demo:edit",
-                                "form:leave_demo:delete");
+                                "form:leave_demo:delete",
+                                "form:leave_demo:export");
                 registry.replaceLocal(List.of(new PermissionFileMetadata()), "form-app");
-                assertThat(registry.getReportedApis("form-app")).hasSize(9);
+                assertThat(registry.getReportedApis("form-app")).hasSize(10);
                 assertThat(registry.getApplications()).contains("form-app");
                 definition.setPublishedVersion(2L);
-                assertThat(registry.getReportedApis("form-app")).hasSize(9);
+                assertThat(registry.getReportedApis("form-app")).hasSize(10);
                 when(forms.selectList(any())).thenReturn(List.of());
                 assertThat(registry.getReportedApis("form-app")).isEmpty();
             }

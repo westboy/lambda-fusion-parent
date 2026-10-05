@@ -111,6 +111,11 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_DATA_CONFLICT(18133, "数据已被他人修改，请刷新后重试"),
 
+    /**
+     * 导出数据量超过上限：{0}
+     */
+    FORM_EXPORT_LIMIT(18134, "导出数据量超过上限（{0} 行）"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");

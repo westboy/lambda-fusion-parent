@@ -121,6 +121,78 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
+     * 导出当前筛选全集为 CSV（UTF-8 BOM，Excel 直开）：复用 page 的条件/排序/树过滤，
+     * 绕过深分页钳制按 500 行分批拉取；列 = 列表可见的主表字段（label 表头），
+     * BOOL 转是否、日期时间友好格式、其余原值；总行数超 max-export-rows 先拒绝（不写半个文件）。
+     */
+    @Override
+    public void export(FormModel model, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException {
+        Map<String, TableColumnView> tableColumns = targetTableContract.validateAccess(model);
+        astValidator.validate(model, query);
+        String selectColumns = String.join(", ", selectColumns(model));
+        Map<String, Object> params = new HashMap<>();
+        String whereSql = activeRows(model)
+                + buildWhere(astValidator.resolve(model, query.getConditions()), params)
+                + buildTreeFilter(model, query.getTreeNode(), params);
+        long total = dynamicTableMapper.countBy(model.tableName(), whereSql, params);
+        if (total > formProperties.getMaxExportRows()) {
+            throw new FormBusinessException(
+                    FormErrorCode.FORM_EXPORT_LIMIT, String.valueOf(formProperties.getMaxExportRows()));
+        }
+        String orderSql = buildOrder(model, astValidator.resolveSorts(model, query.getSorts()), tableColumns);
+        List<FormField> columns = model.fields().stream()
+                .filter(field -> field.subFormKey() == null && field.list().show())
+                .toList();
+        writer.write('﻿');
+        writer.write(columns.stream().map(field -> csvCell(field.label())).collect(Collectors.joining(",")));
+        writer.write("\n");
+        long offset = 0;
+        while (true) {
+            String pageSql = orderSql + " LIMIT 500 OFFSET " + offset;
+            List<Map<String, Object>> records =
+                    dynamicTableMapper.selectList(model.tableName(), selectColumns, whereSql, pageSql, params);
+            if (records.isEmpty()) {
+                break;
+            }
+            for (Map<String, Object> raw : records) {
+                Map<String, Object> row = project(model, raw);
+                writer.write(columns.stream()
+                        .map(field -> csvCell(formatExportValue(field, row.get(field.name()))))
+                        .collect(Collectors.joining(",")));
+                writer.write("\n");
+            }
+            offset += records.size();
+            if (records.size() < 500) {
+                break;
+            }
+        }
+        writer.flush();
+    }
+
+    /** 导出值格式化：布尔转是/否、日期时间友好格式，其余原样 */
+    private Object formatExportValue(FormField field, Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof Boolean bool) {
+            return bool ? "是" : "否";
+        }
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        }
+        return value;
+    }
+
+    /** CSV 单元格转义：含逗号/引号/换行时按 RFC4180 加引号并双写引号 */
+    private String csvCell(Object value) {
+        String text = value == null ? "" : String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
+    }
+
+    /**
      * 合计行（list.summary=true 的主表落库字段）：数值列 SUM、其余 COUNT，按筛选后的全量集合计算。
      * 列名全部来自模型白名单，值参数化沿用 where 的绑定。
      */

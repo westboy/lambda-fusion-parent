@@ -115,4 +115,25 @@ public class FormDataController {
     public void remove(@PathVariable String formKey, @PathVariable String id) {
         formRuntimeService.delete(formKey, id);
     }
+
+    @PostMapping("{formKey}/export")
+    @FormPermission(FormAction.EXPORT)
+    @Operation(summary = "导出当前筛选全集为 CSV（UTF-8 BOM；行数上限由 max-export-rows 控制）")
+    @OperationLog(module = "动态表单", value = "导出表单数据")
+    public void export(
+            @PathVariable String formKey,
+            @RequestBody FormDataPageQuery query,
+            jakarta.servlet.http.HttpServletResponse response)
+            throws java.io.IOException {
+        response.setContentType("text/csv; charset=UTF-8");
+        String filename = java.net.URLEncoder.encode(
+                        formKey + "-"
+                                + java.time.LocalDateTime.now()
+                                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                                + ".csv",
+                        java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + filename);
+        formRuntimeService.export(formKey, query, response.getWriter());
+    }
 }

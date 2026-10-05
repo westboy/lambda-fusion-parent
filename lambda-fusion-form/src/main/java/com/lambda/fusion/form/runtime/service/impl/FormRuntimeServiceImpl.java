@@ -51,6 +51,11 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     }
 
     @Override
+    public void export(String formKey, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException {
+        dynamicDataService.export(modelProvider.require(formKey), query, writer);
+    }
+
+    @Override
     public List<Map<String, Object>> tree(String formKey, String parentValue) {
         return dynamicDataService.tree(modelProvider.require(formKey), parentValue);
     }

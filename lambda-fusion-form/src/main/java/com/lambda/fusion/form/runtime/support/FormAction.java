@@ -13,7 +13,8 @@ public enum FormAction {
     PAGE("page", "查看"),
     ADD("add", "新增"),
     EDIT("edit", "编辑"),
-    DELETE("delete", "删除");
+    DELETE("delete", "删除"),
+    EXPORT("export", "导出");
 
     private final String code;
     private final String label;

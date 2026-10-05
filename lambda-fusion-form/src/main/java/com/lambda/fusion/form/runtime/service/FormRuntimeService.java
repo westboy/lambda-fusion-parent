@@ -21,6 +21,11 @@ public interface FormRuntimeService {
 
     FormDataPageView page(String formKey, FormDataPageQuery query);
 
+    /**
+     * 导出当前筛选全集为 CSV（权限由 Controller 层校验）
+     */
+    void export(String formKey, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException;
+
     List<Map<String, Object>> tree(String formKey, String parentValue);
 
     /**

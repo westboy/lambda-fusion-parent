@@ -42,6 +42,9 @@ public class FormProperties {
     /** INLINE 子表随主行加载的每主行子行上限（超出截断，完整数据走台账式端点） */
     private long maxInlineSubRows = 200;
 
+    /** 导出行数上限（超出直接拒绝，防全表拖出） */
+    private long maxExportRows = 10000;
+
     /** 树子孙节点 id 集上限 */
     private int maxTreeDescendants = 500;
 

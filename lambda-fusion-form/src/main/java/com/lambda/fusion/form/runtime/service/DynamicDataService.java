@@ -20,6 +20,11 @@ public interface DynamicDataService {
     FormDataPageView page(FormModel model, FormDataPageQuery query);
 
     /**
+     * 导出当前筛选全集为 CSV（UTF-8 BOM；行数超 max-export-rows 先拒绝）
+     */
+    void export(FormModel model, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException;
+
+    /**
      * 详情
      */
     Map<String, Object> getById(FormModel model, String id);

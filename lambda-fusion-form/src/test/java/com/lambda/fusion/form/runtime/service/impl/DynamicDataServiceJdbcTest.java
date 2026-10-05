@@ -246,6 +246,26 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void exportWritesCsvWithBomEscapedCellsAndRespectsRowLimit() throws Exception {
+        FormModel model = model(false, true, false);
+        service.create(model, Map.of("personName", "张,三"));
+        service.create(model, Map.of("personName", "李\"四\""));
+        java.io.StringWriter writer = new java.io.StringWriter();
+        service.export(model, query(null, null, null), writer);
+        String csv = writer.toString();
+        // BOM + 表头 + RFC4180 转义（逗号/引号单元格加引号并双写引号）
+        assertThat(csv).startsWith("﻿");
+        assertThat(csv).contains("\"张,三\"").contains("\"李\"\"四\"\"\"");
+        assertThat(csv.trim().lines()).hasSize(3);
+        // 行数上限：超出先拒绝，不写半个文件
+        formProperties.setMaxExportRows(1);
+        assertThatThrownBy(() -> service.export(model, query(null, null, null), new java.io.StringWriter()))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_EXPORT_LIMIT.getCode()));
+    }
+
+    @Test
     void likeWildcardsAreEscapedAndMatchLiterally() {
         FormModel model = model(false, true, false);
         service.create(model, Map.of("personName", "100%"));

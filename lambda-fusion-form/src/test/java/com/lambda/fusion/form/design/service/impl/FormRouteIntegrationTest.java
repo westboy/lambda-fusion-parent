@@ -117,9 +117,9 @@ class FormRouteIntegrationTest {
         try (var security = mockStatic(AuthUtils.class)) {
             FormRouteInfo first = routes.save("f1", command("/forms/leave"));
             assertThat(first.mounted()).isTrue();
-            assertThat(first.actions()).hasSize(4);
-            assertThat(count("la_resources")).isEqualTo(6);
-            assertThat(count("la_api_resources")).isEqualTo(4);
+            assertThat(first.actions()).hasSize(5);
+            assertThat(count("la_resources")).isEqualTo(7);
+            assertThat(count("la_api_resources")).isEqualTo(5);
             assertThat(count("la_role_resources")).isZero();
             var authentication = context.getBean(AuthenticationMapper.class);
             assertThat(authentication.selectPermissionsByUsername("alice")).isEmpty();
@@ -141,7 +141,7 @@ class FormRouteIntegrationTest {
             FormRouteInfo updated = routes.save("f1", command("/forms/leave-updated"));
             assertThat(updated.resourceId()).isEqualTo(first.resourceId());
             assertThat(updated.actions()).isEqualTo(first.actions());
-            assertThat(count("la_resources")).isEqualTo(6);
+            assertThat(count("la_resources")).isEqualTo(7);
             assertThat(count("la_form_def_version")).isEqualTo(1);
             assertThat(authentication.selectPermissionsByUsername("alice")).containsExactly("form:leave:page");
             MenuQuery query = new MenuQuery();
@@ -220,8 +220,8 @@ class FormRouteIntegrationTest {
             var second = executor.submit(() -> saveInTenant("f1"));
             assertThat(first.get(20, TimeUnit.SECONDS)).isEqualTo(second.get(20, TimeUnit.SECONDS));
         }
-        assertThat(count("la_resources")).isEqualTo(6);
-        assertThat(count("la_api_resources")).isEqualTo(4);
+        assertThat(count("la_resources")).isEqualTo(7);
+        assertThat(count("la_api_resources")).isEqualTo(5);
     }
 
     @Test
@@ -234,8 +234,8 @@ class FormRouteIntegrationTest {
             assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(true, false);
         }
-        assertThat(count("la_resources")).isEqualTo(6);
-        assertThat(count("la_api_resources")).isEqualTo(4);
+        assertThat(count("la_resources")).isEqualTo(7);
+        assertThat(count("la_api_resources")).isEqualTo(5);
     }
 
     @Test
@@ -253,8 +253,8 @@ class FormRouteIntegrationTest {
                         assertThat(conflict.getCode()).isEqualTo(FormErrorCode.FORM_ROUTE_CONFLICT.getCode());
                         assertThat(String.valueOf(conflict.getArgs()[0])).contains("非本表单管理");
                     });
-            assertThat(count("la_resources")).isEqualTo(7);
-            assertThat(count("la_api_resources")).isEqualTo(4);
+            assertThat(count("la_resources")).isEqualTo(8);
+            assertThat(count("la_api_resources")).isEqualTo(5);
         }
     }
 
