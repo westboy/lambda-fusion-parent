@@ -542,6 +542,22 @@ class FormLifecycleIntegrationTest {
         }
     }
 
+    @Test
+    void uniqueFieldRequiresDatabaseUniqueIndexAtPublish() {
+        FormDefSaveCommand command = command();
+        command.getFields().getFirst().setFormConfig("{\"rules\":{\"unique\":true}}");
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            String id = design.save(command);
+            // 目标表缺少覆盖该列的唯一索引：发布失败且生效指针不动
+            assertThatThrownBy(() -> publish.publish(id)).isInstanceOf(FormBusinessException.class);
+            assertThat(definitions.selectById(id).getPublishedVersion()).isNull();
+            // 补上唯一索引后放行
+            jdbc.execute("CREATE UNIQUE INDEX uk_business_name ON LA_TEST_BUSINESS(PERSON_NAME)");
+            publish.publish(id);
+            assertThat(definitions.selectById(id).getPublishedVersion()).isNotNull();
+        }
+    }
+
     /** 录制钩子调用顺序的测试拦截器 */
     static class RecordingInterceptor implements FormDataInterceptor {
         final List<String> events = new ArrayList<>();

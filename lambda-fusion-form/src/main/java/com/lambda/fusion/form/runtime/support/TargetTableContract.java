@@ -16,6 +16,7 @@ import java.math.BigInteger;
 import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -133,6 +134,34 @@ public class TargetTableContract {
                 .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
         validateTenantRule(model, columns);
         return columns;
+    }
+
+    /**
+     * 发布期补充校验（仅发布流程调用，不进运行时读写路径）：标记唯一（rules.unique）的主表落库字段，
+     * 目标表必须有覆盖该列的唯一索引——索引列集合 ⊆ {该列, TENANT_ID}（多租户下联合唯一才有意义；
+     * 引擎的写入查重只是应用层兜底，并发防线最终由数据库唯一索引承担）。
+     */
+    public void validateUniqueIndexes(FormModel model) {
+        List<String> uniqueColumns = model.fields().stream()
+                .filter(field -> field.subFormKey() == null
+                        && field.persisted()
+                        && Boolean.TRUE.equals(field.form().rules().get("unique")))
+                .map(FormModel.FormField::column)
+                .toList();
+        if (uniqueColumns.isEmpty()) {
+            return;
+        }
+        List<List<String>> indexes = metadataReader.listUniqueIndexColumns(model.tableName());
+        for (String column : uniqueColumns) {
+            boolean covered = indexes.stream()
+                    .anyMatch(index -> index.contains(column)
+                            && index.stream()
+                                    .allMatch(indexColumn -> indexColumn.equals(column)
+                                            || FormConstants.COLUMN_TENANT_ID.equals(indexColumn)));
+            if (!covered) {
+                throw invalid("唯一字段缺少唯一索引：" + column + "（可建该列单列唯一索引，或与 TENANT_ID 联合唯一索引）");
+            }
+        }
     }
 
     /**

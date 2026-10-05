@@ -209,6 +209,29 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void uniqueFieldRejectsDuplicateAndFreesValueAfterDelete() {
+        FormModel model = uniqueModel();
+        String first = service.create(model, Map.of("personName", "AB"));
+        // 重复值新增 → 拒
+        assertThatThrownBy(() -> service.create(model, Map.of("personName", "AB")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
+        // 更新自身保持原值：排除自身行，不冲突
+        service.update(model, first, new HashMap<>(Map.of("personName", "AB")));
+        // 改为他人占用的值 → 拒
+        service.create(model, Map.of("personName", "CD"));
+        assertThatThrownBy(() -> service.update(model, first, new HashMap<>(Map.of("personName", "CD"))))
+                .isInstanceOf(FormBusinessException.class);
+        // 改为新值 → 过
+        service.update(model, first, new HashMap<>(Map.of("personName", "AB2")));
+        // 物理删除后值被释放
+        service.delete(model, first);
+        String reused = service.create(model, Map.of("personName", "AB2"));
+        assertThat(service.getById(model, reused)).containsEntry("personName", "AB2");
+    }
+
+    @Test
     void omittedRequiredFieldCanUseDatabaseDefaultButExplicitNullCannot() {
         jdbc.execute("ALTER TABLE LA_TEST_TINY ALTER COLUMN PERSON_NAME SET DEFAULT 'database'");
         jdbc.execute("ALTER TABLE LA_TEST_TINY ALTER COLUMN PERSON_NAME SET NOT NULL");
@@ -787,6 +810,19 @@ class DynamicDataServiceJdbcTest {
         snapshot.setTableName("LA_TEST_SUB");
         snapshot.setFields(
                 List.of(field("itemName", "ITEM_NAME", "STRING", false), field("leaveId", "LEAVE_ID", "STRING", true)));
+        return compile(snapshot);
+    }
+
+    /** 唯一约束演示模型：LA_TEST_FORM，personName 唯一（rules.unique） */
+    private static FormModel uniqueModel() {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_unique");
+        snapshot.setFormName("唯一约束演示");
+        snapshot.setFormType("SINGLE");
+        snapshot.setTableName("LA_TEST_FORM");
+        FormDefSnapshot.Field personName = field("personName", "PERSON_NAME", "STRING", false);
+        personName.getForm().setRules(Map.of("unique", true));
+        snapshot.setFields(List.of(personName));
         return compile(snapshot);
     }
 

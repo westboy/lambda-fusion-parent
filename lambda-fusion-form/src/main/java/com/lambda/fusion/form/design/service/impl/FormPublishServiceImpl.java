@@ -73,7 +73,10 @@ public class FormPublishServiceImpl implements FormPublishService {
             }
         }
         long nextVersion = nextVersion(id);
-        targetTableContract.validate(modelCompiler.compile(snapshotJson, nextVersion));
+        var compiledModel = modelCompiler.compile(snapshotJson, nextVersion);
+        targetTableContract.validate(compiledModel);
+        // 唯一字段必须有数据库唯一索引兜底（应用层查重挡不住并发窗口）
+        targetTableContract.validateUniqueIndexes(compiledModel);
         FormDefVersionEntity version = new FormDefVersionEntity();
         version.setFormId(id);
         version.setVersion(nextVersion);

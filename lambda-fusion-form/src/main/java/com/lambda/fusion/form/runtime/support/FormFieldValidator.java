@@ -16,7 +16,7 @@ import org.springframework.util.StringUtils;
 /** 字段定义、默认值与写入值共用的类型和规则校验，不依赖数据库隐式转换。 */
 public final class FormFieldValidator {
 
-    private static final Set<String> RULE_KEYS = Set.of("required", "min", "max", "pattern", "message");
+    private static final Set<String> RULE_KEYS = Set.of("required", "min", "max", "pattern", "message", "unique");
 
     private FormFieldValidator() {}
 
@@ -28,6 +28,18 @@ public final class FormFieldValidator {
         if (rules.get("required") != null && !(rules.get("required") instanceof Boolean)
                 || rules.get("message") != null && !(rules.get("message") instanceof String)) {
             throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "required 必须是布尔值，message 必须是文本");
+        }
+        if (rules.get("unique") != null && !(rules.get("unique") instanceof Boolean)) {
+            throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "unique 必须是布尔值");
+        }
+        // 唯一约束仅对落库的可索引类型有意义；TEXT/FILE 内容长且不可索引，不落库字段无存储语义
+        if (Boolean.TRUE.equals(rules.get("unique"))) {
+            if (!field.persisted()) {
+                throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "不落库字段无唯一约束语义");
+            }
+            if (Set.of("TEXT", "FILE").contains(field.type())) {
+                throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "TEXT/FILE 字段不支持唯一约束");
+            }
         }
         BigDecimal min = bound(field, "min");
         BigDecimal max = bound(field, "max");

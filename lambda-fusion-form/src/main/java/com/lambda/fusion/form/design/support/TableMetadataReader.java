@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import javax.sql.DataSource;
@@ -104,6 +105,43 @@ public class TableMetadataReader {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不存在或无列：" + tableName);
         }
         return columns;
+    }
+
+    /**
+     * 目标表的唯一索引列组合（发布期唯一约束校验用；主键索引除外）
+     *
+     * @param tableName 物理表名
+     * @return 每个元素为一个唯一索引的有序列名列表（大写）
+     */
+    public List<List<String>> listUniqueIndexColumns(String tableName) {
+        if (isExcluded(tableName)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不可映射：" + tableName);
+        }
+        Map<String, List<String>> indexes = new java.util.LinkedHashMap<>();
+        try (Connection connection = dataSource.getConnection()) {
+            DatabaseMetaData metaData = connection.getMetaData();
+            String catalog = connection.getCatalog();
+            String schema = connection.getSchema();
+            requireScope(catalog, schema);
+            String exactName = resolveTable(metaData, catalog, schema, tableName);
+            try (ResultSet rs = metaData.getIndexInfo(catalog, schema, exactName, true, false)) {
+                while (rs.next()) {
+                    if (!inScope(rs, catalog, schema) || !exactName.equals(rs.getString("TABLE_NAME"))) {
+                        continue;
+                    }
+                    String indexName = rs.getString("INDEX_NAME");
+                    String columnName = rs.getString("COLUMN_NAME");
+                    if (indexName == null || columnName == null) {
+                        continue;
+                    }
+                    indexes.computeIfAbsent(indexName, key -> new ArrayList<>())
+                            .add(columnName.toUpperCase(Locale.ROOT));
+                }
+            }
+        } catch (SQLException e) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "读取索引元数据失败：" + e.getMessage());
+        }
+        return List.copyOf(indexes.values());
     }
 
     private String resolveTable(DatabaseMetaData meta, String catalog, String schema, String name) throws SQLException {

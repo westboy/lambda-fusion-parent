@@ -428,4 +428,35 @@ class FormModelCompilerTest {
         writable.setFields(List.of(field("createdAt", "CREATED_AT", "DATETIME", 1)));
         assertErrorCode(() -> compiler.compile(snapshotJson.write(writable), 1L), FormErrorCode.FORM_TABLE_INVALID);
     }
+
+    @Test
+    void uniqueRuleRequiresPersistedIndexableField() {
+        // TEXT/FILE 内容长且不可索引：拒绝
+        FormDefSnapshot textSnapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field text = field("content", "CONTENT", "TEXT", 1);
+        text.getForm().setRules(Map.of("unique", true));
+        textSnapshot.setFields(List.of(text));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(textSnapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        // 不落库字段无存储语义：拒绝
+        FormDefSnapshot displaySnapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field display = field("name", "NAME", "STRING", 1);
+        display.setPersisted(false);
+        display.getForm().setRules(Map.of("unique", true));
+        displaySnapshot.setFields(List.of(display));
+        assertErrorCode(
+                () -> compiler.compile(snapshotJson.write(displaySnapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        // 落库 STRING 字段：放行并携带规则
+        FormDefSnapshot ok = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field code = field("code", "CODE", "STRING", 1);
+        code.getForm().setRules(Map.of("unique", true));
+        ok.setFields(List.of(code));
+        assertThat(compiler.compile(snapshotJson.write(ok), 1L)
+                        .fields()
+                        .getFirst()
+                        .form()
+                        .rules())
+                .containsEntry("unique", true);
+    }
 }

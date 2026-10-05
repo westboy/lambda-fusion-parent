@@ -140,6 +140,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         String id = IdWorker.getIdStr();
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
+        requireUniqueValues(model, row, null);
         List<String> columns = new ArrayList<>();
         List<String> values = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
@@ -206,6 +207,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (row.isEmpty()) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
         }
+        requireUniqueValues(model, row, id);
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
@@ -818,7 +820,32 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return result;
     }
 
-    /** 读取提交体中的行指纹（保留键不参与字段归一，不改动调用方 Map） */
+    /**
+     * 唯一约束（rules.unique=true）：写入前查重。仅主表落库字段（FLAT 从字段跨表不支持，子表行暂不支持）；
+     * 更新时排除自身行；已逻辑删除的行不占用值。租户条件由插件追加，唯一性天然限定在租户内。
+     */
+    private void requireUniqueValues(FormModel model, Map<String, Object> row, String currentId) {
+        for (FormField field : model.fields()) {
+            if (field.subFormKey() != null
+                    || !Boolean.TRUE.equals(field.form().rules().get("unique"))
+                    || !row.containsKey(field.column())
+                    || row.get(field.column()) == null) {
+                continue;
+            }
+            Map<String, Object> params = new HashMap<>();
+            String where = activeRows(model) + " AND " + field.column() + " = "
+                    + bind("p" + params.size(), row.get(field.column()), params);
+            if (currentId != null) {
+                params.put("id", currentId);
+                where += " AND ID != #{params.id}";
+            }
+            if (dynamicTableMapper.countBy(model.tableName(), where, params) > 0) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, field.name() + " 值已存在，须唯一");
+            }
+        }
+    }
+
+    /** 从提交体读取行指纹（保留键不参与字段归一，不改动调用方 Map） */
     private String peekEtag(Map<String, Object> data) {
         Object etag = data.get(ETAG_KEY);
         return etag == null || etag.toString().isBlank() ? null : etag.toString();
