@@ -104,7 +104,7 @@ FormModel = {
               query: { show, op, defaultValue },      // 查询区配置（op 为归一后生效值）
               list:  { show, width, align, format },  // 列表列配置
               form:  { show, component, props, rules, readonly } } ],  // 表单与详情配置
-  relations: [ { subFormKey, foreignKey, cascadeStrategy } ],
+  relations: [ { subFormKey, subTable, foreignKey, cascadeStrategy, mode, subTableConfig } ],
   tree: { sourceType, parentColumn, nodeColumn, dictType, treeFormKey, nodeIdField, viewMode }  // TREE 类型
 }
 ```
@@ -147,7 +147,7 @@ FormModel = {
 
 **标识符白名单（MUST）**：动态 SQL 的表名、列名、主从标识、树配置列无法参数化，只能以 `${}` 形式拼入——它们必须来自服务端元数据，且拼入前一律经 `FormConstants.isIdentifier`（`^[A-Za-z][A-Za-z0-9_]*$`）校验，不通过即拒绝：
 
-1. 草稿保存期：`FormDesignService` 校验表名/列名/子表单标识/外键列（请求 DTO 上另有 `@Pattern` 前置拦截），非法即 `INVALID_PARAMETER`；
+1. 草稿保存期：`FormDesignService` 校验表名/列名/关系标识/子表物理表名/外键列（请求 DTO 上另有 `@Pattern` 前置拦截），非法即 `INVALID_PARAMETER`；
 2. 快照编译期：`FormModelCompiler` 对快照内全部标识符再校验一次（快照是外部可写数据，运行边界必须自证），非法即 `FORM_TABLE_INVALID`。
 
 因此本模块 `grep` 的判定标准是：`wrapper.apply`/`apply(` 命中为零；`${` 只允许出现在 `DynamicTableMapper` 的标识符占位（表名/列名/WHERE/ORDER 片段），且其调用方已过上述白名单。值一律 `#{params.*}` 参数化；排序方向由布尔解析为字面量 `ASC`/`DESC`、分页 `LIMIT/OFFSET` 由数值拼接，均不接受客户端原文。
@@ -160,9 +160,9 @@ FormModel = {
 
 **P1 交付（2026-10-03）**：TREE 左树右表与 MASTER_SUB 主从已全部交付，§4.4 全部条款生效——
 
-- **主从写路径**：同事务先写主表取回 id，再按关系回填子表外键逐行写入（复用子模型校验、子表逻辑删除初始化与审计填充，租户由插件承担）。子行数据嵌套在提交体中（key=subFormKey，值为子行对象数组）；客户端子行 id 一律不被信任。更新采用**替换式**：仅当请求显式携带子表键时整组替换（删除既有活跃子行后重插），未携带表示不触碰子表。
-- **主从读路径**：两段式——主表分页出 id 集 → 按外键 `in` 查回子行（子模型投影），挂到主行（key=subFormKey）；`getById` 同语义。子表单不可用（未发布/未映射/表未开放）时读取跳过该关系并置空，写入则直接拒绝。
-- **级联删除**：`CASCADE_DELETE` 先按子表语义清理子行（有逻辑删除列则置删除标记，否则物理删除），再删主行；`FORBID_DELETE` 存在活跃子行时抛 `FORM_SUB_DELETE_FORBIDDEN`。子表单须为单表类型且外键已映射（运行时校验），关系不能自引用或重复（编译期校验）。
+- **主从写路径**：同事务先写主表取回 id，再按关系回填子表外键逐行写入（复用子模型校验、子表逻辑删除初始化与审计填充，租户由插件承担）。子行数据嵌套在提交体中（key=subFormKey，值为子行对象数组）；客户端子行 id 一律不被信任。INLINE 更新采用**差量式**：仅当请求显式携带子表键时比对子行集合——带 id 且属于本主单的既有子行更新、无 id 新增、既有但未提交的删除，未携带表示不触碰子表；提交空数组（清空全部子行）须携带行指纹 `__etag`（证明提交者看到了当前数据）。台账式（LIST）子行不随主表提交（显式携带即拒绝），经主表子行端点独立增删改，归属由路径主行 id 绑定。
+- **主从读路径**：两段式——主表分页出 id 集 → 按外键 `in` 查回子行（子模型投影），挂到主行（key=subFormKey）；`getById` 同语义。子表未开放动态读写（不在允许清单）时读取跳过该关系并置空，写入则直接拒绝。INLINE 每主行嵌套子行截断到 `max-inline-sub-rows`（完整数据走台账式端点），台账式关系仅置空占位（载荷有界）。
+- **级联删除**：`CASCADE_DELETE` 先按子表语义清理子行（有逻辑删除列则置删除标记，否则物理删除），再删主行；`FORBID_DELETE` 存在活跃子行时抛 `FORM_SUB_DELETE_FORBIDDEN`。子表物理表须在允许清单且存在、外键列须为该关系从字段已映射列（保存期与编译期双重校验），关系标识不能重复（编译期校验），允许主子表同表（自关联）。
 - **树过滤**（TREE）：左树选中节点时过滤「自身 + 全部子孙」——SELF 按 `parentColumn` 逐层递归取回子孙 id 集，对主键 `ID` in 过滤；FORM/DICT 按本表节点 id 字段（`nodeIdField`）in 过滤（DICT 子树代码集由前端随请求携带）；子孙集上限 `lambda.fusion.form.max-tree-descendants`，超限抛 `FORM_TREE_DESCENDANT_LIMIT`(18123)，环状数据由上限兜底终止。
 
 ### 4.5 系统字段与逻辑删除
@@ -180,7 +180,7 @@ ID、TENANT_ID、审计四列及对外字段名 `id` 不允许作为普通业务
 - `design` 为管理权限保留标识，草稿保存、模型编译和运行入口均拒绝业务表单占用，避免业务接口授权扩大为设计管理权；
 - 请求由 Cloud `SaTokenInterceptor` 统一处理登录及 `ROLE_DEV` 豁免。预览、路由 Service 不再重复执行接口权限注解对应的裸 `StpUtil` 检查。发布/停用/回滚及菜单适配器的跨能力内部调用经 `AuthUtils.checkPermission` 校验，使用框架活跃登录类型并沿用开发者豁免；保存即发布仍要求发布权，拒绝时回滚同一事务中的草稿变更；
 - 动态按钮资源码为 `form-ui:{formKey}:{action}`，与接口权限码分开，避免登录权限合并按钮标识时绕过接口绑定；路由发布通过 `PermissionService.bind` 绑定 `la_api_resources`，授权与撤销复用 RoleService 和提交后缓存刷新；
-- `FormApiPermissionProvider` 从当前租户已发布定义和实际 MVC 映射生成七个接口的目录，补充进 `ApiPermissionRegistry` 的本地查询；静态扫描目录仍然保留，不依赖编译期枚举 formKey。当前不把动态租户目录推送到全局静态上报；
+- `FormApiPermissionProvider` 从当前租户已发布定义和实际 MVC 映射生成全部通用端点的目录（含主表子行端点），补充进 `ApiPermissionRegistry` 的本地查询；静态扫描目录仍然保留，不依赖编译期枚举 formKey。当前不把动态租户目录推送到全局静态上报；
 - `/schema` 经 `AuthUtils.hasPermission` 返回操作权限，开发者不依赖逐项授权记录；前端统一 `useAccess().hasAccessByCodes` 同样豁免精确的 `ROLE_DEV`。该豁免不改变租户隔离、表允许清单、发布状态或数据校验。普通用户通过菜单与接口绑定、角色授权取得对应权限，挂载不自动授权。
 
 ### 4.7 扩展点 SPI（P2）
@@ -266,21 +266,24 @@ public interface FormDataInterceptor {
 
 ### 5.3 `la_form_relation` 主从关系（MASTER_SUB）
 
+**子表直连物理表（2026-10-07 模型重构）**：关系不再引用"子表单"实体，而是直接声明子表物理表名；子表字段以 `la_form_field.SUB_FORM_KEY`（=关系标识）归属标记内嵌在主表单字段清单中，与主表字段同权编排（同一字段清单、同一设计器、同一快照）。子表无独立发布/权限/路由概念，写权限并入主表。
+
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
 | `ID` | varchar(32) PK | 主键 |
 | `FORM_ID` | varchar(32) NN | 主表单 |
-| `SUB_FORM_KEY` | varchar(64) NN | 子表单 formKey（同租户内解析） |
-| `FOREIGN_KEY` | varchar(64) NN | 子表外键列 |
+| `SUB_FORM_KEY` | varchar(64) NN | 主表单内的关系标识（从字段经 `la_form_field.SUB_FORM_KEY` 同值归属） |
+| `SUB_TABLE` | varchar(64) NN | 子表物理表名（直连物理表；允许与主表重名=自关联） |
+| `FOREIGN_KEY` | varchar(64) NN | 子表外键列（须为该关系从字段已映射的落库列） |
 | `CASCADE_STRATEGY` | varchar(16) NN | `CASCADE_DELETE` / `FORBID_DELETE` |
 | `RELATION_MODE` | varchar(16) NN | 呈现方式：`INLINE` 内联编辑 / `LIST` 台账式 / `FLAT` 一对一扁平（默认 `INLINE`） |
-| `SUB_TABLE_CONFIG` | json | 子表列表呈现配置 `{columns:[{field,width}]}`，field 为子表单字段标识（未配置=全量可见字段） |
+| `SUB_TABLE_CONFIG` | json | 子表列表呈现配置 `{columns:[{field,...}]}`，field 为从字段标识（未配置=全量可见字段） |
 
-设计端保存期前置校验（2026-10-03）：草稿保存即拦截运行时 `requireSubModel` 才能发现的错误——子表单须存在（同租户）且为 `SINGLE` 类型、外键列须为子表单已映射且落库的字段，另拒绝自引用与重复 `SUB_FORM_KEY`；设计器关系配置为选择式（选子表单 → 自动加载其字段 → 外键下拉），不再手打 formKey。`SUB_TABLE_CONFIG` 经 `SubTableConfigs` 键白名单+值域校验（保存期对照子表单字段、编译期防篡改再拦一道），设计器子表区块拖拽定列（2026-10-03）。
+设计端保存期前置校验：子表物理表须在动态读写允许清单且物理存在、主子表逻辑删除列同名一致、外键列须为该关系已导入的从表字段（落库列）；编译期再拦一道（标识符合法性、关系标识重复、外键未映射、子表未开放）。设计器关系配置为「选物理表 → 填关系标识（默认表名小写）→ 一键导入子表字段生成从字段（撞名跳过、子表主键列不导入=运行时子模型注入 `rowId` 展示字段、外键列默认全隐藏）→ 外键下拉」；从字段在字段清单中带「从表」徽标，与主表字段同权编辑类型/显示名/三段配置。`SUB_TABLE_CONFIG` 经 `SubTableConfigs` 键白名单+值域校验（保存期对照该关系从字段、编译期防篡改再拦一道），设计器子表区块拖拽定列。
 
-**呈现方式双模式（2026-10-03）**：`INLINE`（内联编辑）子行随主表整组提交、替换式写入，适合少量随主表生死的明细；`LIST`（台账式）面向数据量大、生命周期独立的子数据——主表详情页分页展示子行（列取子表单自己的列表设计），子行经专用端点独立新增（外键由服务端绑定主行 id，服务内显式校验子表单新增权限）、经子表单自己的编辑/删除端点独立修改；读取组装对台账式关系不再全量嵌套（仅置空占位，载荷有界），且随主表提交显式携带台账式子表键即拒绝。级联删除策略不受呈现方式影响。
+**呈现方式三模式**：`INLINE`（内联编辑）子行随主表整组提交、差量写入，适合少量随主表生死的明细；`LIST`（台账式）面向数据量大、生命周期独立的子数据——主表详情页分页展示子行（列取子表区块配置，未配置回退列表可见从字段），子行经主表子行端点独立增删改（外键与归属由路径主行 id 绑定：WHERE 同时带外键条件，跨主行的子行 id 按不存在拒绝；编辑可选 `__etag` 行指纹乐观锁，台账式分页随行下发）；读取组装对台账式关系不再全量嵌套（仅置空占位，载荷有界），且随主表提交显式携带台账式子表键即拒绝。级联删除策略不受呈现方式影响。
 
-**一对一扁平（FLAT，2026-10-04）**：从表字段以 `la_form_field.SUB_FORM_KEY` 标记并入主表字段清单，列表/详情/编辑全部平铺呈现——写入时引擎按标记拆分：主字段写主表、从字段按外键找既有从行做单条 upsert（存在改/不存在增，同一事务，外键服务端绑定）；读取时从行字段提升到主行顶层（id 不覆盖主行标识，历史多行取最新一条，不静默删数）。从表字段不支持查询条件与排序（查询/排序 SQL 只落在主表上，保存期拦截）。设计阶段并入从表字段时撞名直接排除（主表字段优先并提示）。
+**一对一扁平（FLAT）**：从表字段平铺进主表单与主列表（主表单/主详情按关系过滤：INLINE/LIST 从字段不进主表单，FLAT 从字段平铺）——写入时引擎按归属标记拆分：主字段写主表、从字段按外键找既有从行做单条 upsert（存在改/不存在增，同一事务，外键服务端绑定）；读取时从行字段提升到主行顶层（id 不覆盖主行标识，历史多行取最新一条，不静默删数）。从表字段不支持查询条件与排序（查询/排序 SQL 只落在主表上，保存期拦截）。
 
 ### 5.4 `la_form_def_version` 发布快照
 
@@ -412,8 +415,10 @@ P1 引入 oss 可选依赖：上传端点权限为设计预览或目标表单新
 | `POST /v1/form/{formKey}/page` | `form:{formKey}:page` | 分页查询（AST 条件，§4.3） |
 | `GET /v1/form/{formKey}/tree` | `form:{formKey}:page` | TREE 树数据：按 `parentValue` 取直接子节点（P0 仅自关联树，子孙过滤见 §4.4） |
 | `GET /v1/form/{formKey}/{id}` | `form:{formKey}:page` | 详情（主从含子表为 P1） |
-| `GET /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:page` | 台账式子表分页（外键由服务端绑定主行 id，不占子表查询白名单） |
-| `POST /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:add` | 台账式子表新增（外键服务端绑定；服务内再校验 `form:{subFormKey}:add`） |
+| `GET /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:page` | 台账式子表分页（外键由服务端绑定主行 id，不占子表查询白名单；随行下发 `__etag`） |
+| `POST /v1/form/{formKey}/{id}/subs/{subFormKey}` | `form:{formKey}:add` | 台账式子表新增（外键服务端绑定，写权限并入主表） |
+| `PUT /v1/form/{formKey}/{id}/subs/{subFormKey}/{subId}` | `form:{formKey}:edit` | 台账式子表编辑（归属由路径主行 id 绑定，可选 `__etag` 乐观锁） |
+| `DELETE /v1/form/{formKey}/{id}/subs/{subFormKey}/{subId}` | `form:{formKey}:delete` | 台账式子表删除（归属由路径主行 id 绑定，尊重子表逻辑删除语义） |
 | `POST /v1/form/{formKey}` | `form:{formKey}:add` | 新增（主从事务写入为 P1） |
 | `PUT /v1/form/{formKey}/{id}` | `form:{formKey}:edit` | 部分更新：未提交字段保持原值，显式 null 清空可空字段；无可写项拒绝 |
 | `DELETE /v1/form/{formKey}/{id}` | `form:{formKey}:delete` | 删除（按级联策略，P0 一律拒绝有子表数据的记录） |
@@ -442,6 +447,8 @@ Controller 只编排（契约 §9.3），权限在 Cloud 统一注解鉴权链�
 三段配置在快照内是**结构化对象**（服务端已做键白名单与值域校验：op ∈ 操作符白名单、width 1-500、align ∈ left/center/right、format ∈ date/datetime/dict、component 走标识符白名单），前端直接使用不再 `JSON.parse`；`treeConfig` 仍为设计端原样存储的 JSON 字符串。`label` 保存于 `la_form_field.FIELD_LABEL`，导列默认使用列注释，缺省时取字段标识。`formLayout` 在草稿中以 JSON 文本保存，在快照与 Schema 中是 `{ columns, items: [{ field, span }] }`，列数为 1～4，字段引用唯一且必须存在，占列不超过全局列数。
 
 `permissions` 由服务端按当前用户逐 action 解析（`AuthUtils.hasPermission`，action ∈ `page/add/edit/delete`），与框架开发者豁免保持一致；`page` 同时是访问 Schema 的前提，在统一注解鉴权链中检查。前端按布尔值渲染运行操作，不用路由管理权限替代数据接口权限。
+
+MASTER_SUB 的 schema 另含 `relations`（`subFormKey/subTable/foreignKey/cascadeStrategy/mode/subTableConfig`），从字段随主 `fields` 一并下发并以 `subFormKey` 标记归属：前端按关系现构子表渲染元数据（INLINE/LIST 从字段不进主表单与主列表，FLAT 平铺），不再拉取任何子表单元数据。关系出参例外携带子表物理表名 `subTable`（子表区块标题与画布分组标题的事实源，2026-10-07 模型重构时用户明确拍板）；列级物理映射仍然剥离。
 
 设计预览使用独立的 `form:design:preview` 权限点，元数据与数据端点均由编译期处理器收集并进入现有 permission-api 目录。数据操作在服务端解析真实 formKey 后，继续经 `AuthUtils` 校验 `form:{formKey}:page/add/edit/delete`；提交未保存设计还需 `form:design:add/edit`。开发者沿用统一 `ROLE_DEV` 豁免，租户过滤、状态及数据校验仍执行。仅有预览权限可查看配置，不能读写业务数据。
 
@@ -514,7 +521,7 @@ packages/system-ui/src/
 
 **通用挂载**：菜单 `RES_PATH` 只承担访问路径；`EXPAND` 中明确声明 `{ "component": "/form/runtime/index", "meta": { "formKey": "leave", "formId": "..." } }`。`MenuRouteAssembler` 读取组件与参数，以资源 ID 生成稳定路由名称；显示名仍在 meta.title。运行页按当前租户的 formKey 读取生效快照，切换 formKey 会重建 Schema、查询和编辑状态；“刷新表单”重新读取版本与布局。`BUSINESS_EXPAND` 保存归属标记，供挂载管理验证，不靠路径或名称猜测归属。
 
-TREE 类型运行页为左树右表布局（2026-10-03 交付；**树来源三选一，2026-10-04**）：`treeConfig.sourceType` 支持 `SELF` 自关联（树=本表自关联数据，父列+节点展示列）/ `FORM` 关联树表单（左树读另一 TREE 表单的数据，本表以节点字段存其节点 id）/ `DICT` 字典树（左树读字典层级，本表节点字段存字典项代码）。运行时：SELF/FORM 的过滤由引擎解析「节点+全部子孙」（FORM 委派树表单的表逐层解析，再按本表节点列 IN），DICT 由前端从已载入字典层级计算子树代码集随请求携带（`TreeNodeFilter.values`，引擎校验上限）；`tree` 端点 FORM 来源直接委派树表单（权限随其路径），DICT 返回空（前端自建层级），SELF 行附加 `__childCount`（按父列分组计数，供树表格判断可展开）；设计预览有对应树端点 `POST /v1/form-design/preview/data/tree`（预览源 + parentValue，走预览模型同款权限与契约校验），树表/左树在设计预览中真实呈现。**呈现方式（2026-10-04）**：`treeConfig.viewMode` 二选一——`LEFT_TREE` 左树右表（默认）/ `TREE_TABLE` 整页缩进树表格（仅 SELF）：无过滤条件时整树呈现（根行树端点 + vxe 懒加载展开，不分页），有搜索条件切平铺匹配列表（分页照常）；行操作含"新增下级"（预填该行为父节点），工具栏新增=新增根节点。树表表单设计（2026-10-04）：选中节点后新增自动带入节点值；编辑/新增表单的树节点字段渲染树选择器（按来源取数：SELF/FORM 走树端点懒加载、DICT 本地层级，留空=根节点，预览回退缺省控件）；设计端锁定树配置引用字段的类型与移除（画布移除按钮禁用、①步移除拦截并提示），①步树来源按选项分派配置项，保存期前置校验（FORM 须存在/为 TREE/非自引用，节点字段须映射落库）。MASTER_SUB 主从同步交付：编辑弹窗按关系渲染可编辑子表（子表单 schema 由前端按 `subFormKey` 拉取），列与列宽可由关系上的 `SUB_TABLE_CONFIG` 指定（未配置=全量可见字段），行编辑器按字段类型映射真实控件（字典下拉/日期选择/长文本等），详情抽屉只读展示子行；列表页主行与详情接口均携带嵌套子行数组。台账式（`RELATION_MODE=LIST`）关系在详情抽屉渲染分页网格（列取子表单列表设计），子行独立新增、编辑与删除（新增经主表子表端点，编辑/删除经子表单自己的端点），编辑弹窗不再随主表收集其子行；设计预览无子表数据端点，台账式网格仅出结构空态。
+TREE 类型运行页为左树右表布局（2026-10-03 交付；**树来源三选一，2026-10-04**）：`treeConfig.sourceType` 支持 `SELF` 自关联（树=本表自关联数据，父列+节点展示列）/ `FORM` 关联树表单（左树读另一 TREE 表单的数据，本表以节点字段存其节点 id）/ `DICT` 字典树（左树读字典层级，本表节点字段存字典项代码）。运行时：SELF/FORM 的过滤由引擎解析「节点+全部子孙」（FORM 委派树表单的表逐层解析，再按本表节点列 IN），DICT 由前端从已载入字典层级计算子树代码集随请求携带（`TreeNodeFilter.values`，引擎校验上限）；`tree` 端点 FORM 来源直接委派树表单（权限随其路径），DICT 返回空（前端自建层级），SELF 行附加 `__childCount`（按父列分组计数，供树表格判断可展开）；设计预览有对应树端点 `POST /v1/form-design/preview/data/tree`（预览源 + parentValue，走预览模型同款权限与契约校验），树表/左树在设计预览中真实呈现。**呈现方式（2026-10-04）**：`treeConfig.viewMode` 二选一——`LEFT_TREE` 左树右表（默认）/ `TREE_TABLE` 整页缩进树表格（仅 SELF）：无过滤条件时整树呈现（根行树端点 + vxe 懒加载展开，不分页），有搜索条件切平铺匹配列表（分页照常）；行操作含"新增下级"（预填该行为父节点），工具栏新增=新增根节点。树表表单设计（2026-10-04）：选中节点后新增自动带入节点值；编辑/新增表单的树节点字段渲染树选择器（按来源取数：SELF/FORM 走树端点懒加载、DICT 本地层级，留空=根节点，预览回退缺省控件）；设计端锁定树配置引用字段的类型与移除（画布移除按钮禁用、①步移除拦截并提示），①步树来源按选项分派配置项，保存期前置校验（FORM 须存在/为 TREE/非自引用，节点字段须映射落库）。MASTER_SUB 主从同步交付：编辑弹窗按关系渲染可编辑子表（子表 schema 由前端从主 schema 按 `subFormKey` 现构，子表直连物理表、无独立子表单），列与列宽可由关系上的 `SUB_TABLE_CONFIG` 指定（未配置=全量可见字段），行编辑器按字段类型映射真实控件（字典下拉/日期选择/长文本等），详情抽屉只读展示子行；列表页主行与详情接口均携带嵌套子行数组。台账式（`RELATION_MODE=LIST`）关系在详情抽屉渲染分页网格（列取子表区块配置，未配置回退列表可见从字段），子行独立新增、编辑与删除（均经主表子行端点，归属由路径主行 id 绑定），编辑弹窗不再随主表收集其子行；设计预览无子表数据端点，台账式网格仅出结构空态。
 
 ### 10.2 表单设计器
 
