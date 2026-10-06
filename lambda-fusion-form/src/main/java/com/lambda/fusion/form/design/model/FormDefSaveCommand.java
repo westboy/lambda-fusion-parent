@@ -42,9 +42,8 @@ public class FormDefSaveCommand {
     @Schema(description = "TREE 类型：树数据源 JSON")
     private String treeConfig;
 
-    @Size(max = 64, message = "流程编码不能超过 64 字符")
-    @Schema(description = "挂接的 warm-flow 流程编码（P2）")
-    private String flowCode;
+    @Schema(description = "流程表单标识：允许被流程定义挂载（发布后生效）")
+    private Boolean processForm;
 
     @Size(max = 256, message = "标题模板不能超过 256 字符")
     @Schema(description = "流程标题模板")

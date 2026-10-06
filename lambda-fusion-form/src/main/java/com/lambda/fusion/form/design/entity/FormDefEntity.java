@@ -42,9 +42,9 @@ public class FormDefEntity extends BaseEntity {
     @TableField("TREE_CONFIG")
     private String treeConfig;
 
-    /** 挂接的 warm-flow 流程编码（P2） */
-    @TableField("FLOW_CODE")
-    private String flowCode;
+    /** 流程表单标识：允许被流程定义挂载（warm-flow 设计器下拉与发布校验的数据源） */
+    @TableField("PROCESS_FORM")
+    private Boolean processForm;
 
     /** DRAFT 草稿 / PUBLISHED 已发布 / DISABLED 停用 */
     @TableField("STATUS")

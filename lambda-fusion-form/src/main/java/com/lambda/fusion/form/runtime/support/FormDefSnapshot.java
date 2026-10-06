@@ -28,8 +28,6 @@ public class FormDefSnapshot {
 
     private String treeConfig;
 
-    private String flowCode;
-
     private String titleTemplate;
 
     private String interceptor;

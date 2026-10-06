@@ -4,9 +4,8 @@ import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
 import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
-import com.lambda.fusion.form.design.adapter.FormPathRegistry;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
-import com.lambda.fusion.form.design.adapter.WorkflowFormPathRegistry;
+import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
@@ -14,7 +13,7 @@ import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import com.lambda.fusion.upload.service.AttachmentService;
-import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
+import com.lambda.fusion.workflow.integration.ProcessFormSource;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,14 +52,13 @@ public class FormConfigure {
         }
     }
 
-    /** 审批流注册表联动（workflow 模块在场时装配）：挂路由自动登记 la_workflow_form_path */
+    /** 流程表单数据源（workflow 模块在场时装配）：已发布流程表单 → warm-flow 设计器下拉与发布校验 */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(FormPathManagerService.class)
-    @ConditionalOnBean(FormPathManagerService.class)
+    @ConditionalOnClass(ProcessFormSource.class)
     static class WorkflowIntegration {
         @Bean
-        FormPathRegistry formPathRegistry(FormPathManagerService formPaths) {
-            return new WorkflowFormPathRegistry(formPaths);
+        ProcessFormSource processFormSource(FormDefMapper forms) {
+            return new WorkflowProcessFormSource(forms);
         }
     }
 

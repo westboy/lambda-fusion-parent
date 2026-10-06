@@ -68,7 +68,7 @@
             <artifactId>lambda-fusion-oss</artifactId>
             <optional>true</optional>
         </dependency>
-        <!-- 审批流注册表（挂路由自动登记 la_workflow_form_path）：缺失时路由保存跳过登记 -->
+        <!-- 流程表单数据源（ProcessFormSource SPI，workflow 模块定义）：缺失时设计器表单下拉降级为空、发布校验跳过 -->
         <dependency>
             <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-fusion-workflow</artifactId>

@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
-import com.lambda.fusion.form.design.adapter.FormPathRegistry;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
@@ -36,9 +35,7 @@ class FormOptionalIntegrationTest {
                     FormDefMapper forms = mock(FormDefMapper.class);
                     when(forms.selectById("f1")).thenReturn(new FormDefEntity());
                     var service = new FormRouteServiceImpl(
-                            forms,
-                            context.getBeanFactory().getBeanProvider(FormRouteGateway.class),
-                            context.getBeanFactory().getBeanProvider(FormPathRegistry.class));
+                            forms, context.getBeanFactory().getBeanProvider(FormRouteGateway.class));
                     assertThat(service.detail("f1").available()).isFalse();
                     assertThatThrownBy(() ->
                                     service.save("f1", new FormRouteCommand("parent", "测试", "/forms/test", null, 1)))

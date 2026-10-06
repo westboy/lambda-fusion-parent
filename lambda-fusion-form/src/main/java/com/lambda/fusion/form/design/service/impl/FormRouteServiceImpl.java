@@ -2,7 +2,6 @@ package com.lambda.fusion.form.design.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.form.FormConstants;
-import com.lambda.fusion.form.design.adapter.FormPathRegistry;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
@@ -24,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class FormRouteServiceImpl implements FormRouteService {
     private final FormDefMapper forms;
     private final ObjectProvider<FormRouteGateway> gateways;
-    private final ObjectProvider<FormPathRegistry> formPathRegistries;
 
     @Override
     public Map<String, FormRouteInfo> states(List<String> ids) {
@@ -60,17 +58,8 @@ public class FormRouteServiceImpl implements FormRouteService {
         if (!current.mounted() && !FormConstants.STATUS_PUBLISHED.equals(form.getStatus())) {
             throw new FormBusinessException(FormErrorCode.FORM_DISABLED);
         }
-        String previousPath = current.mounted() ? current.path() : null;
         form.setRouteResourceId(gateway.save(form, command));
         if (forms.updateById(form) == 0) throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
-        // 同事务登记流程表单注册表：warm-flow 设计器「自定义表单路径」下拉即可选到本表单；
-        // 换路径重挂时先注销旧路径，注册表不残留悬空记录
-        formPathRegistries.ifAvailable(registry -> {
-            if (previousPath != null && !previousPath.equals(command.path())) {
-                registry.unregister(previousPath);
-            }
-            registry.register(form.getFormName(), command.path(), "动态表单自动注册（formKey=" + form.getFormKey() + "）");
-        });
         return gateway.read(form);
     }
 
@@ -79,14 +68,9 @@ public class FormRouteServiceImpl implements FormRouteService {
     public void remove(String id) {
         FormRouteGateway gateway = requireGateway();
         FormDefEntity form = requireLocked(id);
-        String routePath = gateway.read(form).path();
         gateway.remove(form);
         form.setRouteResourceId(null);
         if (forms.updateById(form) == 0) throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
-        // 撤路由同步注销注册表，避免 warm-flow 下拉残留悬空路径
-        if (routePath != null) {
-            formPathRegistries.ifAvailable(registry -> registry.unregister(routePath));
-        }
     }
 
     private FormDefEntity requireLocked(String id) {

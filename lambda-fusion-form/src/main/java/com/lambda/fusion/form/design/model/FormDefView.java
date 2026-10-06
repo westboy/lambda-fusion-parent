@@ -39,8 +39,8 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "TREE 类型：树数据源 JSON")
     private String treeConfig;
 
-    @Schema(description = "挂接的 warm-flow 流程编码（P2）")
-    private String flowCode;
+    @Schema(description = "流程表单标识：允许被流程定义挂载")
+    private Boolean processForm;
 
     @Schema(description = "DRAFT / PUBLISHED / DISABLED")
     private String status;

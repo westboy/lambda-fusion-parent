@@ -8,6 +8,7 @@ import com.lambda.fusion.workflow.definition.model.DefinitionView;
 import com.lambda.fusion.workflow.definition.service.DefinitionService;
 import com.lambda.fusion.workflow.exception.WorkflowBusinessException;
 import com.lambda.fusion.workflow.exception.WorkflowErrorCode;
+import com.lambda.fusion.workflow.integration.ProcessFormSource;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.function.Supplier;
@@ -19,7 +20,9 @@ import org.dromara.warm.flow.core.exception.FlowException;
 import org.dromara.warm.flow.core.service.DefService;
 import org.dromara.warm.flow.orm.entity.FlowDefinition;
 import org.dromara.warm.flow.orm.mapper.FlowDefinitionMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 流程定义服务实现（包装引擎 DefService）
@@ -35,6 +38,8 @@ public class DefinitionServiceImpl implements DefinitionService {
     private final FlowDefinitionMapper definitionMapper;
 
     private final DefService defService;
+
+    private final ObjectProvider<ProcessFormSource> processFormSources;
 
     @Override
     public PageView<DefinitionView> page(DefinitionPage page) {
@@ -59,7 +64,8 @@ public class DefinitionServiceImpl implements DefinitionService {
 
     @Override
     public boolean publish(Long id) {
-        requireExists(id);
+        FlowDefinition definition = requireExists(id);
+        requireMountableForm(definition.getFormPath());
         return callEngine(() -> defService.publish(id));
     }
 
@@ -96,6 +102,20 @@ public class DefinitionServiceImpl implements DefinitionService {
             throw new WorkflowBusinessException(WorkflowErrorCode.DEFINITION_NOT_FOUND);
         }
         return definition;
+    }
+
+    /** 绑定了自定义表单的定义发布前校验表单可挂载（已发布流程表单）；数据源缺席（模块裁剪态）时跳过 */
+    private void requireMountableForm(String formPath) {
+        if (!StringUtils.hasText(formPath)) {
+            return;
+        }
+        ProcessFormSource source = processFormSources.getIfAvailable();
+        if (source == null) {
+            return;
+        }
+        if (!source.mountable(formPath)) {
+            throw new WorkflowBusinessException(WorkflowErrorCode.FORM_NOT_MOUNTABLE, formPath);
+        }
     }
 
     private <T> T callEngine(Supplier<T> action) {

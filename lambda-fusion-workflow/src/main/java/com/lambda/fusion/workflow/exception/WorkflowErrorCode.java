@@ -67,14 +67,9 @@ public enum WorkflowErrorCode implements ErrorCode {
 
     // ========== 自定义表单 (16150-16159) ==========
     /**
-     * 表单不存在
+     * 定义绑定的自定义表单不可挂载（未标记流程表单、未发布或已停用），消息携带 formPath
      */
-    FORM_PATH_NOT_FOUND(16150, "自定义表单不存在"),
-
-    /**
-     * 表单路径已存在
-     */
-    FORM_PATH_DUPLICATED(16151, "表单路径已存在");
+    FORM_NOT_MOUNTABLE(16150, "绑定的自定义表单不可挂载：{0}");
 
     private final Integer code;
 

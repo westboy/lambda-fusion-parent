@@ -310,4 +310,31 @@
                     remarks="一对一扁平模式的从表归属（空=主表字段；FLAT 关系时为子表单 formKey）"/>
         </addColumn>
     </changeSet>
+
+    <!-- 流程表单标识：允许被流程定义挂载（warm-flow 设计器下拉与发布校验的数据源） -->
+    <changeSet id="lambda-fusion-form-202610060001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+            <not>
+                <columnExists tableName="la_form_def" columnName="PROCESS_FORM"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column
+                    name="PROCESS_FORM"
+                    type="tinyint(1)"
+                    defaultValueNumeric="0"
+                    remarks="流程表单标识（1=允许被流程定义挂载）">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- 挂接流程编码字段退役：流程绑定改由流程定义侧按 formKey 选择表单 -->
+    <changeSet id="lambda-fusion-form-202610060002" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="la_form_def" columnName="FLOW_CODE"/>
+        </preConditions>
+        <dropColumn tableName="la_form_def" columnName="FLOW_CODE"/>
+    </changeSet>
 </databaseChangeLog>

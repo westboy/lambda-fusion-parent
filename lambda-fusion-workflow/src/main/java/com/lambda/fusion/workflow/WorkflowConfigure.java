@@ -7,9 +7,9 @@ import com.lambda.fusion.dict.service.DictInfoService;
 import com.lambda.fusion.message.api.RemoteMessageService;
 import com.lambda.fusion.workflow.bridge.AuthorityHandlerSelectService;
 import com.lambda.fusion.workflow.bridge.DictCategoryService;
-import com.lambda.fusion.workflow.bridge.RegistryFormPathService;
+import com.lambda.fusion.workflow.bridge.ProcessFormPathService;
 import com.lambda.fusion.workflow.bridge.WorkflowTaskNotifier;
-import com.lambda.fusion.workflow.formpath.service.FormPathManagerService;
+import com.lambda.fusion.workflow.integration.ProcessFormSource;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.warm.flow.orm.mapper.FlowInstanceMapper;
@@ -91,16 +91,16 @@ public class WorkflowConfigure {
     }
 
     /**
-     * 设计器自定义表单路径装配：本模块 la_workflow_form_path 注册表（启用项）→ 设计器下拉。
-     * 条件注解保护 optional 依赖（UI 插件不在 classpath 时不装配）。
+     * 设计器自定义表单路径装配：form 模块的已发布流程表单（ProcessFormSource）→ 设计器 form_path 下拉。
+     * 条件注解保护 optional 依赖（UI 插件不在 classpath 时不装配）；数据源缺席时降级空列表。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "org.dromara.warm.flow.ui.service.FormPathService")
-    public static class RegistryFormPathConfiguration {
+    public static class ProcessFormPathConfiguration {
 
         @Bean
-        public FormPathService formPathService(FormPathManagerService formPathManagerService) {
-            return new RegistryFormPathService(formPathManagerService);
+        public FormPathService formPathService(ObjectProvider<ProcessFormSource> sources) {
+            return new ProcessFormPathService(sources);
         }
     }
 
