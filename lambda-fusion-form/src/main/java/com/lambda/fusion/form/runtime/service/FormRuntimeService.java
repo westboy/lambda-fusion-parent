@@ -35,9 +35,19 @@ public interface FormRuntimeService {
             String formKey, String id, String subFormKey, long pageNum, long pageSize);
 
     /**
-     * 台账式子表新增（外键由服务端绑定主行 id，并校验子表单新增权限）
+     * 台账式子表新增（外键由服务端绑定主行 id，写权限并入主表）
      */
     void createSubRow(String formKey, String id, String subFormKey, Map<String, Object> data);
+
+    /**
+     * 台账式子表编辑（归属由路径主行 id 绑定，可选 __etag 行指纹乐观锁）
+     */
+    void updateSubRow(String formKey, String id, String subFormKey, String subId, Map<String, Object> data);
+
+    /**
+     * 台账式子表删除（归属由路径主行 id 绑定）
+     */
+    void deleteSubRow(String formKey, String id, String subFormKey, String subId);
 
     Map<String, Object> getById(String formKey, String id);
 

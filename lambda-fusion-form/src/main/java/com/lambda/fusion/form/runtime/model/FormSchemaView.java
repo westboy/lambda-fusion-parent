@@ -38,15 +38,18 @@ public class FormSchemaView {
     @Schema(description = "TREE 类型运行时树配置（字段标识视角，物理列名不出服务端）")
     private TreeSchema tree;
 
-    @Schema(description = "MASTER_SUB 主从关系（子表 schema 由前端按 subFormKey 单独拉取）")
+    @Schema(description = "MASTER_SUB 主从关系（子表渲染元数据由前端按 subFormKey 从主 schema 字段中现构）")
     private List<RelationSchema> relations = new ArrayList<>();
 
     /** MASTER_SUB 主从关系描述 */
     @Data
     public static class RelationSchema {
 
-        @Schema(description = "子表单标识")
+        @Schema(description = "主表单内的关系标识（子表字段归属标记）")
         private String subFormKey;
+
+        @Schema(description = "子表物理表名（直连物理表）")
+        private String subTable;
 
         @Schema(description = "子表外键列")
         private String foreignKey;
@@ -177,6 +180,9 @@ public class FormSchemaView {
 
         @Schema(description = "是否落库（false=不入库/纯展示或计算字段）")
         private Boolean persisted;
+
+        @Schema(description = "从表归属（主从关系标识；null=主表字段）")
+        private String subFormKey;
 
         @Schema(description = "顺序")
         private Integer sort;

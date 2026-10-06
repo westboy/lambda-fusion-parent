@@ -56,7 +56,17 @@ public interface DynamicDataService {
             FormModel model, String id, String subFormKey, long pageNum, long pageSize);
 
     /**
-     * 台账式子表新增：外键由服务端绑定，校验子表单数据权限后按子模型写入
+     * 台账式子表新增：外键由服务端绑定，写权限并入主表
      */
     void createSubRow(FormModel model, String id, String subFormKey, Map<String, Object> data);
+
+    /**
+     * 台账式子表编辑：归属由路径主行 id 绑定（WHERE 带外键条件），可选 __etag 行指纹乐观锁
+     */
+    void updateSubRow(FormModel model, String id, String subFormKey, String subId, Map<String, Object> data);
+
+    /**
+     * 台账式子表删除：归属由路径主行 id 绑定，尊重子表逻辑删除语义
+     */
+    void deleteSubRow(FormModel model, String id, String subFormKey, String subId);
 }

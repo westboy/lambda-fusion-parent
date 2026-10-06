@@ -61,6 +61,7 @@ public class FormSchemaAssembler {
         model.relations().forEach(relation -> {
             FormSchemaView.RelationSchema view1 = new FormSchemaView.RelationSchema();
             view1.setSubFormKey(relation.subFormKey());
+            view1.setSubTable(relation.subTable());
             view1.setForeignKey(relation.foreignKey());
             view1.setCascadeStrategy(relation.cascadeStrategy());
             view1.setMode(relation.mode());
@@ -132,6 +133,7 @@ public class FormSchemaAssembler {
         schema.setRules(field.form().rules());
         schema.setReadonly(field.form().readonly());
         schema.setPersisted(field.persisted());
+        schema.setSubFormKey(field.subFormKey());
         schema.setSort(field.sort());
         return schema;
     }

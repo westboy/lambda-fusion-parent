@@ -733,6 +733,58 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void masterSubSubRowUpdateAndDeleteAreScopedToOwnerMainRow() {
+        FormModel master = masterSubModel("CASCADE_DELETE", FormConstants.RELATION_MODE_LIST);
+        String id = service.create(master, Map.of("personName", "Alice"));
+        String otherId = service.create(master, Map.of("personName", "Bob"));
+        service.createSubRow(master, id, "leave_item", Map.of("itemName", "L1"));
+        String subId =
+                jdbc.queryForObject("SELECT ID FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", String.class, id);
+
+        // 台账式分页随行下发子行指纹（独立编辑的乐观锁凭证）
+        var page = service.pageSubRows(master, id, "leave_item", 1, 10);
+        Object etag = page.getRecords().getFirst().get("__etag");
+        assertThat(etag).isInstanceOf(String.class);
+
+        // 过期指纹拒绝；匹配指纹放行（外键列提交被剥离，归属不可改写）
+        assertThatThrownBy(() -> service.updateSubRow(
+                        master, id, "leave_item", subId, Map.of("itemName", "LX", "__etag", "stale")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_CONFLICT.getCode()));
+        service.updateSubRow(
+                master,
+                id,
+                "leave_item",
+                subId,
+                Map.of("itemName", "L1X", "leaveId", otherId, "__etag", String.valueOf(etag)));
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE ID=?", String.class, subId))
+                .isEqualTo("L1X");
+        assertThat(jdbc.queryForObject("SELECT LEAVE_ID FROM LA_TEST_SUB WHERE ID=?", String.class, subId))
+                .isEqualTo(id);
+
+        // 归属防线：用别的主行 id 定位该子行，更新与删除均按不存在拒绝
+        assertThatThrownBy(() -> service.updateSubRow(master, otherId, "leave_item", subId, Map.of("itemName", "HACK")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_NOT_FOUND.getCode()));
+        assertThatThrownBy(() -> service.deleteSubRow(master, otherId, "leave_item", subId))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_NOT_FOUND.getCode()));
+        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE ID=?", String.class, subId))
+                .isEqualTo("L1X");
+
+        // 正常删除：子表有逻辑删除列，置标记后活跃行清零
+        service.deleteSubRow(master, id, "leave_item", subId);
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE ID=? AND DELETED=0", Integer.class, subId))
+                .isEqualTo(0);
+        assertThat(jdbc.queryForObject("SELECT DELETED FROM LA_TEST_SUB WHERE ID=?", Integer.class, subId))
+                .isEqualTo(1);
+    }
+
+    @Test
     void masterSubCreateRejectsWhenSubTableNotAllowed() {
         // 子表直连物理表：目标子表不在动态读写允许清单时拒绝（发布快照篡改的兜底）
         FormDefSnapshot snapshot = new FormDefSnapshot();

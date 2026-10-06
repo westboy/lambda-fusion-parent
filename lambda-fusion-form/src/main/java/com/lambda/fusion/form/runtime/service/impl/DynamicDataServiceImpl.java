@@ -701,7 +701,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         " ORDER BY ID ASC LIMIT " + size + " OFFSET " + ((page - 1) * size),
                         params)
                 .stream()
-                .map(row -> project(subModel, row))
+                .map(row -> {
+                    // 子行独立编辑的乐观锁凭证：指纹口径与 requireSubRowUnchanged 预读投影一致
+                    Map<String, Object> projected = project(subModel, row);
+                    projected.put(ETAG_KEY, etagOf(projected));
+                    return projected;
+                })
                 .toList();
         return PageView.<Map<String, Object>>builder()
                 .pageNum(page)
@@ -721,6 +726,98 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         getById(model, id);
         Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
         insertSubRows(relation, subModel, subColumns, id, List.of(data));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateSubRow(FormModel model, String id, String subFormKey, String subId, Map<String, Object> data) {
+        FormRelation relation = requireRelation(model, subFormKey);
+        FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
+        getById(model, id);
+        String expectedEtag = peekEtag(data);
+        if (expectedEtag != null) {
+            requireSubRowUnchanged(subModel, relation, id, subId, expectedEtag);
+        }
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, Object> row = normalize(subModel, data, false, subColumns);
+        // 外键列不接受客户端改写：子行归属由路径上的主行 id 绑定
+        row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
+        if (row.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
+        }
+        requireUniqueValues(subModel, row, subId);
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subId);
+        params.put("fkValue", id);
+        List<String> assignments = new ArrayList<>();
+        row.forEach((column, value) -> assignments.add(column + " = " + bind("p" + params.size(), value, params)));
+        if (subColumns.containsKey("UPDATED_BY")) {
+            assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+        }
+        if (subColumns.containsKey("UPDATED_AT")) {
+            assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+        }
+        // 归属防线：WHERE 同时带外键条件，跨主行的子行 id 命中 0 行按不存在处理
+        if (dynamicTableMapper.updateDynamic(
+                        subModel.tableName(), String.join(", ", assignments), subRowScope(subModel, relation), params)
+                == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteSubRow(FormModel model, String id, String subFormKey, String subId) {
+        FormRelation relation = requireRelation(model, subFormKey);
+        FormModel subModel = requireSubModel(model, relation);
+        getById(model, id);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subId);
+        params.put("fkValue", id);
+        String scope = subRowScope(subModel, relation);
+        if (StringUtils.hasText(subModel.logicDeleteColumn())) {
+            List<String> assignments = new ArrayList<>();
+            assignments.add(subModel.logicDeleteColumn() + " = 1");
+            if (subColumns.containsKey("UPDATED_BY")) {
+                assignments.add("UPDATED_BY = " + bind("p" + params.size(), AuthUtils.getSafeUsername(), params));
+            }
+            if (subColumns.containsKey("UPDATED_AT")) {
+                assignments.add("UPDATED_AT = " + bind("p" + params.size(), LocalDateTime.now(), params));
+            }
+            if (dynamicTableMapper.updateDynamic(subModel.tableName(), String.join(", ", assignments), scope, params)
+                    == 0) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+            }
+            return;
+        }
+        if (dynamicTableMapper.deleteById(subModel.tableName(), scope, params) == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
+    }
+
+    /** 台账式子行的作用域条件：有效行且挂在路径主行之下（外键由服务端绑定，不信任客户端） */
+    private String subRowScope(FormModel subModel, FormRelation relation) {
+        return activeRows(subModel) + " AND " + relation.foreignKey() + " = #{params.fkValue}";
+    }
+
+    /** 子行乐观锁：行锁预读（带归属条件）后比对指纹，口径与台账式分页下发一致 */
+    private void requireSubRowUnchanged(
+            FormModel subModel, FormRelation relation, String mainId, String subId, String expectedEtag) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", subId);
+        params.put("fkValue", mainId);
+        Map<String, Object> raw = dynamicTableMapper.selectForUpdate(
+                subModel.tableName(),
+                String.join(", ", selectColumns(subModel)),
+                subRowScope(subModel, relation),
+                params);
+        if (raw == null) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+        }
+        if (!etagOf(project(subModel, raw)).equals(expectedEtag)) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_CONFLICT);
+        }
     }
 
     /**

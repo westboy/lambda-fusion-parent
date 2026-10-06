@@ -84,7 +84,7 @@ public class FormDataController {
 
     @PostMapping("{formKey}/{id}/subs/{subFormKey}")
     @FormPermission(FormAction.ADD)
-    @Operation(summary = "台账式子表新增（外键由服务端绑定，并校验子表单新增权限）")
+    @Operation(summary = "台账式子表新增（外键由服务端绑定，写权限并入主表）")
     @OperationLog(module = "动态表单", value = "新增子表数据")
     public void subRowCreate(
             @PathVariable String formKey,
@@ -92,6 +92,31 @@ public class FormDataController {
             @PathVariable String subFormKey,
             @RequestBody Map<String, Object> data) {
         formRuntimeService.createSubRow(formKey, id, subFormKey, data);
+    }
+
+    @PutMapping("{formKey}/{id}/subs/{subFormKey}/{subId}")
+    @FormPermission(FormAction.EDIT)
+    @Operation(summary = "台账式子表编辑（归属由路径主行 id 绑定，可选 __etag 乐观锁）")
+    @OperationLog(module = "动态表单", value = "编辑子表数据")
+    public void subRowUpdate(
+            @PathVariable String formKey,
+            @PathVariable String id,
+            @PathVariable String subFormKey,
+            @PathVariable String subId,
+            @RequestBody Map<String, Object> data) {
+        formRuntimeService.updateSubRow(formKey, id, subFormKey, subId, data);
+    }
+
+    @DeleteMapping("{formKey}/{id}/subs/{subFormKey}/{subId}")
+    @FormPermission(FormAction.DELETE)
+    @Operation(summary = "台账式子表删除（归属由路径主行 id 绑定）")
+    @OperationLog(module = "动态表单", value = "删除子表数据")
+    public void subRowDelete(
+            @PathVariable String formKey,
+            @PathVariable String id,
+            @PathVariable String subFormKey,
+            @PathVariable String subId) {
+        formRuntimeService.deleteSubRow(formKey, id, subFormKey, subId);
     }
 
     @PostMapping("{formKey}")

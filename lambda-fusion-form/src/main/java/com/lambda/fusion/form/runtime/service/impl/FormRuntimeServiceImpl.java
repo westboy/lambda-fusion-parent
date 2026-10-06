@@ -80,6 +80,16 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     }
 
     @Override
+    public void updateSubRow(String formKey, String id, String subFormKey, String subId, Map<String, Object> data) {
+        dynamicDataService.updateSubRow(modelProvider.require(formKey), id, subFormKey, subId, data);
+    }
+
+    @Override
+    public void deleteSubRow(String formKey, String id, String subFormKey, String subId) {
+        dynamicDataService.deleteSubRow(modelProvider.require(formKey), id, subFormKey, subId);
+    }
+
+    @Override
     public Map<String, Object> getById(String formKey, String id) {
         return dynamicDataService.getById(modelProvider.require(formKey), id);
     }
