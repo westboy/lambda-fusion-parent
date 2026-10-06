@@ -15,8 +15,9 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 子表列表呈现配置（主从关系上的 JSON 文本）的键白名单、值域与解析校验
  *
- * <p>结构为 {@code {columns:[{field,width}]}}，field 为子表单字段标识，未配置时列取子表单全量可见字段。
- * 列归属（field 须为子表单已映射字段）由保存期对照子表单字段校验，编译期在此再拦截一道防快照篡改。
+ * <p>结构为 {@code {columns:[{field,width,label,required,readonly,defaultValue}]}}，field 为子表单字段标识，
+ * 未配置时列取子表单全量可见字段。label/required/readonly/defaultValue 为**主从场景覆盖**（仅本关系生效，
+ * 不改子表单自身定义）。列归属（field 须为子表单已映射字段）由保存期对照子表单字段校验，编译期在此再拦截一道防快照篡改。
  *
  * @author Zx
  */
@@ -24,7 +25,8 @@ public final class SubTableConfigs {
 
     public static final Set<String> ROOT_KEYS = Set.of("columns");
 
-    public static final Set<String> COLUMN_KEYS = Set.of("field", "width");
+    public static final Set<String> COLUMN_KEYS =
+            Set.of("field", "width", "label", "required", "readonly", "defaultValue");
 
     private SubTableConfigs() {}
 
@@ -92,9 +94,35 @@ public final class SubTableConfigs {
                                     + " 的整数");
                 }
             }
+            validateOverride(column, "label", 128);
+            validateOverride(column, "defaultValue", 512);
+            validateBoolean(column, "required");
+            validateBoolean(column, "readonly");
             fields.add(field);
         }
         return fields;
+    }
+
+    /** 文本覆盖键的类型与长度校验 */
+    private static void validateOverride(JsonNode column, String key, int maxLength) {
+        JsonNode value = column.get(key);
+        if (value == null || value.isNull()) {
+            return;
+        }
+        if (!value.isTextual() || value.textValue().length() > maxLength) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER,
+                    "subTableConfig.columns." + key + " 必须是不超过 " + maxLength + " 字符的文本");
+        }
+    }
+
+    /** 布尔覆盖键的类型校验 */
+    private static void validateBoolean(JsonNode column, String key) {
+        JsonNode value = column.get(key);
+        if (value != null && !value.isNull() && !value.isBoolean()) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "subTableConfig.columns." + key + " 必须是布尔值");
+        }
     }
 
     private static String textValue(JsonNode node) {

@@ -61,6 +61,29 @@ class SubTableConfigsTest {
     }
 
     @Test
+    void acceptsOverrideKeysAndRejectsBadTypes() {
+        // 场景覆盖键（label/required/readonly/defaultValue）合法放行
+        assertThat(
+                        SubTableConfigs.columnFields(
+                                objectMapper,
+                                "{\"columns\":[{\"field\":\"reason\",\"label\":\"请假事由\",\"required\":true,\"readonly\":false,\"defaultValue\":\"年假\",\"width\":200}]}"))
+                .containsExactly("reason");
+        // 类型非法拦截
+        assertDetail(
+                () -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"columns\":[{\"field\":\"reason\",\"required\":\"yes\"}]}"),
+                "columns.required 必须是布尔值");
+        assertDetail(
+                () -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"columns\":[{\"field\":\"reason\",\"readonly\":1}]}"),
+                "columns.readonly 必须是布尔值");
+        assertDetail(
+                () -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"columns\":[{\"field\":\"reason\",\"label\":123}]}"),
+                "columns.label 必须是不超过 128 字符的文本");
+    }
+
+    @Test
     void rejectsInvalidFieldAndDuplicate() {
         assertDetail(() -> SubTableConfigs.columnFields(objectMapper, "{\"columns\":[{\"width\":10}]}"), "field 非法");
         assertDetail(
