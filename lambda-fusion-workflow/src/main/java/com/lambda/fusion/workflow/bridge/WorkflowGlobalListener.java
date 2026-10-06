@@ -55,6 +55,7 @@ public class WorkflowGlobalListener implements GlobalListener {
                 instance.getBusinessId(),
                 task == null ? null : task.getId(),
                 instance.getFlowStatus(),
+                instance.getExt(),
                 instance.getTenantId(),
                 instance.getNodeCode(),
                 System.currentTimeMillis());

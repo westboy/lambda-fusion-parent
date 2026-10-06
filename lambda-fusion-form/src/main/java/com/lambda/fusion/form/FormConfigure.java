@@ -8,12 +8,17 @@ import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
+import com.lambda.fusion.form.runtime.integration.DynamicFormBusinessProvider;
+import com.lambda.fusion.form.runtime.integration.DynamicFormFlowStatusListener;
+import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
+import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
 import com.lambda.fusion.upload.service.AttachmentService;
 import com.lambda.fusion.workflow.integration.ProcessFormSource;
+import com.lambda.fusion.workflow.integration.WorkflowBusinessProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
@@ -52,13 +57,25 @@ public class FormConfigure {
         }
     }
 
-    /** 流程表单数据源（workflow 模块在场时装配）：已发布流程表单 → warm-flow 设计器下拉与发布校验 */
+    /** 流程集成（workflow 模块在场时装配）：设计器直连数据源 + 待办标题解析 + 流程状态回写 */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(ProcessFormSource.class)
     static class WorkflowIntegration {
         @Bean
         ProcessFormSource processFormSource(FormDefMapper forms) {
             return new WorkflowProcessFormSource(forms);
+        }
+
+        @Bean
+        WorkflowBusinessProvider dynamicFormBusinessProvider(
+                FormDefMapper forms, FormModelProvider modelProvider, DynamicDataService dynamicDataService) {
+            return new DynamicFormBusinessProvider(forms, modelProvider, dynamicDataService);
+        }
+
+        @Bean
+        DynamicFormFlowStatusListener dynamicFormFlowStatusListener(
+                FormDefMapper forms, FormModelProvider modelProvider, DynamicTableMapper dynamicTableMapper) {
+            return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper);
         }
     }
 
