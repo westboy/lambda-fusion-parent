@@ -262,4 +262,26 @@
         ]]></sql>
     </changeSet>
 
+    <!-- 请假演示退役（动态表单审批链路已承接演示职责）：结构与演示权限资源清理。
+         历史运行数据（la_leave 行、flow_* 实例与定义）不属于结构变更，由运维按需清理。
+         已执行过的 202609240001/2/3 三个 changeSet 依契约保留不删。 -->
+    <changeSet id="lambda-fusion-startup-202610060004" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_leave"/>
+        </preConditions>
+        <dropTable tableName="la_leave"/>
+    </changeSet>
+
+    <changeSet id="lambda-fusion-startup-202610060005" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_resources"/>
+        </preConditions>
+        <sql><![CDATA[
+            delete from la_role_resources
+            where RESOURCE_ID in ('LvMenu0001', 'LvLstL001', 'LvLstA001', 'LvLstS001', 'LvLstD001');
+            delete from la_resources
+            where ID in ('LvMenu0001', 'LvLstL001', 'LvLstA001', 'LvLstS001', 'LvLstD001');
+        ]]></sql>
+    </changeSet>
+
 </databaseChangeLog>

@@ -546,15 +546,15 @@ TREE 类型运行页为左树右表布局（2026-10-03 交付；**树来源三�
 
 部署需执行新增菜单绑定 changeSet `lambda-fusion-form-202610010001` 与资源树锁 changeSet `lambda-authority-202610010002`。表单模块对 authority 和 permission-api 均为可选依赖；缺少本地菜单服务时挂载能力明确不可用。动态接口目录目前限同应用、当前租户请求；跨服务权限服务尚需后续实现携带租户边界的动态目录同步，不能将它当作现有静态编译元数据直接全局上报。
 
-## 11. warm-flow 集成（P2）
+## 11. warm-flow 集成（P2，2026-10-06 已交付）
 
-复用五步范式（`workflow.md` §10.2），由本模块一次性通用实现：
+复用五步范式（`workflow.md` §10.2），由本模块一次性通用实现（**全部已落地**）：
 
-1. 动态表自持业务事实，`flow_status`/`flow_instance_id` 两列为挂流程目标表的必备列（§5.5 发布校验）；
-2. 挂流程的表单新增后"提交"动作调 `instanceService.start(businessId=记录id, bizType="form:{formKey}", FlowParams.ext 同约定)`；
-3. `FormBusinessProvider implements WorkflowBusinessProvider`：按 `title_template` + 记录字段渲染标题/链接；
-4. `FormFlowStatusUpdater` 以 `@EventListener` 消费 `WorkflowFlowEvent` 回写 `flow_status`（谓词分组同 `LeaveFlowStatusUpdater`）；
-5. 补齐 `la_workflow_form_path` 消费端：办理端按 `form_path` 跳转该表单的运行时页（`/form/runtime/{formKey}/`，带 `id` 与 `mode=approval`），动态表单即审批办理页——该消费逻辑在 workflow 模块当前未实现，本特性落地后闭环。
+1. 动态表自持业务事实：挂流程的目标表约定含 `STATUS` 列（0 草稿 1 审批中 2 通过 3 驳回，无该列不启用回写）；
+2. **提交编排**：发起中心卡片 → `POST /v1/form/{formKey}/submit` 同一事务内业务行落库 + `instanceService.start`（`businessId`=行 id、`bizType`=formKey、`variables`=行数据供条件分支，`FormRuntimeServiceImpl.submit`）；
+3. **待办标题**：`DynamicFormBusinessProvider implements WorkflowBusinessProvider` 按 `TITLE_TEMPLATE`（`{字段}` 占位）渲染标题，未配置退化为表单名；
+4. **状态回写**：`DynamicFormFlowStatusListener` 以 `@EventListener` 消费 `WorkflowFlowEvent`（事件已补 `bizType`=ext），按谓词分组回写 STATUS 列；回写失败降级为告警放行，不阻断审批；
+5. **办理页**：办理/详情抽屉的"业务单据"面板按 `instance.bizType`（=formKey）拉 schema 与行数据只读渲染（`process-form-panel.vue`），非动态表单 bizType 自动隐藏。
 
 幂等靠业务状态机（同 workflow.md §10.2 第⑤步）：`flow_status` 草稿/审批中/通过的迁移校验拒绝重复提交；审批中/已通过的记录由状态机拦截编辑与删除。m1 的另一范式是业务表不加流程列、用独立关系表关联流程实例——本设计不采用，保持与 workflow 模块既有业务表范式一致。
 
