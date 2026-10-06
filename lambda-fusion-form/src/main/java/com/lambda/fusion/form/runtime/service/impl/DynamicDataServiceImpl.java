@@ -70,6 +70,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     /** 行指纹在提交体中的保留键（下划线开头，不可能是合法字段标识） */
     private static final String ETAG_KEY = "__etag";
 
+    /** 上级节点展示名随行下发的保留键（SELF/FORM 树；双下划线前缀，字段命名规则不会撞，同 __childCount） */
+    private static final String TREE_PARENT_LABEL_KEY = "__treeParentLabel";
+
     private final DynamicTableMapper dynamicTableMapper;
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
@@ -109,6 +112,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         List<Map<String, Object>> projected =
                 records.stream().map(row -> project(model, row)).toList();
         attachSubRows(model, projected);
+        attachTreeParentLabels(model, projected);
         projected.forEach(row -> row.put(ETAG_KEY, etagOf(row)));
         return FormDataPageView.builder()
                 .pageNum(pageNum)
@@ -143,6 +147,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         List<FormField> columns = model.fields().stream()
                 .filter(field -> field.subFormKey() == null && field.list().show())
                 .toList();
+        String parentFieldName = treeParentFieldName(model);
         writer.write('﻿');
         writer.write(columns.stream().map(field -> csvCell(field.label())).collect(Collectors.joining(",")));
         writer.write("\n");
@@ -154,10 +159,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             if (records.isEmpty()) {
                 break;
             }
-            for (Map<String, Object> raw : records) {
-                Map<String, Object> row = project(model, raw);
+            List<Map<String, Object>> rows =
+                    records.stream().map(row -> project(model, row)).toList();
+            attachTreeParentLabels(model, rows);
+            for (Map<String, Object> row : rows) {
                 writer.write(columns.stream()
-                        .map(field -> csvCell(formatExportValue(field, row.get(field.name()))))
+                        .map(field -> csvCell(formatExportValue(field, exportCellValue(parentFieldName, field, row))))
                         .collect(Collectors.joining(",")));
                 writer.write("\n");
             }
@@ -167,6 +174,17 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             }
         }
         writer.flush();
+    }
+
+    /** 导出取值：树父字段优先用随行解析的上级节点名（未命中回退原值），其余字段取原值 */
+    private Object exportCellValue(String parentFieldName, FormField field, Map<String, Object> row) {
+        if (parentFieldName != null && parentFieldName.equals(field.name())) {
+            Object label = row.get(TREE_PARENT_LABEL_KEY);
+            if (label != null) {
+                return label;
+            }
+        }
+        return row.get(field.name());
     }
 
     /** 导出值格式化：布尔转是/否、日期时间友好格式，其余原样 */
@@ -232,6 +250,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         Map<String, Object> result = project(model, row);
         attachSubRows(model, List.of(result));
+        attachTreeParentLabels(model, List.of(result));
         result.put(ETAG_KEY, etagOf(result));
         return result;
     }
@@ -245,6 +264,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
         requireUniqueValues(model, row, null);
+        // SELF 自关联树：上级引用须存在（空=根节点）；新增不可能成环（新 id 尚无人引用）
+        requireValidTreeParent(model, null, row);
         List<String> columns = new ArrayList<>();
         List<String> values = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
@@ -312,6 +333,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
         }
         requireUniqueValues(model, row, id);
+        // SELF 自关联树：提交了上级字段时校验存在性，且不得指向自身或子孙（防环）
+        requireValidTreeParent(model, id, row);
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
@@ -351,6 +374,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     public void delete(FormModel model, String id) {
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         getById(model, id);
+        // SELF 自关联树：有未删除下级即拒绝（父删后子行在树上不可达，成为幽灵数据）
+        requireNoChildNodes(model, id);
         // 主从级联：CASCADE_DELETE 先清理子行（尊重子表逻辑删除语义），FORBID_DELETE 有子行即拒绝
         for (FormRelation relation : model.relations()) {
             FormModel subModel = requireSubModel(relation);
@@ -988,9 +1013,11 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> sorted = new TreeMap<>();
             map.forEach((key, item) -> {
-                if (!ETAG_KEY.equals(key)) {
-                    sorted.put(String.valueOf(key), canonicalize(item));
+                // 保留键不参与指纹：__etag 本身、随行下发的展示辅助键（非落库数据，读写路径口径须一致）
+                if (ETAG_KEY.equals(key) || TREE_PARENT_LABEL_KEY.equals(key)) {
+                    return;
                 }
+                sorted.put(String.valueOf(key), canonicalize(item));
             });
             return sorted;
         }
@@ -1188,6 +1215,125 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         FormErrorCode.FORM_TABLE_INVALID,
                         "树节点字段未映射：" + model.tree().nodeIdField()))
                 .column();
+    }
+
+    /** SELF 自关联树：存在未删除下级即拒绝删除（父删后子行在树上不可达，成为幽灵数据） */
+    private void requireNoChildNodes(FormModel model, String id) {
+        TreeConfig tree = model.tree();
+        if (tree == null || !tree.selfRelation()) {
+            return;
+        }
+        Map<String, Object> params = new HashMap<>();
+        String where = activeRows(model) + " AND " + tree.parentColumn() + " = " + bind(nextKey(params), id, params);
+        if (dynamicTableMapper.countBy(model.tableName(), where, params) > 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_TREE_DELETE_FORBIDDEN);
+        }
+    }
+
+    /**
+     * SELF 自关联树：校验提交的上级引用。空串归一为 NULL（空=根节点，避免空串悬挂在树上不可达）；
+     * 非空时上级须存在；更新时（selfId 非空）上级不得是自身或自身子孙（子孙集解析沿用既有上限，
+     * 超限按 FORM_TREE_DESCENDANT_LIMIT 拒绝）。create 传 selfId=null：新 id 尚无人引用，只校验存在性。
+     */
+    private void requireValidTreeParent(FormModel model, String selfId, Map<String, Object> row) {
+        TreeConfig tree = model.tree();
+        if (tree == null || !tree.selfRelation() || !row.containsKey(tree.parentColumn())) {
+            return;
+        }
+        Object parent = row.get(tree.parentColumn());
+        if (parent == null) {
+            return;
+        }
+        String parentId = String.valueOf(parent).trim();
+        if (parentId.isEmpty()) {
+            row.put(tree.parentColumn(), null);
+            return;
+        }
+        Map<String, Object> params = new HashMap<>();
+        String where =
+                activeRows(model) + " AND " + FormConstants.COLUMN_ID + " = " + bind(nextKey(params), parentId, params);
+        if (dynamicTableMapper.countBy(model.tableName(), where, params) == 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_TREE_PARENT_NOT_FOUND);
+        }
+        if (selfId != null && resolveSubtreeIds(model, selfId, new HashMap<>()).contains(parentId)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TREE_PARENT_CYCLE);
+        }
+    }
+
+    /** SELF/FORM 树的上级字段标识（DICT 值是字典代码、无上级行概念，返回 null）：SELF 取父列映射字段，FORM 取节点字段 */
+    private String treeParentFieldName(FormModel model) {
+        TreeConfig tree = model.tree();
+        if (tree == null || tree.dictSource()) {
+            return null;
+        }
+        if (tree.selfRelation()) {
+            return model.fields().stream()
+                    .filter(field ->
+                            field.subFormKey() == null && field.column().equalsIgnoreCase(tree.parentColumn()))
+                    .findFirst()
+                    .map(FormField::name)
+                    .orElse(null);
+        }
+        return tree.nodeIdField();
+    }
+
+    /**
+     * 为行附加上级节点展示名（TREE_PARENT_LABEL_KEY）：SELF 取本表节点展示列，FORM 取关联树表单的
+     * 节点展示列；未命中的上级（无行/已删）不覆盖。供平铺列表、详情与导出统一「上级=名称」的展示口径。
+     */
+    private void attachTreeParentLabels(FormModel model, List<Map<String, Object>> rows) {
+        TreeConfig tree = model.tree();
+        if (tree == null || tree.dictSource() || rows.isEmpty()) {
+            return;
+        }
+        String parentFieldName = treeParentFieldName(model);
+        if (parentFieldName == null) {
+            return;
+        }
+        Set<String> parentValues = rows.stream()
+                .map(row -> row.get(parentFieldName))
+                .filter(value -> value != null && StringUtils.hasText(value.toString()))
+                .map(value -> value.toString())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (parentValues.isEmpty()) {
+            return;
+        }
+        final FormModel labelModel;
+        final String labelColumn;
+        if (tree.formSource()) {
+            labelModel = modelProvider.require(tree.treeFormKey());
+            if (labelModel.tree() == null || !labelModel.tree().selfRelation()) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "关联树表单须为自关联树类型：" + tree.treeFormKey());
+            }
+            labelColumn = labelModel.tree().nodeColumn();
+        } else {
+            labelModel = model;
+            labelColumn = tree.nodeColumn();
+        }
+        if (!StringUtils.hasText(labelColumn)) {
+            return;
+        }
+        Map<String, Object> params = new HashMap<>();
+        String inSql = parentValues.stream()
+                .map(value -> bind(nextKey(params), value, params))
+                .collect(Collectors.joining(", "));
+        Map<String, String> labels = new HashMap<>();
+        dynamicTableMapper
+                .selectList(
+                        labelModel.tableName(),
+                        FormConstants.COLUMN_ID + ", " + labelColumn,
+                        activeRows(labelModel) + " AND " + FormConstants.COLUMN_ID + " IN (" + inSql + ")",
+                        null,
+                        params)
+                .forEach(row -> {
+                    Object id = columnValue(row, FormConstants.COLUMN_ID);
+                    Object label = columnValue(row, labelColumn);
+                    if (id != null && label != null) {
+                        labels.put(id.toString(), String.valueOf(label));
+                    }
+                });
+        rows.forEach(row -> row.put(TREE_PARENT_LABEL_KEY, labels.get(String.valueOf(row.get(parentFieldName)))));
     }
 
     /** 在树模型（自关联）上解析「节点 + 全部子孙」的主键集合，逐层参数化 in 查询，超限即拒绝 */

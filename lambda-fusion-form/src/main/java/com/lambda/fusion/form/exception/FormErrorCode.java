@@ -116,6 +116,21 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_EXPORT_LIMIT(18134, "导出数据量超过上限（{0} 行）"),
 
+    /**
+     * 存在下级节点，禁止删除
+     */
+    FORM_TREE_DELETE_FORBIDDEN(18135, "存在下级节点，禁止删除"),
+
+    /**
+     * 上级节点不存在或已删除
+     */
+    FORM_TREE_PARENT_NOT_FOUND(18136, "上级节点不存在或已删除"),
+
+    /**
+     * 上级节点不能是自身或自身的下级节点
+     */
+    FORM_TREE_PARENT_CYCLE(18137, "上级节点不能是自身或自身的下级节点"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");
