@@ -2,9 +2,7 @@ package com.lambda.fusion.form.runtime.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -15,7 +13,6 @@ import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerIntercept
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.cloud.mybatis.tenant.MissingTenantStrategy;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
-import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
@@ -84,7 +81,7 @@ class DynamicDataServiceJdbcTest {
                 """
                 CREATE TABLE LA_TEST_SUB (
                     ID VARCHAR(32) PRIMARY KEY, ITEM_NAME VARCHAR(64) NOT NULL,
-                    LEAVE_ID VARCHAR(32), TENANT_ID VARCHAR(32),
+                    LEAVE_ID VARCHAR(32), TENANT_ID VARCHAR(32), DELETED INT NOT NULL DEFAULT 0,
                     CREATED_BY VARCHAR(64), CREATED_AT TIMESTAMP, UPDATED_BY VARCHAR(64), UPDATED_AT TIMESTAMP)
                 """);
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -115,6 +112,7 @@ class DynamicDataServiceJdbcTest {
         mybatisProperties.getTenant().setEnabled(true);
         mybatisProperties.getTenant().setIgnoreTables(Set.of("la_test_tiny"));
         formProperties = new FormProperties();
+        formProperties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY", "LA_TEST_SUB"));
         formProperties.setMaxTreeDescendants(3);
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
@@ -561,15 +559,18 @@ class DynamicDataServiceJdbcTest {
 
         // 差量更新：显式携带键才比对子行集合（无 id 的提交行按新增处理，未提交的既有行删除）
         service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of(Map.of("itemName", "B1"))));
-        assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=?", String.class, id))
+        assertThat(jdbc.queryForObject(
+                        "SELECT ITEM_NAME FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", String.class, id))
                 .isEqualTo("B1");
         service.update(master, id, Map.of("personName", "Alice3"));
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", Integer.class, id))
                 .isEqualTo(1);
 
-        // CASCADE_DELETE：删除主行级联清理子行
+        // CASCADE_DELETE：删除主行级联清理子行（子表有逻辑删除列：置标记，活跃行清零）
         service.delete(master, id);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", Integer.class, id))
                 .isEqualTo(0);
     }
 
@@ -639,7 +640,8 @@ class DynamicDataServiceJdbcTest {
         // 既有子行 id 稳定：更新不换新 id；未提交的既有行被删除；新增行获得新 id
         assertThat(jdbc.queryForObject("SELECT ITEM_NAME FROM LA_TEST_SUB WHERE ID=?", String.class, firstSubId))
                 .isEqualTo("A1-updated");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE ID=?", Integer.class, secondSubId))
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE ID=? AND DELETED=0", Integer.class, secondSubId))
                 .isEqualTo(0);
         List<?> after = (List<?>) service.getById(master, id).get("leave_item");
         assertThat(after).hasSize(2);
@@ -650,7 +652,8 @@ class DynamicDataServiceJdbcTest {
         clearWithEtag.put("leave_item", List.of());
         clearWithEtag.put("__etag", service.getById(master, id).get("__etag"));
         service.update(master, id, clearWithEtag);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", Integer.class, id))
                 .isEqualTo(0);
     }
 
@@ -707,15 +710,9 @@ class DynamicDataServiceJdbcTest {
         assertThatThrownBy(() -> service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of())))
                 .isInstanceOf(FormBusinessException.class);
 
-        // 独立新增：外键由服务端绑定（提交数据不携带外键），并显式校验子表数据写权限
-        try (var permissions = mockStatic(AuthUtils.class)) {
-            service.createSubRow(master, id, "leave_item", Map.of("itemName", "L1"));
-            permissions.verify(() -> AuthUtils.checkPermission("form:leave_item:add"));
-            service.createSubRow(master, id, "leave_item", Map.of("itemName", "L2"));
-            permissions.when(() -> AuthUtils.checkPermission(anyString())).thenThrow(new SecurityException("denied"));
-            assertThatThrownBy(() -> service.createSubRow(master, id, "leave_item", Map.of("itemName", "L3")))
-                    .isInstanceOf(SecurityException.class);
-        }
+        // 独立新增：外键由服务端绑定（提交数据不携带外键）；子表内嵌后写权限并入主表（端点已校验主表 ADD）
+        service.createSubRow(master, id, "leave_item", Map.of("itemName", "L1"));
+        service.createSubRow(master, id, "leave_item", Map.of("itemName", "L2"));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
                 .isEqualTo(2);
 
@@ -728,20 +725,38 @@ class DynamicDataServiceJdbcTest {
         assertThatThrownBy(() -> service.pageSubRows(master, id, "other_item", 1, 10))
                 .isInstanceOf(FormBusinessException.class);
 
-        // 级联删除不受呈现方式影响
+        // 级联删除不受呈现方式影响（子表有逻辑删除列：置标记，活跃行清零）
         service.delete(master, id);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", Integer.class, id))
                 .isEqualTo(0);
     }
 
     @Test
-    void masterSubCreateRejectsWhenSubFormUnavailable() {
-        when(modelProvider.require("leave_item"))
-                .thenThrow(new FormBusinessException(FormErrorCode.FORM_NOT_PUBLISHED, "leave_item"));
-        FormModel master = masterSubModel("CASCADE_DELETE");
+    void masterSubCreateRejectsWhenSubTableNotAllowed() {
+        // 子表直连物理表：目标子表不在动态读写允许清单时拒绝（发布快照篡改的兜底）
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_master");
+        snapshot.setFormName("主从演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                subField("itemName", "ITEM_NAME", "STRING", false, "leave_item"),
+                subField("leaveId", "LEAVE_ID", "STRING", true, "leave_item")));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_GHOST_SUB");
+        relation.setForeignKey("LEAVE_ID");
+        snapshot.setRelations(List.of(relation));
+        FormModel master = compile(snapshot);
         assertThatThrownBy(() -> service.create(
                         master, Map.of("personName", "Carol", "leave_item", List.of(Map.of("itemName", "D1")))))
-                .isInstanceOf(FormBusinessException.class);
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TABLE_INVALID.getCode()));
     }
 
     @Test
@@ -787,14 +802,20 @@ class DynamicDataServiceJdbcTest {
         snapshot.setFormType("MASTER_SUB");
         snapshot.setTableName("LA_TEST_FORM");
         snapshot.setLogicDeleteColumn("DELETED");
-        FormDefSnapshot.Field itemName = field("itemName", "ITEM_NAME", "STRING", true);
+        FormDefSnapshot.Field itemName = field("itemName", "ITEM_NAME", "STRING", false);
         itemName.setSubFormKey("leave_item");
+        // 外键列须映射为该关系的落库从字段（引擎回填，表单上默认不展示）
+        FormDefSnapshot.Field leaveId = field("leaveId", "LEAVE_ID", "STRING", true);
+        leaveId.setSubFormKey("leave_item");
+        leaveId.getForm().setShow(Boolean.FALSE);
         snapshot.setFields(List.of(
                 field("personName", "PERSON_NAME", "STRING", false),
                 field("deleted", "DELETED", "INT", false),
-                itemName));
+                itemName,
+                leaveId));
         var relation = new FormDefSnapshot.Relation();
         relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_TEST_SUB");
         relation.setForeignKey("LEAVE_ID");
         relation.setCascadeStrategy("CASCADE_DELETE");
         relation.setMode(FormConstants.RELATION_MODE_FLAT);
@@ -879,16 +900,29 @@ class DynamicDataServiceJdbcTest {
         snapshot.setFormType("MASTER_SUB");
         snapshot.setTableName("LA_TEST_FORM");
         snapshot.setLogicDeleteColumn("DELETED");
+        // 子表字段内嵌主清单（subFormKey=关系标识归属；外键列须有落库映射）
         snapshot.setFields(List.of(
-                field("personName", "PERSON_NAME", "STRING", false), field("deleted", "DELETED", "INT", false)));
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                subField("itemName", "ITEM_NAME", "STRING", false, "leave_item"),
+                subField("leaveId", "LEAVE_ID", "STRING", true, "leave_item")));
         var relation = new FormDefSnapshot.Relation();
         relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_TEST_SUB");
         relation.setForeignKey("LEAVE_ID");
         relation.setCascadeStrategy(cascadeStrategy);
         relation.setMode(mode);
         relation.setSubTableConfig(subTableConfig);
         snapshot.setRelations(List.of(relation));
         return compile(snapshot);
+    }
+
+    /** 从表字段（归属标记=关系标识） */
+    private static FormDefSnapshot.Field subField(
+            String name, String column, String type, boolean nullable, String subFormKey) {
+        FormDefSnapshot.Field field = field(name, column, type, nullable);
+        field.setSubFormKey(subFormKey);
+        return field;
     }
 
     /** 主从演示子表模型：LA_TEST_SUB（单表类型，LEAVE_ID 外键已映射、可空由引擎回填） */

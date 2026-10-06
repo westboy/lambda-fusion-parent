@@ -324,95 +324,83 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
-    void saveRejectsRelationToMissingSubForm() {
+    void saveRejectsRelationToUnopenedSubTable() {
+        // 子表直连物理表：不在动态读写允许清单即拒绝
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        command.setRelations(List.of(relation("missing_sub", "AREA_ID")));
+        FormRelationItem relation = relation("sub_area", "AREA_ID");
+        relation.setSubTable("LA_NOT_ALLOWED");
+        command.setRelations(List.of(relation));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表单不存在"));
+                .satisfies(error -> assertRelationDetail(error, "子表未开放动态读写"));
         assertThat(count("la_form_def")).isZero();
     }
 
     @Test
-    void saveRejectsRelationToNonSingleSubForm() {
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("tree_sub");
-        sub.setFormType("TREE");
-        sub.setTreeConfig("{\"sourceType\":\"SELF\",\"parentColumn\":\"PERSON_NAME\",\"nodeColumn\":\"PERSON_NAME\"}");
-        design.save(sub);
+    void saveRejectsRelationToMissingSubTable() {
+        // 在允许清单但物理表不存在（LA_GHOST_SUB 未建表）：拒绝
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        command.setRelations(List.of(relation("tree_sub", "PERSON_NAME")));
+        FormRelationItem relation = relation("sub_area", "AREA_ID");
+        relation.setSubTable("LA_GHOST_SUB");
+        command.setRelations(List.of(relation));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表单须为单表类型"));
+                .satisfies(error -> assertRelationDetail(error, "不存在目标表：LA_GHOST_SUB"));
+        assertThat(count("la_form_def")).isZero();
     }
 
     @Test
-    void saveRejectsForeignKeyNotMappedInSubForm() {
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("sub_form");
-        design.save(sub);
+    void saveRejectsForeignKeyNotMappedInRelationFields() {
+        // 外键列须是该关系从表字段中落库字段的映射列
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        command.setRelations(List.of(relation("sub_form", "MISSING_ID")));
+        addSubFields(command, "sub_area");
+        command.setRelations(List.of(relation("sub_area", "MISSING_ID")));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表外键未在子表单映射"));
+                .satisfies(error -> assertRelationDetail(error, "子表外键未在该关系的从表字段中映射"));
     }
 
     @Test
-    void saveRejectsSelfReferencingAndDuplicatedRelations() {
+    void saveRejectsDuplicatedRelations() {
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        command.setRelations(List.of(relation("test_form", "PERSON_NAME")));
+        addSubFields(command, "sub_area");
+        command.setRelations(List.of(relation("sub_area", "LEAVE_ID"), relation("sub_area", "LEAVE_ID")));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表单不能引用自身"));
-
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("sub_form");
-        design.save(sub);
-        FormDefSaveCommand duplicated = command();
-        duplicated.setFormType("MASTER_SUB");
-        duplicated.setRelations(List.of(relation("sub_form", "PERSON_NAME"), relation("sub_form", "PERSON_NAME")));
-        assertThatThrownBy(() -> design.save(duplicated))
-                .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表单关系重复"));
+                .satisfies(error -> assertRelationDetail(error, "子表关系标识重复"));
     }
 
     @Test
-    void masterSubDraftAcceptsRelationMappedBySubFormField() {
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("sub_form");
-        design.save(sub);
-
+    void masterSubDraftAcceptsRelationWithEmbeddedSubFields() {
+        // 从表字段内嵌主清单（归属标记=关系标识），无需再建子表单实体
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
-        relation.setSubTableConfig("{\"columns\":[{\"field\":\"personName\",\"width\":120}]}");
+        addSubFields(command, "sub_area");
+        FormRelationItem relation = relation("sub_area", "LEAVE_ID");
+        relation.setSubTableConfig("{\"columns\":[{\"field\":\"itemName\",\"width\":120}]}");
         command.setRelations(List.of(relation));
         String id = design.save(command);
         assertThat(definitions.selectById(id).getFormType()).isEqualTo("MASTER_SUB");
-        assertThat(count("la_form_def")).isEqualTo(2);
+        assertThat(count("la_form_def")).isEqualTo(1);
         assertThat(count("la_form_relation")).isEqualTo(1);
+        assertThat(count("la_form_field")).isEqualTo(3);
     }
 
     @Test
-    void saveRejectsSubTableColumnNotMappedInSubForm() {
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("sub_form");
-        design.save(sub);
-
+    void saveRejectsSubTableColumnNotMappedInRelationFields() {
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
+        addSubFields(command, "sub_area");
+        FormRelationItem relation = relation("sub_area", "LEAVE_ID");
         relation.setSubTableConfig("{\"columns\":[{\"field\":\"missing\"}]}");
         command.setRelations(List.of(relation));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表列表列未在子表单映射"));
+                .satisfies(error -> assertRelationDetail(error, "子表列表列未在该关系的从表字段中映射"));
     }
 
     @Test
@@ -427,13 +415,10 @@ class FormLifecycleIntegrationTest {
 
     @Test
     void saveRejectsInvalidRelationMode() {
-        FormDefSaveCommand sub = command();
-        sub.setFormKey("sub_form");
-        design.save(sub);
-
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
-        FormRelationItem relation = relation("sub_form", "PERSON_NAME");
+        addSubFields(command, "sub_area");
+        FormRelationItem relation = relation("sub_area", "LEAVE_ID");
         relation.setMode("GRID");
         command.setRelations(List.of(relation));
         assertThatThrownBy(() -> design.save(command))
@@ -449,8 +434,28 @@ class FormLifecycleIntegrationTest {
     private static FormRelationItem relation(String subFormKey, String foreignKey) {
         FormRelationItem item = new FormRelationItem();
         item.setSubFormKey(subFormKey);
+        item.setSubTable("LA_TEST_SUB");
         item.setForeignKey(foreignKey);
         return item;
+    }
+
+    /** 给命令补上该关系的从表字段（itemName 展示用、leaveId 外键落库映射，归属标记=关系标识） */
+    private static void addSubFields(FormDefSaveCommand command, String relationKey) {
+        List<FormFieldItem> fields = new java.util.ArrayList<>(command.getFields());
+        FormFieldItem itemName = new FormFieldItem();
+        itemName.setFieldName("itemName");
+        itemName.setColumnName("ITEM_NAME");
+        itemName.setFieldType("STRING");
+        itemName.setSubFormKey(relationKey);
+        fields.add(itemName);
+        FormFieldItem leaveId = new FormFieldItem();
+        leaveId.setFieldName("leaveId");
+        leaveId.setColumnName("LEAVE_ID");
+        leaveId.setFieldType("STRING");
+        leaveId.setSubFormKey(relationKey);
+        leaveId.setFormConfig("{\"show\":false}");
+        fields.add(leaveId);
+        command.setFields(fields);
     }
 
     @Test
@@ -657,7 +662,7 @@ class FormLifecycleIntegrationTest {
             jdbc.execute(
                     """
                     CREATE TABLE la_form_relation (ID VARCHAR(32) PRIMARY KEY, FORM_ID VARCHAR(32), SUB_FORM_KEY VARCHAR(64),
-                    FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16), RELATION_MODE VARCHAR(16) DEFAULT 'INLINE' NOT NULL, SUB_TABLE_CONFIG VARCHAR(2048)
+                    SUB_TABLE VARCHAR(64), FOREIGN_KEY VARCHAR(64), CASCADE_STRATEGY VARCHAR(16), RELATION_MODE VARCHAR(16) DEFAULT 'INLINE' NOT NULL, SUB_TABLE_CONFIG VARCHAR(2048)
                     """
                             + audit);
             jdbc.execute(
@@ -668,6 +673,9 @@ class FormLifecycleIntegrationTest {
                     """
                             + audit);
             jdbc.execute("CREATE TABLE LA_TEST_BUSINESS (ID VARCHAR(32) PRIMARY KEY, PERSON_NAME VARCHAR(128))");
+            // 主从演示子表（主子表逻辑删除列同名是主子表一致性约定，保存期校验）
+            jdbc.execute("CREATE TABLE LA_TEST_SUB (ID VARCHAR(32) PRIMARY KEY, ITEM_NAME VARCHAR(64) NOT NULL, "
+                    + "LEAVE_ID VARCHAR(32), DELETED INT NOT NULL DEFAULT 0)");
             return source;
         }
 
@@ -679,7 +687,7 @@ class FormLifecycleIntegrationTest {
         @Bean
         FormProperties properties() {
             FormProperties properties = new FormProperties();
-            properties.setAllowedTables(List.of("LA_TEST_BUSINESS"));
+            properties.setAllowedTables(List.of("LA_TEST_BUSINESS", "LA_TEST_SUB", "LA_GHOST_SUB"));
             return properties;
         }
 

@@ -21,11 +21,17 @@ import lombok.EqualsAndHashCode;
 @Schema(description = "主从关系项")
 public class FormRelationItem extends BaseVO<FormRelationEntity> {
 
-    @NotBlank(message = "子表单标识不能为空")
-    @Size(max = 64, message = "子表单标识不能超过 64 字符")
-    @Pattern(regexp = "^[a-z][a-z0-9_]*$", message = "子表单标识只能由小写字母、数字、下划线组成且以字母开头")
-    @Schema(description = "子表单 formKey（同租户内解析）")
+    @NotBlank(message = "关系标识不能为空")
+    @Size(max = 64, message = "关系标识不能超过 64 字符")
+    @Pattern(regexp = "^[a-z][a-z0-9_]*$", message = "关系标识只能由小写字母、数字、下划线组成且以字母开头")
+    @Schema(description = "主表单内的关系标识（子表字段归属标记）")
     private String subFormKey;
+
+    @NotBlank(message = "子表物理表名不能为空")
+    @Size(max = 64, message = "子表物理表名不能超过 64 字符")
+    @Pattern(regexp = "^[A-Za-z][A-Za-z0-9_]*$", message = "子表物理表名只能由字母、数字、下划线组成且以字母开头")
+    @Schema(description = "子表物理表名（直连物理表；允许与主表重名=自关联）")
+    private String subTable;
 
     @NotBlank(message = "子表外键列不能为空")
     @Size(max = 64, message = "外键列不能超过 64 字符")

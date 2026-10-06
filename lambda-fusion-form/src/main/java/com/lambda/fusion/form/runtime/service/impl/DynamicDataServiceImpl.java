@@ -13,7 +13,6 @@ import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
-import com.lambda.fusion.form.runtime.support.FormAction;
 import com.lambda.fusion.form.runtime.support.FormFieldValidator;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
@@ -291,7 +290,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             if (rows.isEmpty()) {
                 continue;
             }
-            FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
+            FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
             Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
             insertSubRows(relation, subModel, subColumns, id, rows);
         }
@@ -363,7 +362,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             if (!data.containsKey(relation.subFormKey())) {
                 continue;
             }
-            FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
+            FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
             Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
             diffSubRows(subModel, relation, subColumns, id, subRows(data, relation), expectedEtag != null);
         }
@@ -379,7 +378,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         requireNoChildNodes(model, id);
         // 主从级联：CASCADE_DELETE 先清理子行（尊重子表逻辑删除语义），FORBID_DELETE 有子行即拒绝
         for (FormRelation relation : model.relations()) {
-            FormModel subModel = requireSubModel(relation);
+            FormModel subModel = requireSubModel(model, relation);
             if (hasChildRows(subModel, relation, id)) {
                 if (FormConstants.CASCADE_DELETE.equals(relation.cascadeStrategy())) {
                     deleteSubRows(subModel, relation, id);
@@ -477,17 +476,61 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
-     * 解析关系子表单模型：须存在、已发布且表在允许清单（require 校验）、外键已映射、自身为单表类型
+     * 从主模型现构子模型：字段集 = 主清单中归属该关系的从表字段，表名直连物理表。
+     * 外键已映射（编译期校验），逻辑删除列沿用主表口径（主子表同名要求由保存期校验拦截）
      */
-    private FormModel requireSubModel(FormRelation relation) {
-        FormModel subModel = modelProvider.require(relation.subFormKey());
-        if (!FormConstants.FORM_TYPE_SINGLE.equals(subModel.formType())) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表单须为单表类型：" + relation.subFormKey());
+    private FormModel requireSubModel(FormModel model, FormRelation relation) {
+        // 子表直连物理表：须在动态读写允许清单内（发布快照被篡改时此处拦截）
+        if (!formProperties.allowsTable(relation.subTable())) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表未开放动态读写：" + relation.subTable());
         }
-        if (subModel.fields().stream().noneMatch(field -> field.column().equals(relation.foreignKey()))) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表外键未映射：" + relation.foreignKey());
-        }
-        return subModel;
+        List<FormField> subFields = new ArrayList<>();
+        model.fields().stream()
+                .filter(field -> relation.subFormKey().equals(field.subFormKey()))
+                // 归属标记只约束主清单的读写路径（主表投影跳过从字段）；现构子模型里它们是主字段，必须清掉
+                .map(field -> new FormField(
+                        field.name(),
+                        field.label(),
+                        field.column(),
+                        field.type(),
+                        field.nullable(),
+                        field.defaultValue(),
+                        field.dictType(),
+                        field.sort(),
+                        field.persisted(),
+                        null,
+                        field.query(),
+                        field.list(),
+                        field.form()))
+                .forEach(subFields::add);
+        // 目标表契约要求主键映射：注入不落库的主键展示字段（与主表清单的主键契约同口径）
+        subFields.add(new FormField(
+                "rowId",
+                "主键",
+                FormConstants.COLUMN_ID,
+                "STRING",
+                true,
+                null,
+                null,
+                0,
+                false,
+                null,
+                new FormModel.QueryConf(false, null, null),
+                new FormModel.ListConf(true, null, null, null, null, false, null, 0),
+                new FormModel.FormConf(true, null, Map.of(), Map.of(), false)));
+        return new FormModel(
+                relation.subFormKey(),
+                relation.subFormKey(),
+                model.version(),
+                FormConstants.FORM_TYPE_SINGLE,
+                relation.subTable(),
+                model.logicDeleteColumn(),
+                model.listConfig(),
+                null,
+                subFields,
+                List.of(),
+                null,
+                null);
     }
 
     /**
@@ -593,7 +636,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (subData.isEmpty()) {
             return;
         }
-        FormModel subModel = requireSubModel(relation);
+        FormModel subModel = requireSubModel(model, relation);
         Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
         List<Map<String, Object>> existing = dynamicTableMapper.selectByFk(
                 subModel.tableName(),
@@ -633,7 +676,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     public PageView<Map<String, Object>> pageSubRows(
             FormModel model, String id, String subFormKey, long pageNum, long pageSize) {
         FormRelation relation = requireRelation(model, subFormKey);
-        FormModel subModel = requireSubModel(relation);
+        FormModel subModel = requireSubModel(model, relation);
         targetTableContract.validateAccess(subModel);
         Map<String, Object> params = new HashMap<>();
         params.put("fkValue", id);
@@ -673,9 +716,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public void createSubRow(FormModel model, String id, String subFormKey, Map<String, Object> data) {
         FormRelation relation = requireRelation(model, subFormKey);
-        FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
-        // 从主表详情入口写子表数据：主表新增权限由端点路径校验，子表数据写权限在此显式校验
-        AuthUtils.checkPermission(FormAction.ADD.permission(subFormKey));
+        FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
+        // 子表内嵌主表单后无独立实体：写权限并入主表（端点已校验主表 ADD），此处不再二次校验
         getById(model, id);
         Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
         insertSubRows(relation, subModel, subColumns, id, List.of(data));
@@ -888,7 +930,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             }
             FormModel subModel;
             try {
-                subModel = requireSubModel(relation);
+                subModel = requireSubModel(model, relation);
             } catch (FormBusinessException error) {
                 log.warn("主从子表单不可用，读取跳过该关系：{} - {}", relation.subFormKey(), error.getMessage());
                 rows.forEach(row -> row.put(relation.subFormKey(), List.of()));

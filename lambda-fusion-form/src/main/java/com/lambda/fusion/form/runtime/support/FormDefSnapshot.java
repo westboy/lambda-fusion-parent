@@ -131,6 +131,9 @@ public class FormDefSnapshot {
     @Data
     public static class Relation {
         private String subFormKey;
+        /** 子表物理表名（直连物理表；允许与主表重名=自关联） */
+        private String subTable;
+
         private String foreignKey;
         private String cascadeStrategy;
 

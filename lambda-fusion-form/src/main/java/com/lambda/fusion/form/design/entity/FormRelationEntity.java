@@ -24,9 +24,13 @@ public class FormRelationEntity extends BaseEntity {
     @TableField("FORM_ID")
     private String formId;
 
-    /** 子表单 formKey（同租户内解析） */
+    /** 主表单内的关系标识（子表字段经 la_form_field.SUB_FORM_KEY 同值归属） */
     @TableField("SUB_FORM_KEY")
     private String subFormKey;
+
+    /** 子表物理表名（直连物理表；允许与主表重名=自关联） */
+    @TableField("SUB_TABLE")
+    private String subTable;
 
     /** 子表外键列 */
     @TableField("FOREIGN_KEY")

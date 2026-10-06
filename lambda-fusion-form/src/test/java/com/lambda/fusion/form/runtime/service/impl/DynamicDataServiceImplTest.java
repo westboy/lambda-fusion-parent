@@ -66,12 +66,14 @@ class DynamicDataServiceImplTest {
         when(contract.validate(any())).thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
         when(contract.validateAccess(any()))
                 .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
+        FormProperties formProperties = new FormProperties();
+        formProperties.setAllowedTables(List.of(TABLE, "LA_TEST_SUB"));
         service = new DynamicDataServiceImpl(
                 mapper,
                 new QueryAstValidator(new FormProperties()),
                 modelProvider,
                 contract,
-                new FormProperties(),
+                formProperties,
                 new FormDataInterceptors(new GenericApplicationContext()),
                 new ObjectMapper());
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
@@ -206,7 +208,7 @@ class DynamicDataServiceImplTest {
     void deleteRejectsWhenChildRowsExist() {
         when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
         when(modelProvider.require("leave_item")).thenReturn(subModel());
-        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
+        when(mapper.countBy(eq("LA_TEST_SUB"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(2L);
 
         assertErrorCode(
@@ -218,12 +220,12 @@ class DynamicDataServiceImplTest {
     void deleteCascadesChildrenWhenStrategyAllows() {
         when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
         when(modelProvider.require("leave_item")).thenReturn(subModel());
-        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
+        when(mapper.countBy(eq("LA_TEST_SUB"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(2L);
 
         service.delete(masterSubModel("CASCADE_DELETE"), "1");
 
-        verify(mapper).deleteByFk(eq("la_demo_leave_item"), eq("LEAVE_ID"), anyString(), anyMap());
+        verify(mapper).deleteByFk(eq("LA_TEST_SUB"), eq("LEAVE_ID"), anyString(), anyMap());
         verify(mapper).deleteById(eq(TABLE), anyString(), anyMap());
     }
 
@@ -231,7 +233,7 @@ class DynamicDataServiceImplTest {
     void deleteRemovesRowWhenNoChildRows() {
         when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(Map.of("ID", "1"));
         when(modelProvider.require("leave_item")).thenReturn(subModel());
-        when(mapper.countBy(eq("la_demo_leave_item"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
+        when(mapper.countBy(eq("LA_TEST_SUB"), eq(" AND LEAVE_ID = #{params.value}"), anyMap()))
                 .thenReturn(0L);
 
         service.delete(masterSubModel("CASCADE_DELETE"), "1");
@@ -329,7 +331,8 @@ class DynamicDataServiceImplTest {
                 new FormModel.ListConfig(List.of(), true, List.of()),
                 null,
                 model().fields(),
-                List.of(new FormModel.FormRelation("leave_item", "LEAVE_ID", cascadeStrategy, null, null)),
+                List.of(new FormModel.FormRelation(
+                        "leave_item", "LA_TEST_SUB", "LEAVE_ID", cascadeStrategy, null, null)),
                 null,
                 null);
     }
@@ -340,7 +343,7 @@ class DynamicDataServiceImplTest {
                 "请假明细",
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
-                "la_demo_leave_item",
+                "LA_TEST_SUB",
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
                 null,

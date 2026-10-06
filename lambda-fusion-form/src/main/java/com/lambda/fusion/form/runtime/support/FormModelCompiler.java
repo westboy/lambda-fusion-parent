@@ -123,12 +123,23 @@ public class FormModelCompiler {
                         FormErrorCode.FORM_TABLE_INVALID,
                         "主从关系标识非法：" + relation.getSubFormKey() + "/" + relation.getForeignKey());
             }
-            if (relation.getSubFormKey().equals(snapshot.getFormKey())) {
-                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "主从关系不能自引用");
+            if (relation.getSubTable() == null || !FormConstants.isIdentifier(relation.getSubTable())) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "子表物理表名非法或缺失：" + relation.getSubFormKey());
             }
             if (!subFormKeys.add(relation.getSubFormKey())) {
                 throw new FormBusinessException(
-                        FormErrorCode.FORM_TABLE_INVALID, "子表单关系重复：" + relation.getSubFormKey());
+                        FormErrorCode.FORM_TABLE_INVALID, "子表关系标识重复：" + relation.getSubFormKey());
+            }
+            // 外键列须是该关系从表字段中某个落库字段的映射列（从表字段内嵌主表单，归属标记=关系标识）
+            String foreignKey = relation.getForeignKey().toUpperCase(Locale.ROOT);
+            boolean foreignKeyMapped = fields.stream()
+                    .filter(field -> relation.getSubFormKey().equals(field.subFormKey()) && field.persisted())
+                    .anyMatch(field -> field.column().equals(foreignKey));
+            if (!foreignKeyMapped) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID,
+                        "子表外键未在该关系的从表字段中映射：" + relation.getSubFormKey() + "/" + relation.getForeignKey());
             }
             String mode = relation.getMode() == null || relation.getMode().isBlank()
                     ? FormConstants.RELATION_MODE_INLINE
@@ -139,6 +150,7 @@ public class FormModelCompiler {
             this.snapshotJson.validateSubTableConfig(relation.getSubTableConfig());
             relations.add(new FormRelation(
                     relation.getSubFormKey(),
+                    relation.getSubTable().toUpperCase(Locale.ROOT),
                     relation.getForeignKey().toUpperCase(Locale.ROOT),
                     relation.getCascadeStrategy() == null
                             ? FormConstants.CASCADE_DELETE

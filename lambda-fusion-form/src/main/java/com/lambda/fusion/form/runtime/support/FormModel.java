@@ -147,16 +147,22 @@ public record FormModel(
             boolean show, String component, Map<String, Object> props, Map<String, Object> rules, boolean readonly) {}
 
     /**
-     * 主从关系
+     * 主从关系（子表直连物理表，字段内嵌主表单）
      *
-     * @param subFormKey 子表单 formKey
+     * @param subFormKey 主表单内的关系标识（子表字段归属标记）
+     * @param subTable 子表物理表名
      * @param foreignKey 子表外键列
      * @param cascadeStrategy CASCADE_DELETE / FORBID_DELETE
-     * @param mode 呈现方式：INLINE 内联编辑 / LIST 台账式
-     * @param subTableConfig 子表列表呈现配置 JSON（{columns:[{field,width}]}，field 为子表单字段标识）
+     * @param mode 呈现方式：INLINE 内联编辑 / LIST 台账式 / FLAT 一对一扁平
+     * @param subTableConfig 子表列表呈现配置 JSON（{columns:[{field,...}]}，field 为子表字段标识）
      */
     public record FormRelation(
-            String subFormKey, String foreignKey, String cascadeStrategy, String mode, String subTableConfig) {
+            String subFormKey,
+            String subTable,
+            String foreignKey,
+            String cascadeStrategy,
+            String mode,
+            String subTableConfig) {
 
         /** 台账式子表：详情页分页展示、子行独立增删改，不随主表提交 */
         public boolean listMode() {

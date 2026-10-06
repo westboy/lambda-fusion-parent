@@ -224,28 +224,39 @@ class FormModelCompilerTest {
 
     @Test
     void uppercasesRelationForeignKeyAndDefaultsCascadeStrategy() {
-        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
-        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
-        FormDefSnapshot.Relation relation = new FormDefSnapshot.Relation();
-        relation.setSubFormKey("leave_item");
-        relation.setForeignKey("leave_id");
+        FormDefSnapshot snapshot = masterSubSnapshot();
+        FormDefSnapshot.Relation relation = relationOf("leave_item", "leave_id", "LA_TEST_SUB");
         snapshot.setRelations(List.of(relation));
 
         FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
 
         assertThat(model.relations()).hasSize(1);
         assertThat(model.relations().get(0).subFormKey()).isEqualTo("leave_item");
+        assertThat(model.relations().get(0).subTable()).isEqualTo("LA_TEST_SUB");
         assertThat(model.relations().get(0).foreignKey()).isEqualTo("LEAVE_ID");
         assertThat(model.relations().get(0).cascadeStrategy()).isEqualTo(FormConstants.CASCADE_DELETE);
     }
 
     @Test
-    void rejectsInvalidRelationMode() {
-        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
-        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+    void rejectsRelationMissingSubTableOrUnmappedForeignKey() {
+        // 缺子表物理表名：拒绝
+        FormDefSnapshot missing = masterSubSnapshot();
         FormDefSnapshot.Relation relation = new FormDefSnapshot.Relation();
         relation.setSubFormKey("leave_item");
         relation.setForeignKey("LEAVE_ID");
+        missing.setRelations(List.of(relation));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(missing), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        // 外键列未在该关系从表字段中映射：拒绝
+        FormDefSnapshot unmapped = masterSubSnapshot();
+        unmapped.setRelations(List.of(relationOf("leave_item", "GHOST_FK", "LA_TEST_SUB")));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(unmapped), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsInvalidRelationMode() {
+        FormDefSnapshot snapshot = masterSubSnapshot();
+        FormDefSnapshot.Relation relation = relationOf("leave_item", "LEAVE_ID", "LA_TEST_SUB");
         relation.setMode("GRID");
         snapshot.setRelations(List.of(relation));
 
@@ -254,14 +265,9 @@ class FormModelCompilerTest {
 
     @Test
     void defaultsRelationModeToInlineAndKeepsListMode() {
-        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
-        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
-        FormDefSnapshot.Relation inline = new FormDefSnapshot.Relation();
-        inline.setSubFormKey("leave_item");
-        inline.setForeignKey("LEAVE_ID");
-        FormDefSnapshot.Relation ledger = new FormDefSnapshot.Relation();
-        ledger.setSubFormKey("leave_memo");
-        ledger.setForeignKey("LEAVE_ID");
+        FormDefSnapshot snapshot = masterSubSnapshot();
+        FormDefSnapshot.Relation inline = relationOf("leave_item", "LEAVE_ID", "LA_TEST_SUB");
+        FormDefSnapshot.Relation ledger = relationOf("leave_memo", "LEAVE_ID", "LA_TEST_SUB");
         ledger.setMode("LIST");
         snapshot.setRelations(List.of(inline, ledger));
 
@@ -411,6 +417,30 @@ class FormModelCompilerTest {
         field.setFieldType(type);
         field.setSort(sort);
         return field;
+    }
+
+    /** 主从夹具：从表字段内嵌主清单（归属标记=关系标识；leave_memo 一组供双关系用例） */
+    private static FormDefSnapshot masterSubSnapshot() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_MASTER_SUB);
+        FormDefSnapshot.Field subName = field("itemName", "ITEM_NAME", "STRING", 2);
+        subName.setSubFormKey("leave_item");
+        FormDefSnapshot.Field subFk = field("leaveId", "LEAVE_ID", "STRING", 3);
+        subFk.setSubFormKey("leave_item");
+        FormDefSnapshot.Field memoName = field("memoText", "MEMO_TEXT", "STRING", 4);
+        memoName.setSubFormKey("leave_memo");
+        FormDefSnapshot.Field memoFk = field("memoLeaveId", "LEAVE_ID", "STRING", 5);
+        memoFk.setSubFormKey("leave_memo");
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1), subName, subFk, memoName, memoFk));
+        return snapshot;
+    }
+
+    /** 关系夹具：关系标识 + 直连物理表 + 外键列 */
+    private static FormDefSnapshot.Relation relationOf(String subFormKey, String foreignKey, String subTable) {
+        FormDefSnapshot.Relation relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey(subFormKey);
+        relation.setSubTable(subTable);
+        relation.setForeignKey(foreignKey);
+        return relation;
     }
 
     @Test

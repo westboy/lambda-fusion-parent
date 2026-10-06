@@ -337,4 +337,18 @@
         </preConditions>
         <dropColumn tableName="la_form_def" columnName="FLOW_CODE"/>
     </changeSet>
+
+    <!-- 主从关系直连物理表（子表单实体退役）：SUB_FORM_KEY 语义改为「主表单内的关系标识」，
+         子表字段内嵌主表单（la_form_field.SUB_FORM_KEY 同值归属），运行时按关系现构子模型 -->
+    <changeSet id="lambda-fusion-form-202610060003" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_relation"/>
+            <not>
+                <columnExists tableName="la_form_relation" columnName="SUB_TABLE"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_relation">
+            <column name="SUB_TABLE" type="varchar(64)" remarks="子表物理表名（直连；允许与主表重名=自关联）"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

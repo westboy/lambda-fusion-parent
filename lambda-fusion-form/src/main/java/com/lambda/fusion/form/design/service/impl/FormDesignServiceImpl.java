@@ -5,6 +5,7 @@ import com.lambda.cloud.core.shared.BaseVO;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.service.AbstractCrudService;
 import com.lambda.fusion.form.FormConstants;
+import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
 import com.lambda.fusion.form.design.entity.FormDefVersionEntity;
 import com.lambda.fusion.form.design.entity.FormFieldEntity;
@@ -44,6 +45,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -71,6 +73,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private final FormPublishService formPublishService;
     private final FormModelProvider formModelProvider;
     private final FormDataInterceptors formDataInterceptors;
+    private final FormProperties formProperties;
 
     @Override
     public PageView<FormDefView> page(FormDefPage page) {
@@ -294,24 +297,46 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
      * 主从关系保存期校验：格式、自引用与重复之外，把运行时 {@code requireSubModel} 才暴露的错误
      * （子表单缺失、类型非单表、外键未映射）前置到草稿保存时拦截。
      */
+    /**
+     * 主从关系保存期校验：关系标识/级联策略/呈现方式格式与重复之外，把运行时错误前置到草稿保存——
+     * 子表直连物理表（须在允许清单且存在）、外键列须是该关系从表字段中落库字段的映射列、
+     * 子表列配置对照该关系的从字段标识；主表配置逻辑删除列时子表须含同名列（级联语义一致）。
+     */
     private void validateRelations(FormDefSaveCommand command) {
         Set<String> subFormKeys = new HashSet<>();
+        Map<String, Set<String>> subTableColumns = new HashMap<>();
         for (FormRelationItem item : command.getRelations()) {
             if (!FormConstants.CASCADE_DELETE.equals(item.getCascadeStrategy())
                     && !FormConstants.FORBID_DELETE.equals(item.getCascadeStrategy())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "级联策略非法：" + item.getCascadeStrategy());
             }
-            if (!FormConstants.isIdentifier(item.getSubFormKey())
-                    || !FormConstants.isIdentifier(item.getForeignKey())) {
+            if (!FormConstants.isFormKey(item.getSubFormKey())
+                    || !FormConstants.isIdentifier(item.getForeignKey())
+                    || !FormConstants.isIdentifier(item.getSubTable())) {
                 throw new FormBusinessException(
-                        FormErrorCode.INVALID_PARAMETER,
-                        "主从关系标识非法：" + item.getSubFormKey() + "/" + item.getForeignKey());
-            }
-            if (item.getSubFormKey().equals(command.getFormKey())) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单不能引用自身：" + item.getSubFormKey());
+                        FormErrorCode.INVALID_PARAMETER, "主从关系标识非法：" + item.getSubFormKey() + "/" + item.getSubTable());
             }
             if (!subFormKeys.add(item.getSubFormKey())) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单关系重复：" + item.getSubFormKey());
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表关系标识重复：" + item.getSubFormKey());
+            }
+            // 子表直连物理表：须在动态读写允许清单内
+            if (!formProperties.allowsTable(item.getSubTable())) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表未开放动态读写：" + item.getSubTable());
+            }
+            Set<String> physical = subTableColumns.computeIfAbsent(
+                    item.getSubTable(), table -> tableMetadataReader.listColumns(table).stream()
+                            .map(TableColumnView::getColumnName)
+                            .map(name -> name.toUpperCase(Locale.ROOT))
+                            .collect(Collectors.toSet()));
+            if (physical.isEmpty()) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表不存在或无列：" + item.getSubTable());
+            }
+            // 主子表逻辑删除列同名一致性（级联删除/两段式读的活动行口径一致）
+            if (StringUtils.hasText(command.getLogicDeleteColumn())
+                    && !physical.contains(command.getLogicDeleteColumn().toUpperCase(Locale.ROOT))) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER,
+                        "子表 " + item.getSubTable() + " 缺少逻辑删除列 " + command.getLogicDeleteColumn());
             }
             if (item.getMode() == null || item.getMode().isBlank()) {
                 item.setMode(FormConstants.RELATION_MODE_INLINE);
@@ -319,34 +344,28 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             if (!FormConstants.RELATION_MODES.contains(item.getMode())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主从呈现方式非法：" + item.getMode());
             }
-            FormDefEntity subDef = getBaseMapper()
-                    .selectOne(new LambdaQueryWrapper<FormDefEntity>()
-                            .eq(FormDefEntity::getFormKey, item.getSubFormKey()));
-            if (subDef == null) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单不存在：" + item.getSubFormKey());
-            }
-            if (!FormConstants.FORM_TYPE_SINGLE.equals(subDef.getFormType())) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表单须为单表类型：" + item.getSubFormKey());
-            }
             String foreignKey = item.getForeignKey().toUpperCase(Locale.ROOT);
-            List<FormFieldEntity> subFields = formFieldMapper.selectList(
-                    new LambdaQueryWrapper<FormFieldEntity>().eq(FormFieldEntity::getFormId, subDef.getId()));
-            boolean mapped = subFields.stream()
-                    .filter(field -> !Boolean.FALSE.equals(field.getPersisted()))
-                    .map(FormFieldEntity::getColumnName)
+            boolean foreignKeyMapped = command.getFields().stream()
+                    .filter(field -> item.getSubFormKey().equals(field.getSubFormKey())
+                            && !Boolean.FALSE.equals(field.getPersisted()))
+                    .map(FormFieldItem::getColumnName)
                     .anyMatch(column -> foreignKey.equals(column.toUpperCase(Locale.ROOT)));
-            if (!mapped) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表外键未在子表单映射：" + item.getForeignKey());
+            if (!foreignKeyMapped) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER,
+                        "子表外键未在该关系的从表字段中映射：" + item.getSubFormKey() + "/" + item.getForeignKey());
             }
-            List<String> subTableColumns = SubTableConfigs.columnFields(objectMapper, item.getSubTableConfig());
-            if (!subTableColumns.isEmpty()) {
-                Set<String> subFieldNames = subFields.stream()
-                        .filter(field -> !Boolean.FALSE.equals(field.getPersisted()))
-                        .map(FormFieldEntity::getFieldName)
+            List<String> subTableColumnFields = SubTableConfigs.columnFields(objectMapper, item.getSubTableConfig());
+            if (!subTableColumnFields.isEmpty()) {
+                Set<String> subFieldNames = command.getFields().stream()
+                        .filter(field -> item.getSubFormKey().equals(field.getSubFormKey())
+                                && !Boolean.FALSE.equals(field.getPersisted()))
+                        .map(FormFieldItem::getFieldName)
                         .collect(Collectors.toSet());
-                for (String column : subTableColumns) {
+                for (String column : subTableColumnFields) {
                     if (!subFieldNames.contains(column)) {
-                        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表列表列未在子表单映射：" + column);
+                        throw new FormBusinessException(
+                                FormErrorCode.INVALID_PARAMETER, "子表列表列未在该关系的从表字段中映射：" + column);
                     }
                 }
             }
@@ -354,12 +373,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     }
 
     /**
-     * 一对一扁平（FLAT）保存期校验：标记字段须对应一条 FLAT 关系；从表字段不支持查询条件与排序
-     * （它们的查询/排序 SQL 只落在主表上）。字段标识全局唯一由调用方校验兜住。
+     * 从表字段归属保存期校验：标记字段须对应一条关系（三种模式的从表字段都内嵌主清单）；
+     * 从表字段不支持查询条件与排序（它们的查询/排序 SQL 只落在主表上）。字段标识全局唯一由调用方校验兜住。
      */
     private void validateFlatRelations(FormDefSaveCommand command) {
-        Set<String> flatKeys = command.getRelations().stream()
-                .filter(item -> FormConstants.RELATION_MODE_FLAT.equals(item.getMode()))
+        Set<String> relationKeys = command.getRelations().stream()
                 .map(FormRelationItem::getSubFormKey)
                 .collect(Collectors.toSet());
         Set<String> markedKeys = command.getFields().stream()
@@ -367,8 +385,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 .filter(key -> key != null && !key.isBlank())
                 .collect(Collectors.toSet());
         for (String key : markedKeys) {
-            if (!flatKeys.contains(key)) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段标记无对应 FLAT 关系：" + key);
+            if (!relationKeys.contains(key)) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段标记无对应主从关系：" + key);
             }
         }
         for (FormFieldItem item : command.getFields()) {
@@ -485,12 +503,12 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                 continue;
             }
             Set<String> subPhysical = subColumns.computeIfAbsent(subKey, key -> {
-                FormDefEntity subDef = getBaseMapper()
-                        .selectOne(new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, key));
-                if (subDef == null) {
-                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段归属的子表单不存在：" + key);
-                }
-                return tableMetadataReader.listColumns(subDef.getTableName()).stream()
+                FormRelationItem relation = command.getRelations().stream()
+                        .filter(relationItem -> key.equals(relationItem.getSubFormKey()))
+                        .findFirst()
+                        .orElseThrow(() ->
+                                new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段归属的关系不存在：" + key));
+                return tableMetadataReader.listColumns(relation.getSubTable()).stream()
                         .map(TableColumnView::getColumnName)
                         .map(name -> name.toUpperCase(Locale.ROOT))
                         .collect(Collectors.toSet());
@@ -498,7 +516,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             if (!subPhysical.contains(column)) {
                 throw new FormBusinessException(
                         FormErrorCode.INVALID_PARAMETER,
-                        "从表字段 " + item.getFieldName() + " 映射的列 " + column + " 在子表单 " + subKey + " 的目标表中不存在，请修正列名或重新并入");
+                        "从表字段 " + item.getFieldName() + " 映射的列 " + column + " 在关系 " + subKey + " 的目标子表中不存在，请修正列名或重新导列");
             }
         }
     }
