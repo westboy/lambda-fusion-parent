@@ -219,4 +219,47 @@
         </createIndex>
     </changeSet>
 
+    <!-- 发起中心菜单（已发布流程按分类分组的卡片墙；卡片点击用动态表单发起）。
+         挂工作流顶级菜单（WfTop00001）下；发起接口走 workflow_instance_add + 表单 add 双权限。 -->
+    <changeSet id="lambda-fusion-startup-202610060002" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_resources WHERE ID = 'LchMenu0001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_resources (ID, PARENT_ID, RES_NAME, RES_PATH, RES_LEVEL, RES_TYPE, RES_URL, RES_MODE, METHOD,
+                                      ICON, HIDDEN, PARENT_KEYS, IS_DEV, REMARK, URL, KEY_NAME, KEEP_ALIVE, EXPAND,
+                                      BUSINESS_EXPAND, ORDER_NO)
+            values ('LchMenu0001', 'WfTop00001', '发起流程', '/workflow/launch/', 1, 1, null, 0, null,
+                    'lucide:rocket', 0, 'WfTop00001', 0, null, null, null, 0, null, null, 7),
+                   ('LchLstL001', 'LchMenu0001', '发起中心查询', 'workflow_launch_list', 2147483647, 3, null, 0, '', null,
+                    0, 'WfTop00001-LchMenu0001', 0, null, null, null, 0, null, null, 1);
+        ]]></sql>
+    </changeSet>
+
+    <!-- 发起中心菜单角色授权（ROLE_ADMIN / ROLE_SYSTEM / ROLE_DEV 全量可见） -->
+    <changeSet id="lambda-fusion-startup-202610060003" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="la_role_resources"/>
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(1) FROM la_role_resources WHERE RESOURCE_ID = 'LchMenu0001'
+                </sqlCheck>
+            </and>
+        </preConditions>
+        <sql><![CDATA[
+            insert into la_role_resources (AUTHORITY, RESOURCE_ID, TENANT_ID)
+            values ('ROLE_ADMIN', 'LchMenu0001', null),
+                   ('ROLE_SYSTEM', 'LchMenu0001', null),
+                   ('ROLE_DEV', 'LchMenu0001', null),
+                   ('ROLE_ADMIN', 'LchLstL001', null),
+                   ('ROLE_SYSTEM', 'LchLstL001', null),
+                   ('ROLE_DEV', 'LchLstL001', null);
+        ]]></sql>
+    </changeSet>
+
 </databaseChangeLog>

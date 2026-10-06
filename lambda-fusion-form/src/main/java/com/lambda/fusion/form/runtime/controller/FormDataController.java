@@ -2,6 +2,8 @@ package com.lambda.fusion.form.runtime.controller;
 
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.core.pagination.PageView;
+import com.lambda.fusion.form.exception.FormBusinessException;
+import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.interceptor.FormPermission;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
@@ -98,6 +100,23 @@ public class FormDataController {
     @OperationLog(module = "动态表单", value = "新增表单数据")
     public String create(@PathVariable String formKey, @RequestBody Map<String, Object> data) {
         return formRuntimeService.create(formKey, data);
+    }
+
+    @PostMapping("{formKey}/submit")
+    @FormPermission(FormAction.ADD)
+    @Operation(summary = "流程表单提交（同一事务内新增业务行并发起流程）")
+    @OperationLog(module = "动态表单", value = "提交流程表单")
+    public String submit(@PathVariable String formKey, @RequestBody Map<String, Object> body) {
+        Object flowCode = body.get("flowCode");
+        if (!(flowCode instanceof String code) || code.isBlank()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "流程编码不能为空");
+        }
+        if (!(body.get("data") instanceof Map)) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单数据不能为空");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) body.get("data");
+        return formRuntimeService.submit(formKey, code, data);
     }
 
     @PutMapping("{formKey}/{id}")

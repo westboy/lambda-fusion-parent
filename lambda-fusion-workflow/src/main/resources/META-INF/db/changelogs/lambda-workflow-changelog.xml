@@ -463,10 +463,10 @@
     </changeSet>
 
     <changeSet id="lambda-fusion-workflow-202610060001" author="Zx">
-        <comment>流程表单改为 la_form_def.PROCESS_FORM 标识直连（ProcessFormSource SPI），注册表退役</comment>
         <preConditions onFail="MARK_RAN">
             <tableExists tableName="la_workflow_form_path"/>
         </preConditions>
+        <comment>流程表单改为 la_form_def.PROCESS_FORM 标识直连（ProcessFormSource SPI），注册表退役</comment>
         <dropTable tableName="la_workflow_form_path"/>
     </changeSet>
 

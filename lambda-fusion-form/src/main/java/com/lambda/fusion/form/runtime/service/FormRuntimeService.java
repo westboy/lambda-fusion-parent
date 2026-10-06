@@ -43,6 +43,17 @@ public interface FormRuntimeService {
 
     String create(String formKey, Map<String, Object> data);
 
+    /**
+     * 流程表单提交：同一事务内新增业务行并发起流程
+     * （businessId=行 id，bizType=formKey，variables=行数据供条件分支；workflow 缺席时拒绝）
+     *
+     * @param formKey  表单标识
+     * @param flowCode 流程编码（发起中心卡片下发）
+     * @param data     表单数据
+     * @return 业务行 id
+     */
+    String submit(String formKey, String flowCode, Map<String, Object> data);
+
     void update(String formKey, String id, Map<String, Object> data);
 
     void delete(String formKey, String id);

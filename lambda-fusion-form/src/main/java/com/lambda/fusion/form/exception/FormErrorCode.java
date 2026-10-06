@@ -131,6 +131,11 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_TREE_PARENT_CYCLE(18137, "上级节点不能是自身或自身的下级节点"),
 
+    /**
+     * 当前服务未提供流程能力
+     */
+    FORM_WORKFLOW_UNAVAILABLE(18138, "当前服务未提供流程能力"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");

@@ -102,7 +102,9 @@ class FormAuthorizationIntegrationTest {
         runtime = new FormRuntimeServiceImpl(
                 context.getBean(FormModelProvider.class),
                 context.getBean(DynamicDataService.class),
-                context.getBean(FormSchemaAssembler.class));
+                context.getBean(FormSchemaAssembler.class),
+                context.getBeanFactory()
+                        .getBeanProvider(com.lambda.fusion.workflow.instance.service.InstanceService.class));
         UserDetails operator = new UserDetails();
         operator.setUsername("designer");
         mvc = MockMvcBuilders.standaloneSetup(
