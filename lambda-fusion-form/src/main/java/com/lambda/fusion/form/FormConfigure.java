@@ -7,6 +7,7 @@ import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
+import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.integration.DynamicFormBusinessProvider;
 import com.lambda.fusion.form.runtime.integration.DynamicFormFlowStatusListener;
@@ -74,8 +75,11 @@ public class FormConfigure {
 
         @Bean
         DynamicFormFlowStatusListener dynamicFormFlowStatusListener(
-                FormDefMapper forms, FormModelProvider modelProvider, DynamicTableMapper dynamicTableMapper) {
-            return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper);
+                FormDefMapper forms,
+                FormModelProvider modelProvider,
+                DynamicTableMapper dynamicTableMapper,
+                TableMetadataReader metadataReader) {
+            return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper, metadataReader);
         }
     }
 
