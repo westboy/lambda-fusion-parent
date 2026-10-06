@@ -574,6 +574,22 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void subRowOverrideRulesAreEnforcedOnWrite() {
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        // 场景覆盖：itemName 在本主从下须以 A 开头（子表单自身定义无此规则）
+        FormModel master =
+                masterSubModel("CASCADE_DELETE", null, "{\"columns\":[{\"field\":\"itemName\",\"pattern\":\"^A\"}]}");
+        assertThatThrownBy(() -> service.create(
+                        master, Map.of("personName", "X", "leave_item", List.of(Map.of("itemName", "B1")))))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
+        String id = service.create(master, Map.of("personName", "X", "leave_item", List.of(Map.of("itemName", "A1"))));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
+                .isEqualTo(1);
+    }
+
+    @Test
     void inlineSubRowsDiffUpdateKeepsIdsDefendsEmptyClearAndRejectsForeignSubId() {
         when(modelProvider.require("leave_item")).thenReturn(subModel());
         FormModel master = masterSubModel("CASCADE_DELETE");
@@ -853,6 +869,10 @@ class DynamicDataServiceJdbcTest {
     }
 
     private static FormModel masterSubModel(String cascadeStrategy, String mode) {
+        return masterSubModel(cascadeStrategy, mode, null);
+    }
+
+    private static FormModel masterSubModel(String cascadeStrategy, String mode, String subTableConfig) {
         FormDefSnapshot snapshot = new FormDefSnapshot();
         snapshot.setFormKey("test_master");
         snapshot.setFormName("主从演示");
@@ -866,6 +886,7 @@ class DynamicDataServiceJdbcTest {
         relation.setForeignKey("LEAVE_ID");
         relation.setCascadeStrategy(cascadeStrategy);
         relation.setMode(mode);
+        relation.setSubTableConfig(subTableConfig);
         snapshot.setRelations(List.of(relation));
         return compile(snapshot);
     }

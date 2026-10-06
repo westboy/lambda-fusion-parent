@@ -5,6 +5,7 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,8 +26,8 @@ public final class SubTableConfigs {
 
     public static final Set<String> ROOT_KEYS = Set.of("columns");
 
-    public static final Set<String> COLUMN_KEYS =
-            Set.of("field", "width", "label", "required", "readonly", "defaultValue");
+    public static final Set<String> COLUMN_KEYS = Set.of(
+            "field", "width", "label", "required", "readonly", "defaultValue", "pattern", "min", "max", "message");
 
     private SubTableConfigs() {}
 
@@ -96,11 +97,93 @@ public final class SubTableConfigs {
             }
             validateOverride(column, "label", 128);
             validateOverride(column, "defaultValue", 512);
+            validateOverride(column, "message", 256);
             validateBoolean(column, "required");
             validateBoolean(column, "readonly");
+            JsonNode pattern = column.get("pattern");
+            if (pattern != null && !pattern.isNull()) {
+                if (!pattern.isTextual() || pattern.textValue().length() > 256) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "subTableConfig.columns.pattern 必须是不超过 256 字符的文本");
+                }
+                try {
+                    java.util.regex.Pattern.compile(pattern.textValue());
+                } catch (java.util.regex.PatternSyntaxException e) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "subTableConfig.columns.pattern 正则无效");
+                }
+            }
+            for (String boundKey : List.of("min", "max")) {
+                JsonNode bound = column.get(boundKey);
+                if (bound != null && !bound.isNull() && !bound.isNumber()) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "subTableConfig.columns." + boundKey + " 必须是数值");
+                }
+            }
             fields.add(field);
         }
         return fields;
+    }
+
+    /**
+     * 解析各列的场景覆盖（key=字段标识，value=覆盖属性 Map，仅含出现过的键）。
+     * 供写入路径叠加到子表字段规则上（后端校验与前端呈现同一事实源）
+     */
+    public static Map<String, Map<String, Object>> overridesOf(ObjectMapper mapper, String json) {
+        Map<String, Map<String, Object>> overrides = new LinkedHashMap<>();
+        if (json == null || json.isBlank()) {
+            return overrides;
+        }
+        JsonNode root;
+        try {
+            root = mapper.readTree(json);
+        } catch (JacksonException e) {
+            return overrides;
+        }
+        JsonNode columns = root.get("columns");
+        if (columns == null || !columns.isArray()) {
+            return overrides;
+        }
+        for (JsonNode column : columns) {
+            JsonNode field = column.get("field");
+            if (field == null || !field.isTextual()) {
+                continue;
+            }
+            Map<String, Object> override = new LinkedHashMap<>();
+            putText(column, override, "label");
+            putText(column, override, "defaultValue");
+            putText(column, override, "pattern");
+            putText(column, override, "message");
+            putBoolean(column, override, "required");
+            putBoolean(column, override, "readonly");
+            putNumber(column, override, "min");
+            putNumber(column, override, "max");
+            if (!override.isEmpty()) {
+                overrides.put(field.textValue(), override);
+            }
+        }
+        return overrides;
+    }
+
+    private static void putText(JsonNode column, Map<String, Object> override, String key) {
+        JsonNode value = column.get(key);
+        if (value != null && value.isTextual()) {
+            override.put(key, value.textValue());
+        }
+    }
+
+    private static void putBoolean(JsonNode column, Map<String, Object> override, String key) {
+        JsonNode value = column.get(key);
+        if (value != null && value.isBoolean()) {
+            override.put(key, value.booleanValue());
+        }
+    }
+
+    private static void putNumber(JsonNode column, Map<String, Object> override, String key) {
+        JsonNode value = column.get(key);
+        if (value != null && value.isNumber()) {
+            override.put(key, value.numberValue());
+        }
     }
 
     /** 文本覆盖键的类型与长度校验 */

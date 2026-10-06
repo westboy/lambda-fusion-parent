@@ -23,6 +23,7 @@ import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedCondition;
 import com.lambda.fusion.form.runtime.support.QueryAstValidator.ResolvedSort;
+import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import com.lambda.fusion.form.runtime.support.TargetTableContract;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.nio.charset.StandardCharsets;
@@ -290,7 +291,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             if (rows.isEmpty()) {
                 continue;
             }
-            FormModel subModel = requireSubModel(relation);
+            FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
             Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
             insertSubRows(relation, subModel, subColumns, id, rows);
         }
@@ -362,7 +363,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             if (!data.containsKey(relation.subFormKey())) {
                 continue;
             }
-            FormModel subModel = requireSubModel(relation);
+            FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
             Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
             diffSubRows(subModel, relation, subColumns, id, subRows(data, relation), expectedEtag != null);
         }
@@ -489,6 +490,71 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         return subModel;
     }
 
+    /**
+     * 子模型叠加场景覆盖（subTableConfig 列覆盖键：required/pattern/min/max/message/defaultValue/readonly），
+     * 子行写入校验与前端呈现同一事实源；无覆盖直接返回原模型
+     */
+    private FormModel overlaySubModel(FormRelation relation, FormModel subModel) {
+        Map<String, Map<String, Object>> overrides =
+                SubTableConfigs.overridesOf(objectMapper, relation.subTableConfig());
+        if (overrides.isEmpty()) {
+            return subModel;
+        }
+        List<FormField> fields = subModel.fields().stream()
+                .map(field -> overlayField(field, overrides.get(field.name())))
+                .toList();
+        return new FormModel(
+                subModel.formKey(),
+                subModel.formName(),
+                subModel.version(),
+                subModel.formType(),
+                subModel.tableName(),
+                subModel.logicDeleteColumn(),
+                subModel.listConfig(),
+                subModel.formLayout(),
+                fields,
+                subModel.relations(),
+                subModel.tree(),
+                subModel.interceptor());
+    }
+
+    /** 单列覆盖落位：校验键并进 rules，required 收窄可空，defaultValue/readonly 覆盖 */
+    private FormField overlayField(FormField field, Map<String, Object> override) {
+        if (override == null) {
+            return field;
+        }
+        Map<String, Object> rules = new LinkedHashMap<>(field.form().rules());
+        for (String key : List.of("required", "pattern", "min", "max", "message")) {
+            if (override.containsKey(key)) {
+                rules.put(key, override.get(key));
+            }
+        }
+        boolean nullable = Boolean.TRUE.equals(override.get("required")) ? false : field.nullable();
+        String defaultValue = override.get("defaultValue") instanceof String value ? value : field.defaultValue();
+        boolean readonly = override.get("readonly") instanceof Boolean value
+                ? value
+                : field.form().readonly();
+        return new FormField(
+                field.name(),
+                field.label(),
+                field.column(),
+                field.type(),
+                nullable,
+                defaultValue,
+                field.dictType(),
+                field.sort(),
+                field.persisted(),
+                field.subFormKey(),
+                field.query(),
+                field.list(),
+                new FormModel.FormConf(
+                        field.form().show(),
+                        field.form().component(),
+                        field.form().props(),
+                        rules,
+                        readonly));
+    }
+
     /** 按子表单标识定位主从关系；不存在即非法参数 */
     private FormRelation requireRelation(FormModel model, String subFormKey) {
         return model.relations().stream()
@@ -607,7 +673,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     @Transactional(rollbackFor = Exception.class)
     public void createSubRow(FormModel model, String id, String subFormKey, Map<String, Object> data) {
         FormRelation relation = requireRelation(model, subFormKey);
-        FormModel subModel = requireSubModel(relation);
+        FormModel subModel = overlaySubModel(relation, requireSubModel(relation));
         // 从主表详情入口写子表数据：主表新增权限由端点路径校验，子表数据写权限在此显式校验
         AuthUtils.checkPermission(FormAction.ADD.permission(subFormKey));
         getById(model, id);
