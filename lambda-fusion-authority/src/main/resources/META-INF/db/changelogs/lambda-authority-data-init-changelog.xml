@@ -1044,4 +1044,18 @@
             where not exists (select 1 from la_resources where RES_PATH = 'form:design:preview:write');
         ]]></sql>
     </changeSet>
+
+    <!-- 「表单管理」菜单退役（la_workflow_form_path 注册表机制改为 PROCESS_FORM 直连，
+         维护页 views/workflow/formpath/ 与后端 formpath 子域已删；历史 changeSet 20260923000004/05 依契约保留）。 -->
+    <changeSet id="lambda-authority-202610060006" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_resources"/>
+        </preConditions>
+        <sql><![CDATA[
+            delete from la_role_resources
+            where RESOURCE_ID in ('WfForm0001', 'WfFrmL001', 'WfFrmA001', 'WfFrmU001', 'WfFrmD001');
+            delete from la_resources
+            where ID in ('WfForm0001', 'WfFrmL001', 'WfFrmA001', 'WfFrmU001', 'WfFrmD001');
+        ]]></sql>
+    </changeSet>
 </databaseChangeLog>
