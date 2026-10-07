@@ -266,11 +266,24 @@ public class ToolResultMediaMaterializer {
 
     private boolean isAllowedLocalPath(Path path) {
         for (Path root : allowedLocalRoots()) {
-            if (path.startsWith(root.toAbsolutePath().normalize())) {
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            if (path.startsWith(normalizedRoot) || path.startsWith(realPathOf(normalizedRoot))) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * 把允许目录解析为真实路径后再参与前缀比较：待校验路径已由 {@code toRealPath()} 解析，
+     * macOS 的 /var 是指向 /private/var 的符号链接，root 不解析则前缀失配；目录不存在时保持原路径。
+     */
+    private static Path realPathOf(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException e) {
+            return path;
+        }
     }
 
     private List<Path> allowedLocalRoots() {
