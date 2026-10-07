@@ -391,6 +391,96 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
+    void masterSubDraftAcceptsSameColumnAcrossTablesAndRejectsWithinGroup() {
+        // 物理同名列跨主子表放行（与编译期 (subFormKey, column) 复合键同口径，自关联/审计列场景同理）；
+        // 同组内同名列仍拒
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        FormFieldItem remark = new FormFieldItem();
+        remark.setFieldName("remark");
+        remark.setColumnName("REMARK");
+        remark.setFieldType("STRING");
+        List<FormFieldItem> mainFields = new java.util.ArrayList<>(command.getFields());
+        mainFields.add(remark);
+        command.setFields(mainFields);
+        addSubFields(command, "sub_area");
+        FormFieldItem subRemark = new FormFieldItem();
+        subRemark.setFieldName("remarkSub");
+        subRemark.setColumnName("REMARK");
+        subRemark.setFieldType("STRING");
+        subRemark.setSubFormKey("sub_area");
+        command.getFields().add(subRemark);
+        command.setRelations(List.of(relation("sub_area", "LEAVE_ID")));
+
+        String id = design.save(command);
+        assertThat(count("la_form_field")).isEqualTo(5);
+        // 从表归属标记必须落库（漏写会让发布快照把从字段全按主表字段编译）
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM la_form_field WHERE SUB_FORM_KEY = ?", Integer.class, "sub_area"))
+                .isEqualTo(3);
+        // 编译期同口径查重，发布不误报
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            publish.publish(id);
+            assertThat(definitions.selectById(id).getPublishedVersion()).isEqualTo(1L);
+        }
+
+        // 主表组内同名列仍拒
+        FormDefSaveCommand duplicateInMain = command();
+        FormFieldItem copy = new FormFieldItem();
+        copy.setFieldName("personNameCopy");
+        copy.setColumnName("PERSON_NAME");
+        copy.setFieldType("STRING");
+        List<FormFieldItem> mainCopy = new java.util.ArrayList<>(duplicateInMain.getFields());
+        mainCopy.add(copy);
+        duplicateInMain.setFields(mainCopy);
+        assertThatThrownBy(() -> design.save(duplicateInMain))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("字段标识或列名重复"));
+
+        // 从表组内同名列仍拒
+        FormDefSaveCommand duplicateInSub = command();
+        duplicateInSub.setFormType("MASTER_SUB");
+        addSubFields(duplicateInSub, "sub_area");
+        FormFieldItem subCopy = new FormFieldItem();
+        subCopy.setFieldName("itemNameCopy");
+        subCopy.setColumnName("ITEM_NAME");
+        subCopy.setFieldType("STRING");
+        subCopy.setSubFormKey("sub_area");
+        duplicateInSub.getFields().add(subCopy);
+        duplicateInSub.setRelations(List.of(relation("sub_area", "LEAVE_ID")));
+        assertThatThrownBy(() -> design.save(duplicateInSub))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("字段标识或列名重复"));
+    }
+
+    @Test
+    void saveRejectsMasterTableOutsideWhitelist() {
+        // 主表白名单收口：新建即拒，消息指明主表（与子表消息对称）
+        FormDefSaveCommand invalid = command();
+        invalid.setTableName("LA_GHOST_MAIN");
+        assertThatThrownBy(() -> design.save(invalid))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("主表未开放动态读写：LA_GHOST_MAIN"));
+        assertThat(count("la_form_def")).isZero();
+    }
+
+    @Test
+    void listTablesOnlyReturnsWhitelistedTables() {
+        FormProperties properties = context.getBean(FormProperties.class);
+        var original = properties.getAllowedTables();
+        try {
+            // 与新建收口配套：下拉只列白名单内表（白名单缩窄后 LAS_TEST_SUB 不再出现）
+            properties.setAllowedTables(List.of("LA_TEST_BUSINESS"));
+            assertThat(design.listTables()).contains("LA_TEST_BUSINESS").doesNotContain("LA_TEST_SUB");
+        } finally {
+            properties.setAllowedTables(original);
+        }
+    }
+
+    @Test
     void saveRejectsSubTableColumnNotMappedInRelationFields() {
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
@@ -672,10 +762,11 @@ class FormLifecycleIntegrationTest {
                     UNIQUE(FORM_ID, VERSION)
                     """
                             + audit);
-            jdbc.execute("CREATE TABLE LA_TEST_BUSINESS (ID VARCHAR(32) PRIMARY KEY, PERSON_NAME VARCHAR(128))");
+            jdbc.execute("CREATE TABLE LA_TEST_BUSINESS (ID VARCHAR(32) PRIMARY KEY, PERSON_NAME VARCHAR(128), "
+                    + "REMARK VARCHAR(128))");
             // 主从演示子表（主子表逻辑删除列同名是主子表一致性约定，保存期校验）
             jdbc.execute("CREATE TABLE LA_TEST_SUB (ID VARCHAR(32) PRIMARY KEY, ITEM_NAME VARCHAR(64) NOT NULL, "
-                    + "LEAVE_ID VARCHAR(32), DELETED INT NOT NULL DEFAULT 0)");
+                    + "LEAVE_ID VARCHAR(32), DELETED INT NOT NULL DEFAULT 0, REMARK VARCHAR(128))");
             return source;
         }
 

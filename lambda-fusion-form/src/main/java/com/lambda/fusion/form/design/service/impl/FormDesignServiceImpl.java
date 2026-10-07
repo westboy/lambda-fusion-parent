@@ -162,7 +162,10 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
 
     @Override
     public List<String> listTables() {
-        return tableMetadataReader.listTables();
+        // 与新建收口配套：下拉只列白名单内的表（存量表单回显不受影响，值不在 options 也展示）
+        return tableMetadataReader.listTables().stream()
+                .filter(formProperties::allowsTable)
+                .toList();
     }
 
     @Override
@@ -188,6 +191,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             entity.setListConfig(item.getListConfig());
             entity.setFormConfig(item.getFormConfig());
             entity.setPersisted(!Boolean.FALSE.equals(item.getPersisted()));
+            // 从表归属标记：漏写会让发布快照丢掉主子表分组（从字段全按主表字段编译）
+            entity.setSubFormKey(item.getSubFormKey());
             entity.setSort(item.getSort() == null ? Integer.valueOf(0) : item.getSort());
             formFieldMapper.insert(entity);
         }
@@ -195,6 +200,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             FormRelationEntity entity = new FormRelationEntity();
             entity.setFormId(formId);
             entity.setSubFormKey(item.getSubFormKey());
+            // 子表直连物理表名：漏写会让编译期判定「子表物理表名非法或缺失」而无法发布
+            entity.setSubTable(item.getSubTable());
             entity.setForeignKey(item.getForeignKey().toUpperCase(Locale.ROOT));
             entity.setCascadeStrategy(
                     item.getCascadeStrategy() == null ? FormConstants.CASCADE_DELETE : item.getCascadeStrategy());
@@ -219,8 +226,10 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         if (!FormConstants.isIdentifier(command.getTableName())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表名非法：" + command.getTableName());
         }
-        if (tableMetadataReader.isExcluded(command.getTableName())) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表未开放动态读写：" + command.getTableName());
+        // 主表收口：目标表必须在动态读写白名单内且未被排除正则命中。
+        // 置于元数据读取前，避免下游 isExcluded 抛出泛化的「表不可映射」分不清是白名单还是正则
+        if (!formProperties.allowsTable(command.getTableName())) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主表未开放动态读写：" + command.getTableName());
         }
         if (FormConstants.FORM_TYPE_TREE.equals(command.getFormType())
                 && (command.getTreeConfig() == null || command.getTreeConfig().isBlank())) {
@@ -232,12 +241,15 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "MASTER_SUB 类型必须配置主从关系");
         }
         validateFlatRelations(command);
+        // 列名唯一性与编译期 FormModelCompiler 同口径：按 (subFormKey, column) 复合键判定，
+        // 主子表直连不同（或自关联同一）物理表时允许同名列；字段标识仍全局唯一
         long distinctNames = command.getFields().stream()
                 .map(FormFieldItem::getFieldName)
                 .distinct()
                 .count();
         long distinctColumns = command.getFields().stream()
-                .map(item -> item.getColumnName().toUpperCase(Locale.ROOT))
+                .map(item -> (item.getSubFormKey() == null ? "" : item.getSubFormKey() + ":")
+                        + item.getColumnName().toUpperCase(Locale.ROOT))
                 .distinct()
                 .count();
         if (distinctNames != command.getFields().size()
