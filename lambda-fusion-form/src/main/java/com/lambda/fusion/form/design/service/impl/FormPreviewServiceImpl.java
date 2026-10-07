@@ -147,7 +147,7 @@ public class FormPreviewServiceImpl implements FormPreviewService {
             } else if (definitions.selectCount(
                             new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, design.getFormKey()))
                     > 0) {
-                throw new FormBusinessException(FormErrorCode.FORM_KEY_DUPLICATED);
+                throw new FormBusinessException(FormErrorCode.FORM_KEY_DUPLICATED, design.getFormKey());
             }
             model = compiler.compile(json.write(snapshotAssembler.fromCommand(design, objectMapper)), 0);
         } else {

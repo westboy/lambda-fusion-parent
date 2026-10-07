@@ -19,22 +19,22 @@ public enum FormErrorCode implements ErrorCode {
     /**
      * 请求参数非法
      */
-    INVALID_PARAMETER(18100, "请求参数非法"),
+    INVALID_PARAMETER(18100, "请求参数非法：{0}"),
 
     /**
      * 表单不存在
      */
-    FORM_NOT_FOUND(18101, "表单不存在"),
+    FORM_NOT_FOUND(18101, "表单不存在：{0}"),
 
     /**
      * 表单未发布
      */
-    FORM_NOT_PUBLISHED(18102, "表单未发布"),
+    FORM_NOT_PUBLISHED(18102, "表单未发布：{0}"),
 
     /**
      * 表单标识已存在
      */
-    FORM_KEY_DUPLICATED(18103, "表单标识已存在"),
+    FORM_KEY_DUPLICATED(18103, "表单标识已存在：{0}"),
 
     /**
      * 表单已停用
@@ -57,7 +57,7 @@ public enum FormErrorCode implements ErrorCode {
     /**
      * 版本不存在
      */
-    FORM_VERSION_NOT_FOUND(18111, "表单版本不存在"),
+    FORM_VERSION_NOT_FOUND(18111, "表单版本不存在：{0}"),
 
     /**
      * 内容与当前生效版本一致，无需重复发布
@@ -73,17 +73,17 @@ public enum FormErrorCode implements ErrorCode {
     /**
      * 查询字段不在白名单内
      */
-    FORM_QUERY_FIELD_FORBIDDEN(18120, "查询字段不在白名单内"),
+    FORM_QUERY_FIELD_FORBIDDEN(18120, "查询字段不在白名单内：{0}"),
 
     /**
      * 查询操作符不支持
      */
-    FORM_QUERY_OPERATOR_UNSUPPORTED(18121, "查询操作符不支持"),
+    FORM_QUERY_OPERATOR_UNSUPPORTED(18121, "查询操作符不支持：{0}"),
 
     /**
      * 查询条件数超过上限
      */
-    FORM_QUERY_CONDITION_LIMIT(18122, "查询条件数超过上限"),
+    FORM_QUERY_CONDITION_LIMIT(18122, "查询条件数超过上限：{0}"),
 
     /**
      * 树子孙节点数超过上限
@@ -99,7 +99,7 @@ public enum FormErrorCode implements ErrorCode {
     /**
      * 存在子表数据，禁止删除
      */
-    FORM_SUB_DELETE_FORBIDDEN(18131, "存在子表数据，禁止删除"),
+    FORM_SUB_DELETE_FORBIDDEN(18131, "存在子表数据，禁止删除：{0}"),
 
     /**
      * 字段校验失败：{0}

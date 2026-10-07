@@ -33,7 +33,9 @@ public class FormRouteServiceImpl implements FormRouteService {
         List<FormDefEntity> definitions =
                 forms.selectList(new LambdaQueryWrapper<FormDefEntity>().in(FormDefEntity::getId, ids));
         if (definitions.size() != ids.stream().distinct().count()) {
-            throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND);
+            throw new FormBusinessException(
+                    FormErrorCode.FORM_NOT_FOUND,
+                    "部分表单不存在：" + ids.stream().distinct().toList());
         }
         FormRouteGateway gateway = gateways.getIfAvailable();
         Map<String, FormRouteInfo> result = new LinkedHashMap<>();
@@ -44,7 +46,7 @@ public class FormRouteServiceImpl implements FormRouteService {
     @Override
     public FormRouteInfo detail(String id) {
         FormDefEntity form = forms.selectById(id);
-        if (form == null) throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND);
+        if (form == null) throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND, id);
         return read(form, gateways.getIfAvailable());
     }
 
@@ -77,7 +79,7 @@ public class FormRouteServiceImpl implements FormRouteService {
         FormDefEntity form = forms.selectOne(new LambdaQueryWrapper<FormDefEntity>()
                 .eq(FormDefEntity::getId, id)
                 .last("FOR UPDATE"));
-        if (form == null) throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND);
+        if (form == null) throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND, id);
         return form;
     }
 
