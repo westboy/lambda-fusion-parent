@@ -24,10 +24,15 @@ import tools.jackson.databind.ObjectMapper;
  */
 public final class SubTableConfigs {
 
-    public static final Set<String> ROOT_KEYS = Set.of("columns");
+    public static final Set<String> ROOT_KEYS = Set.of("columns", "rowButtons");
 
     public static final Set<String> COLUMN_KEYS = Set.of(
             "field", "width", "label", "required", "readonly", "defaultValue", "pattern", "min", "max", "message");
+
+    /** 子表行按钮动作白名单：add=添加子行、edit=编辑子行（仅 LIST）、delete=删除子行（INLINE 为移除） */
+    public static final Set<String> ROW_BUTTON_ACTIONS = Set.of("add", "edit", "delete");
+
+    public static final Set<String> ROW_BUTTON_KEYS = Set.of("action", "label", "show");
 
     private SubTableConfigs() {}
 
@@ -123,6 +128,59 @@ public final class SubTableConfigs {
             fields.add(field);
         }
         return fields;
+    }
+
+    /**
+     * 校验子表行按钮配置 rowButtons：[{action, show, label}]。
+     * action 取 {@link #ROW_BUTTON_ACTIONS}（add/edit/delete）且不重复；
+     * show 布尔；label 不超过 128 字符。未配置返回空列表。
+     */
+    public static List<String> rowButtons(ObjectMapper mapper, String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        final JsonNode root;
+        try {
+            root = mapper.readTree(json);
+        } catch (JacksonException e) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig 不是合法 JSON");
+        }
+        if (!root.isObject()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig 必须是 JSON 对象");
+        }
+        JsonNode buttons = root.get("rowButtons");
+        if (buttons == null || buttons.isNull()) {
+            return List.of();
+        }
+        if (!buttons.isArray() || buttons.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.rowButtons 必须是非空数组");
+        }
+        List<String> actions = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (JsonNode button : buttons) {
+            if (!button.isObject()) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.rowButtons 项必须是对象");
+            }
+            for (Map.Entry<String, JsonNode> entry : button.properties()) {
+                if (!ROW_BUTTON_KEYS.contains(entry.getKey())) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "subTableConfig.rowButtons 存在非法键：" + entry.getKey());
+                }
+            }
+            String action = textValue(button.get("action"));
+            if (action == null || !ROW_BUTTON_ACTIONS.contains(action)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.rowButtons.action 非法：" + action);
+            }
+            if (!seen.add(action)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.rowButtons 动作重复：" + action);
+            }
+            validateOverride(button, "label", 128);
+            validateBoolean(button, "show");
+            actions.add(action);
+        }
+        return actions;
     }
 
     /**

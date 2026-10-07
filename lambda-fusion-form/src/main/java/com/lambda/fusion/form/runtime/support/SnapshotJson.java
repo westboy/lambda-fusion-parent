@@ -49,5 +49,6 @@ public class SnapshotJson {
     /** 编译期拦截被篡改快照中的子表列表配置（与保存期同一校验规则） */
     public void validateSubTableConfig(String json) {
         SubTableConfigs.columnFields(objectMapper, json);
+        SubTableConfigs.rowButtons(objectMapper, json);
     }
 }

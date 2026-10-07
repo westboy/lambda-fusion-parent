@@ -108,6 +108,45 @@ class SubTableConfigsTest {
                 "width 必须是");
     }
 
+    @Test
+    void parsesRowButtonsInOrder() {
+        assertThat(
+                        SubTableConfigs.rowButtons(
+                                objectMapper,
+                                "{\"rowButtons\":[{\"action\":\"edit\",\"label\":\"修改\"},{\"action\":\"delete\",\"show\":false}]}"))
+                .containsExactly("edit", "delete");
+        // 与 columns 共存、缺省未配置均为空
+        assertThat(SubTableConfigs.rowButtons(
+                        objectMapper, "{\"columns\":[{\"field\":\"name\"}],\"rowButtons\":[{\"action\":\"add\"}]}"))
+                .containsExactly("add");
+        assertThat(SubTableConfigs.rowButtons(objectMapper, "{}")).isEmpty();
+        assertThat(SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":null}"))
+                .isEmpty();
+    }
+
+    @Test
+    void rejectsInvalidRowButtons() {
+        assertDetail(() -> SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":[]}"), "必须是非空数组");
+        assertDetail(() -> SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":[\"edit\"]}"), "项必须是对象");
+        assertDetail(
+                () -> SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":[{\"action\":\"detail\"}]}"),
+                "action 非法：detail");
+        assertDetail(
+                () -> SubTableConfigs.rowButtons(
+                        objectMapper, "{\"rowButtons\":[{\"action\":\"edit\"},{\"action\":\"edit\"}]}"),
+                "动作重复：edit");
+        assertDetail(
+                () -> SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":[{\"action\":\"edit\",\"title\":1}]}"),
+                "存在非法键：title");
+        assertDetail(
+                () -> SubTableConfigs.rowButtons(
+                        objectMapper, "{\"rowButtons\":[{\"action\":\"edit\",\"label\":\"" + "x".repeat(129) + "\"}]}"),
+                "label");
+        assertDetail(
+                () -> SubTableConfigs.rowButtons(objectMapper, "{\"rowButtons\":[{\"action\":\"edit\",\"show\":1}]}"),
+                "show");
+    }
+
     /** 业务异常的中文明细存于 args 而非 message，据此断言具体拦截原因 */
     private static void assertDetail(ThrowingCallable callable, String expectedDetail) {
         assertThatThrownBy(callable).isInstanceOf(FormBusinessException.class).satisfies(error -> assertThat(
