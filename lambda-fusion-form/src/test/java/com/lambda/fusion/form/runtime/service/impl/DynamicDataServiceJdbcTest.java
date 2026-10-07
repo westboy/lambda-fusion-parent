@@ -591,6 +591,80 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void importedPrimaryKeyColumnSuppressesInjectedRowIdWhileDefaultKeepsIt() {
+        // 默认关系（从字段未导入主键列）：运行时注入 rowId 展示字段
+        FormModel master = masterSubModel("CASCADE_DELETE");
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        String id =
+                service.create(master, Map.of("personName", "Alice", "leave_item", List.of(Map.of("itemName", "A1"))));
+        Map<?, ?> sub = (Map<?, ?>) ((List<?>) service.getById(master, id).get("leave_item")).get(0);
+        assertThat(sub.containsKey("rowId")).isTrue();
+
+        // 设计时显式导入主键列（不落库展示字段）：requireSubModel 不再注入重复 rowId，按导入字段回显
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_master");
+        snapshot.setFormName("主从演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        FormDefSnapshot.Field importedId = subField("subId", "ID", "STRING", true, "leave_item");
+        importedId.setPersisted(false);
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                subField("itemName", "ITEM_NAME", "STRING", false, "leave_item"),
+                subField("leaveId", "LEAVE_ID", "STRING", true, "leave_item"),
+                importedId));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_TEST_SUB");
+        relation.setForeignKey("LEAVE_ID");
+        relation.setCascadeStrategy("CASCADE_DELETE");
+        snapshot.setRelations(List.of(relation));
+        FormModel masterWithId = compile(snapshot);
+        String id2 = service.create(
+                masterWithId, Map.of("personName", "Bob", "leave_item", List.of(Map.of("itemName", "B1"))));
+        Map<?, ?> sub2 =
+                (Map<?, ?>) ((List<?>) service.getById(masterWithId, id2).get("leave_item")).get(0);
+        assertThat(sub2.containsKey("subId")).isTrue();
+        assertThat(sub2.containsKey("rowId")).isFalse();
+        assertThat(sub2.get("subId")).isEqualTo(sub2.get("id"));
+    }
+
+    @Test
+    void subTableNotNullForeignKeyColumnIsExemptFromUninputableRequiredCheck() {
+        // 外键列指向 NOT NULL 物理列且表单隐藏（值由服务端回填主行 id）：
+        // 目标表契约不得按「无法输入的必填列」拒绝（前端导入外键即 show=false + 列 NOT NULL 是常态）
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_master");
+        snapshot.setFormName("主从演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        FormDefSnapshot.Field itemName = subField("itemName", "ITEM_NAME", "STRING", false, "leave_item");
+        itemName.getForm().setShow(false);
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                itemName,
+                subField("leaveId", "LEAVE_ID", "STRING", true, "leave_item")));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_TEST_SUB");
+        relation.setForeignKey("ITEM_NAME");
+        relation.setCascadeStrategy("CASCADE_DELETE");
+        snapshot.setRelations(List.of(relation));
+        FormModel master = compile(snapshot);
+
+        String id =
+                service.create(master, Map.of("personName", "Alice", "leave_item", List.of(Map.of("itemName", "占位"))));
+        // 外键列落库值=主行 id（客户端值被剥离后由服务端回填）
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE ITEM_NAME=?", Integer.class, id))
+                .isEqualTo(1);
+        assertThat((List<?>) service.getById(master, id).get("leave_item")).hasSize(1);
+    }
+
+    @Test
     void inlineSubRowsDiffUpdateKeepsIdsDefendsEmptyClearAndRejectsForeignSubId() {
         when(modelProvider.require("leave_item")).thenReturn(subModel());
         FormModel master = masterSubModel("CASCADE_DELETE");

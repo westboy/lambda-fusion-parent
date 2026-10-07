@@ -36,6 +36,14 @@ public class TargetTableContract {
     private final MybatisPlusExtendProperties mybatisProperties;
 
     public Map<String, TableColumnView> validate(FormModel model) {
+        return validate(model, Set.of());
+    }
+
+    /**
+     * @param serverBoundColumns 值由服务端绑定而非表单输入的列（如主从外键列由引擎回填主行 id）。
+     *   这些列允许「落库 + 表单不可见 + 数据库 NOT NULL」而无默认值——用户本就不该输入它们。
+     */
+    public Map<String, TableColumnView> validate(FormModel model, Set<String> serverBoundColumns) {
         Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
                 .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
         TableColumnView id = requireColumn(columns, FormConstants.COLUMN_ID);
@@ -99,6 +107,7 @@ public class TargetTableContract {
                         FormFieldValidator.normalize(field, field.defaultValue(), FormErrorCode.FORM_TABLE_INVALID);
                 validateValue(column, value, FormErrorCode.FORM_TABLE_INVALID);
             } else if (!logicDelete
+                    && !serverBoundColumns.contains(field.column().toUpperCase(Locale.ROOT))
                     && (!field.form().show() || field.form().readonly())
                     && (!field.nullable()
                             || Boolean.TRUE.equals(field.form().rules().get("required"))

@@ -291,7 +291,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 continue;
             }
             FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
-            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+            // 外键列由服务端回填主行 id（写入前剥离客户端值）：豁免契约的「无法输入的必填列」判定
+            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
             insertSubRows(relation, subModel, subColumns, id, rows);
         }
         List<FormField> defaulted = model.fields().stream()
@@ -363,7 +364,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 continue;
             }
             FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
-            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+            Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
             diffSubRows(subModel, relation, subColumns, id, subRows(data, relation), expectedEtag != null);
         }
         interceptors.resolve(model.interceptor()).ifPresent(i -> i.afterUpdate(model, id, data));
@@ -479,6 +480,11 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 从主模型现构子模型：字段集 = 主清单中归属该关系的从表字段，表名直连物理表。
      * 外键已映射（编译期校验），逻辑删除列沿用主表口径（主子表同名要求由保存期校验拦截）
      */
+    /** 子表契约的服务端绑定列：外键列的值由引擎回填主行 id，不经表单输入，豁免「无法输入的必填列」判定 */
+    private static Set<String> subBoundColumns(FormRelation relation) {
+        return Set.of(relation.foreignKey().toUpperCase(Locale.ROOT));
+    }
+
     private FormModel requireSubModel(FormModel model, FormRelation relation) {
         // 子表直连物理表：须在动态读写允许清单内（发布快照被篡改时此处拦截）
         if (!formProperties.allowsTable(relation.subTable())) {
@@ -503,21 +509,24 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         field.list(),
                         field.form()))
                 .forEach(subFields::add);
-        // 目标表契约要求主键映射：注入不落库的主键展示字段（与主表清单的主键契约同口径）
-        subFields.add(new FormField(
-                "rowId",
-                "主键",
-                FormConstants.COLUMN_ID,
-                "STRING",
-                true,
-                null,
-                null,
-                0,
-                false,
-                null,
-                new FormModel.QueryConf(false, null, null),
-                new FormModel.ListConf(true, null, null, null, null, false, null, 0),
-                new FormModel.FormConf(true, null, Map.of(), Map.of(), false)));
+        // 目标表契约要求主键映射：清单未显式导入主键列时，注入不落库的主键展示字段
+        // （与主表清单的主键契约同口径）。设计时已按主键列导入的关系不重复注入，保证单一事实来源。
+        if (subFields.stream().noneMatch(field -> FormConstants.COLUMN_ID.equals(field.column()))) {
+            subFields.add(new FormField(
+                    "rowId",
+                    "主键",
+                    FormConstants.COLUMN_ID,
+                    "STRING",
+                    true,
+                    null,
+                    null,
+                    0,
+                    false,
+                    null,
+                    new FormModel.QueryConf(false, null, null),
+                    new FormModel.ListConf(true, null, null, null, null, false, null, 0),
+                    new FormModel.FormConf(true, null, Map.of(), Map.of(), false)));
+        }
         return new FormModel(
                 relation.subFormKey(),
                 relation.subFormKey(),
@@ -637,7 +646,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             return;
         }
         FormModel subModel = requireSubModel(model, relation);
-        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
         List<Map<String, Object>> existing = dynamicTableMapper.selectByFk(
                 subModel.tableName(),
                 FormConstants.COLUMN_ID,
@@ -724,7 +733,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         FormModel subModel = overlaySubModel(relation, requireSubModel(model, relation));
         // 子表内嵌主表单后无独立实体：写权限并入主表（端点已校验主表 ADD），此处不再二次校验
         getById(model, id);
-        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
         insertSubRows(relation, subModel, subColumns, id, List.of(data));
     }
 
@@ -738,7 +747,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (expectedEtag != null) {
             requireSubRowUnchanged(subModel, relation, id, subId, expectedEtag);
         }
-        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
         Map<String, Object> row = normalize(subModel, data, false, subColumns);
         // 外键列不接受客户端改写：子行归属由路径上的主行 id 绑定
         row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
@@ -771,7 +780,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         FormRelation relation = requireRelation(model, subFormKey);
         FormModel subModel = requireSubModel(model, relation);
         getById(model, id);
-        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel);
+        Map<String, TableColumnView> subColumns = targetTableContract.validate(subModel, subBoundColumns(relation));
         Map<String, Object> params = new HashMap<>();
         params.put("id", subId);
         params.put("fkValue", id);
