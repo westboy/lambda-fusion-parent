@@ -92,6 +92,8 @@ lambda:
     directory: ${AI_LUCENE_DIRECTORY:${user.home}/.agentscope/fusion/rag/lucene}
   fusion:
     form:
+      # 动态表单可读写的物理表白名单（大小写不敏感）：新建表单的主表与所有子表
+      # 都必须在此清单内；存量已创建表单编辑不受限。未配置=不开放任何表。
       # 仅开放专用动态表单演示表；新增业务表须显式加入清单。
       allowed-tables:
         - la_demo_area

@@ -1,6 +1,7 @@
 package com.lambda.fusion.form;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
@@ -19,15 +20,29 @@ public class FormProperties {
     /** 总开关 */
     private boolean enabled = true;
 
-    /** 允许动态读写的物理表名（精确匹配），默认不开放任何业务表。 */
+    /**
+     * 允许动态读写的物理表名（大小写不敏感；未配置=不开放任何表）。
+     * 新建表单时主表与全部子表都必须在此清单内；存量已创建表单的编辑不受此限制。
+     */
     private List<String> allowedTables = List.of();
 
     public List<String> getAllowedTables() {
         return List.copyOf(allowedTables);
     }
 
+    /**
+     * 归一化为大写 Set：表名大小写在库间不一致（yml 小写配置、MySQL 元数据可能大写），
+     * allowsTable 与 tableExcludePattern 同按大小写不敏感口径比对。
+     */
     public void setAllowedTables(List<String> allowedTables) {
-        this.allowedTables = allowedTables == null ? List.of() : List.copyOf(allowedTables);
+        if (allowedTables == null || allowedTables.isEmpty()) {
+            this.allowedTables = List.of();
+            return;
+        }
+        this.allowedTables = List.copyOf(allowedTables.stream()
+                .filter(table -> table != null && !table.isBlank())
+                .map(table -> table.toUpperCase(Locale.ROOT))
+                .toList());
     }
 
     /** 查询条件数上限 */
@@ -70,8 +85,8 @@ public class FormProperties {
     /** 设计、发布与运行共同使用的目标表边界。 */
     public boolean allowsTable(String tableName) {
         return FormConstants.isIdentifier(tableName)
-                && allowedTables != null
-                && allowedTables.contains(tableName)
+                && !allowedTables.isEmpty()
+                && allowedTables.contains(tableName.toUpperCase(Locale.ROOT))
                 && !Pattern.compile(tableExcludePattern, Pattern.CASE_INSENSITIVE)
                         .matcher(tableName)
                         .matches();
