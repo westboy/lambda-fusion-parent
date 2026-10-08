@@ -478,6 +478,57 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void selfTreeRejectsDeletingParentWithActiveChildren() {
+        FormModel model = model(true, false, true);
+        String root = service.create(model, Map.of("personName", "Root"));
+        service.create(model, Map.of("personName", "Child", "parentId", root));
+        // 有未删除下级即拒绝（18135），子行不受影响
+        assertThatThrownBy(() -> service.delete(model, root))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TREE_DELETE_FORBIDDEN.getCode()));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_FORM WHERE DELETED=0", Integer.class))
+                .isEqualTo(2);
+        // 子行删除后父行可删（叶子无下级）
+        String child = jdbc.queryForObject("SELECT ID FROM LA_TEST_FORM WHERE PARENT_ID=?", String.class, root);
+        service.delete(model, child);
+        service.delete(model, root);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_FORM WHERE DELETED=0", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void selfTreeValidatesParentExistenceAndRejectsCycles() {
+        FormModel model = model(true, false, true);
+        String root = service.create(model, Map.of("personName", "Root"));
+        String child = service.create(model, Map.of("personName", "Child", "parentId", root));
+        // 上级不存在（18136）
+        assertThatThrownBy(() -> service.create(model, Map.of("personName", "Orphan", "parentId", "not-exist")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TREE_PARENT_NOT_FOUND.getCode()));
+        // 上级指向自身（18137）
+        assertThatThrownBy(() -> service.update(model, root, Map.of("parentId", root)))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TREE_PARENT_CYCLE.getCode()));
+        // 上级指向自己的子孙（18137）
+        assertThatThrownBy(() -> service.update(model, root, Map.of("parentId", child)))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_TREE_PARENT_CYCLE.getCode()));
+        // 合法换父不受影响
+        String other = service.create(model, Map.of("personName", "Other"));
+        service.update(model, child, Map.of("parentId", other));
+        assertThat(jdbc.queryForObject("SELECT PARENT_ID FROM LA_TEST_FORM WHERE ID=?", String.class, child))
+                .isEqualTo(other);
+        // 空串上级归一为 NULL（根节点）
+        service.update(model, child, Map.of("parentId", ""));
+        assertThat(jdbc.queryForObject("SELECT PARENT_ID FROM LA_TEST_FORM WHERE ID=?", String.class, child))
+                .isNull();
+    }
+
+    @Test
     void deletedRowsDisappearFromPageDetailTreeAndWrites() {
         FormModel model = model(true, false, true);
         String id = service.create(model, Map.of("personName", "Root", "deleted", 1));
