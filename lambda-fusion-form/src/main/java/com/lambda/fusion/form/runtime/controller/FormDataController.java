@@ -9,6 +9,7 @@ import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.service.FormRuntimeService;
+import com.lambda.fusion.form.runtime.submit.WorkflowSubmitService;
 import com.lambda.fusion.form.runtime.support.FormAction;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +17,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class FormDataController {
 
     private final FormRuntimeService formRuntimeService;
+    private final ObjectProvider<WorkflowSubmitService> submitServices;
 
     @GetMapping("{formKey}/schema")
     @FormPermission(FormAction.PAGE)
@@ -141,7 +144,12 @@ public class FormDataController {
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) body.get("data");
-        return formRuntimeService.submit(formKey, code, data);
+        WorkflowSubmitService submitService = submitServices.getIfAvailable();
+        if (submitService == null) {
+            // workflow 模块裁剪部署：端点在场但无流程能力，显式拒绝而非 NoClassDefFoundError
+            throw new FormBusinessException(FormErrorCode.FORM_WORKFLOW_UNAVAILABLE);
+        }
+        return submitService.submit(formKey, code, data);
     }
 
     @PutMapping("{formKey}/{id}")

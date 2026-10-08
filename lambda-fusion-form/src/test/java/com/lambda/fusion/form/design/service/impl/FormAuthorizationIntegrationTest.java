@@ -43,6 +43,7 @@ import com.lambda.fusion.form.runtime.interceptor.FormPermission;
 import com.lambda.fusion.form.runtime.interceptor.FormPermissionHandler;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.service.impl.FormRuntimeServiceImpl;
+import com.lambda.fusion.form.runtime.submit.WorkflowSubmitService;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.security.inteceptor.SaTokenInterceptor;
 import java.util.List;
@@ -52,6 +53,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -102,9 +105,7 @@ class FormAuthorizationIntegrationTest {
         runtime = new FormRuntimeServiceImpl(
                 context.getBean(FormModelProvider.class),
                 context.getBean(DynamicDataService.class),
-                context.getBean(FormSchemaAssembler.class),
-                context.getBeanFactory()
-                        .getBeanProvider(com.lambda.fusion.workflow.instance.service.InstanceService.class));
+                context.getBean(FormSchemaAssembler.class));
         UserDetails operator = new UserDetails();
         operator.setUsername("designer");
         mvc = MockMvcBuilders.standaloneSetup(
@@ -114,7 +115,7 @@ class FormAuthorizationIntegrationTest {
                                 context.getBean(FormPreviewService.class),
                                 mock(FormRouteService.class),
                                 context.getBean(FormDataInterceptors.class)),
-                        new FormDataController(runtime))
+                        new FormDataController(runtime, emptySubmitServices()))
                 .defaultRequest(get("/").requestAttr(Constants.LOGIN_USER, operator))
                 .addFilters(new SaTokenContextFilterForJakartaServlet())
                 .addInterceptors(
@@ -336,5 +337,9 @@ class FormAuthorizationIntegrationTest {
         field.setFieldType("STRING");
         command.setFields(List.of(field));
         return command;
+    }
+
+    private static ObjectProvider<WorkflowSubmitService> emptySubmitServices() {
+        return new StaticListableBeanFactory().getBeanProvider(WorkflowSubmitService.class);
     }
 }

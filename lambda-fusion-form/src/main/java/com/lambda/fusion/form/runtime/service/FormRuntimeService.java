@@ -62,8 +62,6 @@ public interface FormRuntimeService {
      * @param data     表单数据
      * @return 业务行 id
      */
-    String submit(String formKey, String flowCode, Map<String, Object> data);
-
     void update(String formKey, String id, Map<String, Object> data);
 
     void delete(String formKey, String id);

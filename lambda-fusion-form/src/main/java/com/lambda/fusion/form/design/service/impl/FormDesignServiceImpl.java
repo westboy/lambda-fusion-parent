@@ -241,6 +241,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "MASTER_SUB 类型必须配置主从关系");
         }
         validateFlatRelations(command);
+        validateDetailConfig(command.getDetailConfig());
         // 列名唯一性与编译期 FormModelCompiler 同口径：按 (subFormKey, column) 复合键判定，
         // 主子表直连不同（或自关联同一）物理表时允许同名列；字段标识仍全局唯一
         long distinctNames = command.getFields().stream()
@@ -563,6 +564,19 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setListConfig(command.getListConfig());
         def.setDetailConfig(command.getDetailConfig());
         def.setFormLayout(command.getFormLayout());
+    }
+
+    /** 详情呈现配置 JSON 预校验：保存期即拒绝非法 JSON，不拖到发布期 */
+    private void validateDetailConfig(String json) {
+        if (json == null || json.isBlank()) {
+            return;
+        }
+        try {
+            objectMapper.readTree(json);
+        } catch (JacksonException e) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "detailConfig 不是合法 JSON：" + e.getMessage());
+        }
     }
 
     /** 列表级配置 JSON 的顶层键白名单校验 */

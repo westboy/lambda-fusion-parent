@@ -1,4 +1,4 @@
-package com.lambda.fusion.form.runtime.service.impl;
+package com.lambda.fusion.form.runtime.submit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,6 +12,7 @@ import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.service.impl.FormRuntimeServiceImpl;
 import com.lambda.fusion.form.runtime.support.FormDefSnapshot;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
@@ -27,16 +28,18 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import tools.jackson.databind.ObjectMapper;
 
 /** 流程表单提交编排：同事务 create+start 的参数绑定与 workflow 缺席拒绝。 */
-class FormRuntimeSubmitTest {
+class WorkflowSubmitServiceTest {
 
     private final FormModelProvider models = mock(FormModelProvider.class);
     private final DynamicDataService data = mock(DynamicDataService.class);
     private final InstanceService instances = mock(InstanceService.class);
-    private FormRuntimeServiceImpl service;
+    private final FormRuntimeServiceImpl runtimeService =
+            new FormRuntimeServiceImpl(models, data, mock(FormSchemaAssembler.class));
+    private WorkflowSubmitService service;
 
     @BeforeEach
     void setUp() {
-        service = new FormRuntimeServiceImpl(models, data, mock(FormSchemaAssembler.class), providerOf(true));
+        service = new WorkflowSubmitService(runtimeService, providerOf(true));
         when(models.require("leave")).thenReturn(model());
         when(data.create(any(), any())).thenReturn("row-1");
     }
@@ -57,8 +60,7 @@ class FormRuntimeSubmitTest {
 
     @Test
     void submitRejectsWhenWorkflowModuleIsAbsent() {
-        FormRuntimeServiceImpl isolated =
-                new FormRuntimeServiceImpl(models, data, mock(FormSchemaAssembler.class), providerOf(false));
+        WorkflowSubmitService isolated = new WorkflowSubmitService(runtimeService, providerOf(false));
         assertThatThrownBy(() -> isolated.submit("leave", "leave_flow", Map.of()))
                 .isInstanceOf(FormBusinessException.class)
                 .satisfies(error -> assertThat(((FormBusinessException) error).getCode())

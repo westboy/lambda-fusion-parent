@@ -1117,7 +1117,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 continue;
             }
             for (Map<String, Object> row : rows) {
-                row.put(relation.subFormKey(), grouped.getOrDefault(String.valueOf(row.get("id")), List.of()));
+                List<Map<String, Object>> subs = grouped.getOrDefault(String.valueOf(row.get("id")), List.of());
+                // 子行的 ORG/USER/ROLE 同样按 id→名称解析（内联子网格/详情子表按名称呈现）
+                attachBizLabels(subModel, subs);
+                row.put(relation.subFormKey(), subs);
             }
         }
     }

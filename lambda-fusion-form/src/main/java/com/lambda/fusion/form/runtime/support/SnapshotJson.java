@@ -46,7 +46,10 @@ public class SnapshotJson {
         }
     }
 
-    /** 详情呈现配置解析（detailConfig JSON → 归一化前的原始值，白名单收敛在编译器） */
+    /**
+     * 详情呈现配置解析（detailConfig JSON → 归一化；mode/width/columns 白名单收敛）。
+     * 非法 JSON 按请求参数非法拒绝（保存期同样预校验，不拖到发布期）。
+     */
     public FormModel.DetailConfig readDetailConfig(String json) {
         try {
             if (json == null || json.isBlank()) {
@@ -70,7 +73,7 @@ public class SnapshotJson {
             }
             return new FormModel.DetailConfig(mode, width, columns, collapsed);
         } catch (JacksonException e) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "detailConfig 解析失败：" + e.getMessage());
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "detailConfig 解析失败：" + e.getMessage());
         }
     }
 

@@ -13,6 +13,7 @@ import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.runtime.controller.FormDataController;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
 import com.lambda.fusion.form.runtime.service.FormRuntimeService;
+import com.lambda.fusion.form.runtime.submit.WorkflowSubmitService;
 import com.lambda.fusion.permission.PermissionProperties;
 import com.lambda.fusion.permission.loader.LocalPermissionLoader;
 import com.lambda.fusion.permission.model.ApiPermissionMetadata;
@@ -23,6 +24,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.web.context.support.StaticWebApplicationContext;
@@ -77,7 +79,9 @@ class FormApiPermissionTest {
         try (var context = new StaticWebApplicationContext()) {
             context.setServletContext(new MockServletContext());
             context.getBeanFactory()
-                    .registerSingleton("controller", new FormDataController(mock(FormRuntimeService.class)));
+                    .registerSingleton(
+                            "controller",
+                            new FormDataController(mock(FormRuntimeService.class), emptySubmitProviders()));
             context.refresh();
             var mapping = new RequestMappingHandlerMapping();
             mapping.setApplicationContext(context);
@@ -130,5 +134,9 @@ class FormApiPermissionTest {
                 assertThat(registry.getReportedApis("form-app")).isEmpty();
             }
         }
+    }
+
+    private static ObjectProvider<WorkflowSubmitService> emptySubmitProviders() {
+        return new StaticListableBeanFactory().getBeanProvider(WorkflowSubmitService.class);
     }
 }

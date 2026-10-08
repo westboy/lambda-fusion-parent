@@ -16,6 +16,8 @@ import com.lambda.fusion.form.runtime.integration.DynamicFormFlowStatusListener;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.service.FormRuntimeService;
+import com.lambda.fusion.form.runtime.submit.WorkflowSubmitService;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.permission.service.ApiPermissionProvider;
 import com.lambda.fusion.permission.service.ApiPermissionRegistry;
@@ -82,6 +84,21 @@ public class FormConfigure {
                 DynamicTableMapper dynamicTableMapper,
                 TableMetadataReader metadataReader) {
             return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper, metadataReader);
+        }
+    }
+
+    /**
+     * 流程表单提交（workflow 模块在场时装配）：submit 端点依赖 InstanceService，
+     * 裁剪部署下不装配、端点经 ObjectProvider 降级为 FORM_WORKFLOW_UNAVAILABLE。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.fusion.workflow.instance.service.InstanceService")
+    static class WorkflowSubmitIntegration {
+        @Bean
+        WorkflowSubmitService workflowSubmitService(
+                FormRuntimeService formRuntimeService,
+                ObjectProvider<com.lambda.fusion.workflow.instance.service.InstanceService> instanceServices) {
+            return new WorkflowSubmitService(formRuntimeService, instanceServices);
         }
     }
 

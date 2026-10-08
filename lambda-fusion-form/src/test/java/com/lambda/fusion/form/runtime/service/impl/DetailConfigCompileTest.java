@@ -82,7 +82,7 @@ class DetailConfigCompileTest {
                 .isInstanceOf(FormBusinessException.class)
                 .satisfies(error -> {
                     assertThat(((FormBusinessException) error).getCode())
-                            .isEqualTo(FormErrorCode.FORM_TABLE_INVALID.getCode());
+                            .isEqualTo(FormErrorCode.INVALID_PARAMETER.getCode());
                     // 参数化消息的 {0} 位携带解析失败明细
                     assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
                             .contains("detailConfig");
