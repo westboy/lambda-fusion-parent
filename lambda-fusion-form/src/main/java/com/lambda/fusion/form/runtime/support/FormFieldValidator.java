@@ -74,7 +74,7 @@ public final class FormFieldValidator {
         Object normalized;
         try {
             normalized = switch (field.type()) {
-                case "STRING", "TEXT", "FILE", "ORG", "USER" -> requireString(value);
+                case "STRING", "TEXT", "FILE", "ORG", "USER", "ROLE" -> requireString(value);
                 case "DICT" -> value instanceof Number ? decimal(value).toPlainString() : requireString(value);
                 case "INT" -> decimal(value).longValueExact();
                 case "DECIMAL" -> decimal(value);
@@ -136,7 +136,7 @@ public final class FormFieldValidator {
     }
 
     private static boolean textual(FormField field) {
-        return Set.of("STRING", "TEXT", "DICT", "FILE", "ORG", "USER").contains(field.type());
+        return Set.of("STRING", "TEXT", "DICT", "FILE", "ORG", "USER", "ROLE").contains(field.type());
     }
 
     private static String requireString(Object value) {

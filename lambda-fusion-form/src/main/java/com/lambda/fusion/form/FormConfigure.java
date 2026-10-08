@@ -96,8 +96,10 @@ public class FormConfigure {
         BizDataProvider bizDataProvider(
                 com.lambda.fusion.authority.organization.service.OrganizationService organizationService,
                 com.lambda.fusion.authority.user.service.UserInfoService userInfoService,
-                com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper) {
-            return new AuthorityBizDataProvider(organizationService, userInfoService, userOrganizationMapper);
+                com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper,
+                com.lambda.fusion.authority.role.service.RoleService roleService) {
+            return new AuthorityBizDataProvider(
+                    organizationService, userInfoService, userOrganizationMapper, roleService);
         }
     }
 

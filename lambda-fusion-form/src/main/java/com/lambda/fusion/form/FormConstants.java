@@ -50,8 +50,8 @@ public final class FormConstants {
     public static final String STATUS_DISABLED = "DISABLED";
 
     /** 字段类型白名单 */
-    public static final Set<String> FIELD_TYPES =
-            Set.of("STRING", "TEXT", "INT", "DECIMAL", "DATE", "DATETIME", "DICT", "BOOL", "FILE", "ORG", "USER");
+    public static final Set<String> FIELD_TYPES = Set.of(
+            "STRING", "TEXT", "INT", "DECIMAL", "DATE", "DATETIME", "DICT", "BOOL", "FILE", "ORG", "USER", "ROLE");
 
     /** 查询操作符白名单 */
     public static final Set<String> QUERY_OPERATORS =

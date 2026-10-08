@@ -31,6 +31,7 @@ public class AuthorityBizDataProvider implements BizDataProvider {
     private final OrganizationService organizationService;
     private final UserInfoService userInfoService;
     private final com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper;
+    private final com.lambda.fusion.authority.role.service.RoleService roleService;
 
     @Override
     public List<Map<String, Object>> organizationTree() {
@@ -101,6 +102,19 @@ public class AuthorityBizDataProvider implements BizDataProvider {
     }
 
     @Override
+    public List<Map<String, Object>> roles() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (com.lambda.fusion.authority.role.model.Role role :
+                roleService.queryRoles(com.lambda.fusion.core.utils.AuthUtils.getUser())) {
+            Map<String, Object> node = new LinkedHashMap<>();
+            node.put("authority", role.getAuthority());
+            node.put("name", role.getAlias());
+            result.add(node);
+        }
+        return result;
+    }
+
+    @Override
     public Map<String, String> labels(String type, Collection<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return Map.of();
@@ -116,6 +130,16 @@ public class AuthorityBizDataProvider implements BizDataProvider {
                 if (org.getChildren() != null) {
                     pending.addAll(org.getChildren());
                 }
+            }
+            return flat.entrySet().stream()
+                    .filter(entry -> ids.contains(entry.getKey()))
+                    .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        }
+        if ("ROLE".equals(type)) {
+            Map<String, String> flat = new LinkedHashMap<>();
+            for (com.lambda.fusion.authority.role.model.Role role :
+                    roleService.queryRoles(com.lambda.fusion.core.utils.AuthUtils.getUser())) {
+                flat.put(role.getAuthority(), role.getAlias());
             }
             return flat.entrySet().stream()
                     .filter(entry -> ids.contains(entry.getKey()))

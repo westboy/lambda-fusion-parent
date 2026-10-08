@@ -39,6 +39,14 @@ public class FormBizController {
         return provider == null ? List.of() : provider.organizationTree();
     }
 
+    @GetMapping("{formKey}/biz/roles")
+    @FormPermission(FormAction.PAGE)
+    @Operation(summary = "角色清单（ROLE 字段选择器数据源，当前用户可见）")
+    public List<Map<String, Object>> roles(@PathVariable String formKey) {
+        BizDataProvider provider = bizDataProviders.getIfAvailable();
+        return provider == null ? List.of() : provider.roles();
+    }
+
     @GetMapping("{formKey}/biz/users")
     @FormPermission(FormAction.PAGE)
     @Operation(summary = "用户检索（USER 字段选择器数据源，昵称/账号模糊匹配）")

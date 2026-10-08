@@ -194,6 +194,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         if (isBizField(field)) {
             Object label = row.get(BIZ_LABEL_PREFIX + field.name());
+            if (label instanceof List<?> list) {
+                return String.join("、", list.stream().map(Object::toString).toList());
+            }
             if (label != null) {
                 return label;
             }
@@ -202,7 +205,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     private static boolean isBizField(FormField field) {
-        return "ORG".equals(field.type()) || "USER".equals(field.type());
+        return "ORG".equals(field.type()) || "USER".equals(field.type()) || "ROLE".equals(field.type());
     }
 
     /** 导出值格式化：布尔转是/否、日期时间友好格式，其余原样 */
@@ -1549,8 +1552,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      */
     private void attachBizLabels(FormModel model, List<Map<String, Object>> rows) {
         List<FormField> bizFields = model.fields().stream()
-                .filter(field ->
-                        field.subFormKey() == null && ("ORG".equals(field.type()) || "USER".equals(field.type())))
+                .filter(field -> field.subFormKey() == null && isBizField(field))
                 .toList();
         if (bizFields.isEmpty() || rows.isEmpty()) {
             return;
@@ -1560,18 +1562,41 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             return;
         }
         for (FormField field : bizFields) {
+            // ROLE 多选：值为 authority 集合，扁平化为 id 集
             Set<String> ids = rows.stream()
-                    .map(row -> row.get(field.name()))
-                    .filter(java.util.Objects::nonNull)
-                    .map(String::valueOf)
+                    .flatMap(row -> bizIds(row.get(field.name())))
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             if (ids.isEmpty()) {
                 continue;
             }
             Map<String, String> labels = provider.labels(field.type(), ids);
             String key = BIZ_LABEL_PREFIX + field.name();
-            rows.forEach(row -> row.put(key, labels.get(String.valueOf(row.get(field.name())))));
+            rows.forEach(row -> {
+                Object raw = row.get(field.name());
+                if (raw instanceof List<?> list) {
+                    // 多选：按提交顺序翻译，未命中的 id 保留原值
+                    row.put(
+                            key,
+                            list.stream()
+                                    .map(java.util.Objects::toString)
+                                    .map(id -> labels.getOrDefault(id, id))
+                                    .toList());
+                } else {
+                    row.put(key, labels.get(String.valueOf(raw)));
+                }
+            });
         }
+    }
+
+    /** biz 字段值的 id 流：单值字符串或多选集合拍平 */
+    private static java.util.stream.Stream<String> bizIds(Object value) {
+        if (value == null) {
+            return java.util.stream.Stream.empty();
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().filter(java.util.Objects::nonNull).map(java.util.Objects::toString);
+        }
+        return java.util.stream.Stream.of(value.toString());
     }
 
     private static boolean isBizLabelKey(String key) {

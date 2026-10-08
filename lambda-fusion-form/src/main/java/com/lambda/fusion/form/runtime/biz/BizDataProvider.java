@@ -18,6 +18,9 @@ public interface BizDataProvider {
     /** 机构树（仅启用机构；节点 {id, name, parentId}，children 内嵌） */
     List<Map<String, Object>> organizationTree();
 
+    /** 角色清单（当前用户可见；节点 {authority, name}） */
+    List<Map<String, Object>> roles();
+
     /**
      * 用户检索（昵称/账号模糊匹配，分页；节点 {username, nickName}）。
      * orgId 非空时仅返回该机构下的用户（空串/null 不限）。
