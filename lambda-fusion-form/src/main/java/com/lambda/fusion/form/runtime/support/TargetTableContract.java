@@ -277,7 +277,8 @@ public class TargetTableContract {
 
     private static boolean compatible(FormField field, TableColumnView column) {
         return switch (field.type()) {
-            case "STRING", "TEXT", "FILE" -> textual(column);
+            // ORG/USER/ROLE 存 id/authority（字符串），与文本列同兼容口径
+            case "STRING", "TEXT", "FILE", "ORG", "USER", "ROLE" -> textual(column);
             case "DICT" -> textual(column) || integer(column);
             case "INT" -> integer(column) || exactDecimal(column);
             case "DECIMAL" -> exactDecimal(column);
