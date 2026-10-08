@@ -69,6 +69,7 @@ public class FormSchemaAssembler {
             view.getRelations().add(view1);
         });
         view.setListConfig(toListConfig(model.listConfig()));
+        view.setDetailConfig(toDetailConfig(model.detailConfig()));
         view.setFormLayout(model.formLayout());
         List<FormSchemaView.FieldSchema> fields = new ArrayList<>();
         model.fields().forEach(field -> {
@@ -90,6 +91,15 @@ public class FormSchemaAssembler {
                 .findFirst()
                 .map(FormModel.FormField::name)
                 .orElse(null);
+    }
+
+    private FormSchemaView.DetailConfig toDetailConfig(FormModel.DetailConfig config) {
+        FormSchemaView.DetailConfig view = new FormSchemaView.DetailConfig();
+        view.setMode(config.mode());
+        view.setWidth(config.width());
+        view.setColumns(config.columns());
+        view.setSystemCollapsed(config.systemCollapsed());
+        return view;
     }
 
     private FormSchemaView.ListConfig toListConfig(FormModel.ListConfig config) {

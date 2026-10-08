@@ -131,6 +131,13 @@ public class TargetTableContract {
                 throw invalid("未赋值的必填列：" + column.getColumnName());
             }
         }
+        // SELF 自关联树：父列必须允许「无父」（根节点语义）——物理 NOT NULL 且无默认值的父列创建根节点必失败
+        if (model.tree() != null && model.tree().selfRelation()) {
+            TableColumnView parentColumn = columns.get(model.tree().parentColumn());
+            if (parentColumn != null && !Boolean.TRUE.equals(parentColumn.getNullable()) && !hasDefault(parentColumn)) {
+                throw invalid("SELF 树父列 " + model.tree().parentColumn() + " 必须可空或带数据库默认值（根节点要求父列允许空值）");
+            }
+        }
         return columns;
     }
 

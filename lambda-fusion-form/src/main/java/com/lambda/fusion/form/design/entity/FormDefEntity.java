@@ -74,6 +74,10 @@ public class FormDefEntity extends BaseEntity {
     @TableField("LIST_CONFIG")
     private String listConfig;
 
+    /** 详情呈现配置 JSON：{mode,width,columns,systemCollapsed}（mode=dialog/drawer/full） */
+    @TableField("DETAIL_CONFIG")
+    private String detailConfig;
+
     /** 表单与详情共享布局 JSON：列数、字段顺序与占列。 */
     @TableField("FORM_LAYOUT")
     private String formLayout;

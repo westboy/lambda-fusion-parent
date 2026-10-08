@@ -63,6 +63,9 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
     private String listConfig;
 
+    @Schema(description = "详情呈现配置 JSON：{mode:dialog/drawer/full,width,columns,systemCollapsed}")
+    private String detailConfig;
+
     @Schema(description = "表单与详情共享布局 JSON")
     private String formLayout;
 

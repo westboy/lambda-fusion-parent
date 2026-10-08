@@ -561,6 +561,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setPublishOnSave(command.getPublishOnSave());
         def.setLogicDeleteColumn(command.getLogicDeleteColumn());
         def.setListConfig(command.getListConfig());
+        def.setDetailConfig(command.getDetailConfig());
         def.setFormLayout(command.getFormLayout());
     }
 

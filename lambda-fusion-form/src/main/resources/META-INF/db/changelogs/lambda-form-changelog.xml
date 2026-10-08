@@ -351,4 +351,20 @@
             <column name="SUB_TABLE" type="varchar(64)" remarks="子表物理表名（直连；允许与主表重名=自关联）"/>
         </addColumn>
     </changeSet>
+
+    <!-- 详情呈现配置（{mode,width,columns,systemCollapsed}）：弹窗/抽屉/全屏 + 列数 + 系统信息折叠 -->
+    <changeSet id="lambda-fusion-form-202610080001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+            <not>
+                <columnExists tableName="la_form_def" columnName="DETAIL_CONFIG"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column
+                    name="DETAIL_CONFIG"
+                    type="varchar(512)"
+                    remarks="详情呈现配置 JSON：{mode:dialog/drawer/full,width:small/medium/large,columns:1..3,systemCollapsed}"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

@@ -41,6 +41,9 @@ public class FormDefSnapshot {
     /** 列表级配置：布局/分页/按钮等 */
     private ListConfig listConfig = new ListConfig();
 
+    /** 详情呈现配置 JSON：{mode,width,columns,systemCollapsed}（detailConfig() 解析） */
+    private String detailConfig;
+
     private FormLayout formLayout;
 
     private List<Field> fields = new ArrayList<>();

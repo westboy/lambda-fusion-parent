@@ -27,11 +27,25 @@ public record FormModel(
         String tableName,
         String logicDeleteColumn,
         ListConfig listConfig,
+        DetailConfig detailConfig,
         FormLayout formLayout,
         List<FormField> fields,
         List<FormRelation> relations,
         TreeConfig tree,
         String interceptor) {
+
+    /**
+     * 详情呈现配置（仅影响详情 UI，不参与数据路径）
+     *
+     * @param mode 呈现形态：dialog 居中弹窗（默认）/ drawer 右侧抽屉 / full 全屏
+     * @param width 弹窗尺寸：small/medium/large（mode=full 时忽略）
+     * @param columns 字段列数：1/2/3
+     * @param systemCollapsed 系统信息（审计字段）是否默认折叠
+     */
+    public record DetailConfig(String mode, String width, int columns, boolean systemCollapsed) {
+
+        public static final DetailConfig DEFAULT = new DetailConfig("dialog", "medium", 2, false);
+    }
 
     /**
      * 字段定义

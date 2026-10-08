@@ -99,6 +99,9 @@ public class FormSchemaView {
     @Schema(description = "列表级配置：分页/按钮等")
     private ListConfig listConfig = new ListConfig();
 
+    @Schema(description = "详情呈现配置：形态/宽度/列数/系统信息折叠")
+    private DetailConfig detailConfig = new DetailConfig();
+
     @Schema(description = "新增、编辑、详情共用布局")
     private FormLayout formLayout;
 
@@ -203,6 +206,23 @@ public class FormSchemaView {
 
         @Schema(description = "操作按钮显隐与文案")
         private List<ButtonConfig> buttons;
+    }
+
+    @Data
+    @Schema(description = "详情呈现配置")
+    public static class DetailConfig {
+
+        @Schema(description = "形态：dialog 居中弹窗 / drawer 右侧抽屉 / full 全屏")
+        private String mode = "dialog";
+
+        @Schema(description = "弹窗尺寸：small/medium/large（mode=full 时忽略）")
+        private String width = "medium";
+
+        @Schema(description = "字段列数：1/2/3")
+        private Integer columns = 2;
+
+        @Schema(description = "系统信息（审计字段）是否默认折叠")
+        private Boolean systemCollapsed = false;
     }
 
     /**

@@ -46,6 +46,34 @@ public class SnapshotJson {
         }
     }
 
+    /** 详情呈现配置解析（detailConfig JSON → 归一化前的原始值，白名单收敛在编译器） */
+    public FormModel.DetailConfig readDetailConfig(String json) {
+        try {
+            if (json == null || json.isBlank()) {
+                return FormModel.DetailConfig.DEFAULT;
+            }
+            var node = objectMapper.readTree(json);
+            String mode = node.path("mode").asText("dialog");
+            String width = node.path("width").asText("medium");
+            int columns = node.path("columns").isIntegralNumber()
+                    ? node.path("columns").asInt(2)
+                    : 2;
+            boolean collapsed = node.path("systemCollapsed").asBoolean(false);
+            if (!java.util.Set.of("dialog", "drawer", "full").contains(mode)) {
+                mode = "dialog";
+            }
+            if (!java.util.Set.of("small", "medium", "large").contains(width)) {
+                width = "medium";
+            }
+            if (columns < 1 || columns > 3) {
+                columns = 2;
+            }
+            return new FormModel.DetailConfig(mode, width, columns, collapsed);
+        } catch (JacksonException e) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "detailConfig 解析失败：" + e.getMessage());
+        }
+    }
+
     /** 编译期拦截被篡改快照中的子表列表配置（与保存期同一校验规则） */
     public void validateSubTableConfig(String json) {
         SubTableConfigs.columnFields(objectMapper, json);

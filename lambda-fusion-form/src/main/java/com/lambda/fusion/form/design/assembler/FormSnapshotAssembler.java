@@ -26,6 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 public interface FormSnapshotAssembler {
     @Mapping(target = "formLayout", source = "def.formLayout")
     @Mapping(target = "listConfig", source = "def.listConfig")
+    @Mapping(target = "detailConfig", source = "def.detailConfig")
     @Mapping(target = "fields", source = "fields")
     @Mapping(target = "relations", source = "relations")
     FormDefSnapshot assemble(

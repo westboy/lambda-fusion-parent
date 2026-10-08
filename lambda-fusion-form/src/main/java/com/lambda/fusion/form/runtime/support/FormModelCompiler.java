@@ -158,6 +158,7 @@ public class FormModelCompiler {
                     mode,
                     relation.getSubTableConfig()));
         }
+        fields = forceServerBoundFieldsHidden(fields, relations);
         TreeConfig tree = compileTree(snapshot, fields);
         validateLogicDeleteColumn(snapshot, fields);
         return new FormModel(
@@ -171,6 +172,7 @@ public class FormModelCompiler {
                         ? null
                         : snapshot.getLogicDeleteColumn().toUpperCase(Locale.ROOT),
                 compileListConfig(snapshot.getListConfig()),
+                compileDetailConfig(snapshot.getDetailConfig()),
                 FormLayouts.compile(
                         snapshot.getFormLayout(),
                         fields.stream().map(FormField::name).toList()),
@@ -178,6 +180,57 @@ public class FormModelCompiler {
                 List.copyOf(relations),
                 tree,
                 snapshot.getInterceptor());
+    }
+
+    /**
+     * 编译期强制外键字段「表单/列表均隐藏」：外键值由引擎回填（服务端绑定事实），展示配置不得覆盖。
+     * 旧快照（外键选定前导入、或设计期漏隐藏）重新编译即生效，子表网格/详情/列表/导出不再出现外键列。
+     */
+    private List<FormField> forceServerBoundFieldsHidden(List<FormField> fields, List<FormRelation> relations) {
+        List<FormField> result = fields;
+        for (FormRelation relation : relations) {
+            for (int i = 0; i < result.size(); i++) {
+                FormField field = result.get(i);
+                boolean isBoundField = relation.subFormKey().equals(field.subFormKey())
+                        && field.column().equals(relation.foreignKey())
+                        && (field.form().show() || field.list().show());
+                if (!isBoundField) {
+                    continue;
+                }
+                FormField hidden = new FormField(
+                        field.name(),
+                        field.label(),
+                        field.column(),
+                        field.type(),
+                        field.nullable(),
+                        field.defaultValue(),
+                        field.dictType(),
+                        field.sort(),
+                        field.persisted(),
+                        field.subFormKey(),
+                        field.query(),
+                        new FormModel.ListConf(
+                                false,
+                                field.list().width(),
+                                field.list().align(),
+                                field.list().format(),
+                                field.list().frozen(),
+                                field.list().summary(),
+                                field.list().defaultSort(),
+                                field.list().sortOrder()),
+                        new FormModel.FormConf(
+                                false,
+                                field.form().component(),
+                                field.form().props(),
+                                field.form().rules(),
+                                field.form().readonly()));
+                if (result == fields) {
+                    result = new ArrayList<>(fields);
+                }
+                result.set(i, hidden);
+            }
+        }
+        return result;
     }
 
     private TreeConfig compileTree(FormDefSnapshot snapshot, List<FormField> fields) {
@@ -212,9 +265,11 @@ public class FormModelCompiler {
         }
         String parentColumn = tree.parentColumn().toUpperCase(Locale.ROOT);
         String nodeColumn = tree.nodeColumn().toUpperCase(Locale.ROOT);
-        boolean parentMapped = fields.stream().anyMatch(f -> f.column().equals(parentColumn));
+        // 父列必须映射到落库字段：映射到不落库展示字段（主键/审计）时表单永不提交父值，树会静默退化为全根节点
+        boolean parentMapped = fields.stream().filter(FormField::persisted).anyMatch(f -> f.column()
+                .equals(parentColumn));
         if (!parentMapped) {
-            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树父列未映射字段：" + parentColumn);
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树父列未映射落库字段：" + parentColumn);
         }
         if (fields.stream().noneMatch(f -> f.column().equals(nodeColumn))) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "树节点列未映射字段：" + nodeColumn);
@@ -313,6 +368,14 @@ public class FormModelCompiler {
                                 b.getLabel()))
                         .toList();
         return new FormModel.ListConfig(pageSizes, !Boolean.FALSE.equals(config.getShowSeq()), buttons);
+    }
+
+    /**
+     * 详情呈现配置编译：mode/width 白名单 + columns 1..3，缺省/空串回落 dialog/medium/2 列展开。
+     * 呈现配置只影响 UI（不参与数据路径），非法值保守回落而非阻断发布；解析经 SnapshotJson 与全链一致。
+     */
+    private FormModel.DetailConfig compileDetailConfig(String json) {
+        return snapshotJson.readDetailConfig(json);
     }
 
     /** 逻辑删除列：如配置，必须是已映射字段的列 */
