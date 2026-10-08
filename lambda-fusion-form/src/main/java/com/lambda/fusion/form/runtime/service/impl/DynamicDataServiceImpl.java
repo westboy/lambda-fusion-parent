@@ -287,6 +287,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 continue;
             }
             List<Map<String, Object>> rows = subRows(data, relation);
+            // 写入口径与读窗口（maxInlineSubRows 截断）对称：超限拒绝，防止单事务内无限量 INSERT
+            if (rows.size() > formProperties.getMaxInlineSubRows()) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_DATA_INVALID,
+                        relation.subFormKey() + " 提交子行数超过上限：" + formProperties.getMaxInlineSubRows());
+            }
             if (rows.isEmpty()) {
                 continue;
             }
@@ -536,6 +542,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 model.logicDeleteColumn(),
                 model.listConfig(),
                 null,
+                null,
                 subFields,
                 List.of(),
                 null,
@@ -563,6 +570,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 subModel.tableName(),
                 subModel.logicDeleteColumn(),
                 subModel.listConfig(),
+                subModel.detailConfig(),
                 subModel.formLayout(),
                 fields,
                 subModel.relations(),
@@ -658,7 +666,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             insertSubRows(relation, subModel, subColumns, mainId, List.of(subData));
             return;
         }
-        Map<String, Object> row = normalize(subModel, subData, false, subColumns);
+        Map<String, Object> row = normalize(subModel, subData, false, subColumns, subBoundColumns(relation));
+        // 外键列不接受客户端改写：FLAT 从行归属由既有外键值绑定（与 insertSubRows/updateSubRow 同口径）
+        row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
         if (row.isEmpty()) {
             return;
         }
@@ -875,6 +885,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             String mainId,
             List<Map<String, Object>> rows,
             boolean etagPresent) {
+        // 写入口径与读窗口（maxInlineSubRows 截断）对称：超限拒绝，防止单事务内无限量子行写入
+        if (rows.size() > formProperties.getMaxInlineSubRows()) {
+            throw new FormBusinessException(
+                    FormErrorCode.FORM_DATA_INVALID,
+                    relation.subFormKey() + " 提交子行数超过上限：" + formProperties.getMaxInlineSubRows());
+        }
         Map<String, Map<String, Object>> existing = activeSubRowsById(subModel, relation, mainId);
         if (rows.isEmpty()) {
             if (!existing.isEmpty() && !etagPresent) {
@@ -981,7 +997,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             String mainId,
             List<Map<String, Object>> rows) {
         for (Map<String, Object> item : rows) {
-            Map<String, Object> row = normalize(subModel, item, true, subColumns);
+            Map<String, Object> row = normalize(subModel, item, true, subColumns, subBoundColumns(relation));
             // 外键由服务端绑定为主行 id：先剥离客户端提交的外键列，避免与绑定列重复（也不被伪造）
             row.keySet().removeIf(column -> column.equalsIgnoreCase(relation.foreignKey()));
             List<String> columns = new ArrayList<>();
@@ -1115,6 +1131,20 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      */
     private Map<String, Object> normalize(
             FormModel model, Map<String, Object> data, boolean create, Map<String, TableColumnView> columns) {
+        return normalize(model, data, create, columns, Set.of());
+    }
+
+    /**
+     * 入参归一（子表口径）：serverBoundColumns 为服务端绑定列（外键，值由引擎在写入前回填主行 id）。
+     * 绑定列未提交时直接跳过归一——物理 NOT NULL 外键字段（nullable=false）在此处先于回填，
+     * 若走必填/非空校验会对合法提交误报「不能为空」；提交了绑定列则照常校验，随后由写入方剥离防伪造归属。
+     */
+    private Map<String, Object> normalize(
+            FormModel model,
+            Map<String, Object> data,
+            boolean create,
+            Map<String, TableColumnView> columns,
+            Set<String> serverBoundColumns) {
         Map<String, Object> source = data == null ? Map.of() : data;
         Map<String, Object> row = new LinkedHashMap<>();
         for (FormField field : model.fields()) {
@@ -1128,7 +1158,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "禁止映射系统字段：" + field.column());
             }
             boolean submitted = source.containsKey(field.name());
-            if (!create && !submitted) {
+            // 绑定列按列名大小写不敏感匹配（与剥列的 equalsIgnoreCase 同口径，编译期已统一大写为双保险）
+            if (!submitted
+                    && (!create
+                            || serverBoundColumns.stream().anyMatch(bound -> bound.equalsIgnoreCase(field.column())))) {
                 continue;
             }
             Object value = source.get(field.name());

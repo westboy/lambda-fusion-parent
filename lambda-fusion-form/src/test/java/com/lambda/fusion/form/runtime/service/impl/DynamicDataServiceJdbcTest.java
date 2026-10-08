@@ -59,6 +59,7 @@ class DynamicDataServiceJdbcTest {
     private SqlSession session;
     private JdbcTemplate jdbc;
     private DynamicDataServiceImpl service;
+    private TargetTableContract contract;
     private FormProperties formProperties;
     private MybatisPlusExtendProperties mybatisProperties;
     private final FormModelProvider modelProvider = mock(FormModelProvider.class);
@@ -114,16 +115,15 @@ class DynamicDataServiceJdbcTest {
         formProperties = new FormProperties();
         formProperties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY", "LA_TEST_SUB"));
         formProperties.setMaxTreeDescendants(3);
+        contract = new TargetTableContract(
+                new TableMetadataReader(
+                        dataSource, properties, new StaticListableBeanFactory().getBeanProvider(CacheManager.class)),
+                mybatisProperties);
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
                 new QueryAstValidator(new FormProperties()),
                 modelProvider,
-                new TargetTableContract(
-                        new TableMetadataReader(
-                                dataSource,
-                                properties,
-                                new StaticListableBeanFactory().getBeanProvider(CacheManager.class)),
-                        mybatisProperties),
+                contract,
                 formProperties,
                 new FormDataInterceptors(new GenericApplicationContext()),
                 new ObjectMapper());
@@ -532,6 +532,45 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void selfTreeParentColumnMustMapToPersistedField() {
+        // 父列映射到不落库展示字段（persisted=false）时表单永不提交父值，树静默退化为全根节点——编译期拒绝
+        SnapshotJson json = new SnapshotJson(new ObjectMapper());
+        FormDefSnapshot snapshot = treeSnapshot();
+        FormDefSnapshot.Field parentId = field("parentId", "PARENT_ID", "STRING", true);
+        parentId.setPersisted(false);
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("note", "NOTE", "TEXT", true),
+                field("amount", "AMOUNT", "DECIMAL", true),
+                field("deleted", "DELETED", "INT", false),
+                parentId));
+        assertThatThrownBy(() -> new FormModelCompiler(json).compile(json.write(snapshot), 1L))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("树父列未映射落库字段"));
+    }
+
+    @Test
+    void selfTreeParentColumnMustBePhysicallyNullableForRootNodes() {
+        // 根节点语义要求父列允许空值：物理 NOT NULL 且无默认值的父列创建根节点必失败——发布契约拒绝
+        jdbc.execute("ALTER TABLE LA_TEST_FORM ALTER COLUMN PARENT_ID SET NOT NULL");
+        SnapshotJson json = new SnapshotJson(new ObjectMapper());
+        FormDefSnapshot snapshot = treeSnapshot();
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("note", "NOTE", "TEXT", true),
+                field("amount", "AMOUNT", "DECIMAL", true),
+                field("deleted", "DELETED", "INT", false),
+                // 字段定义 nullable=false 与物理 NOT NULL 一致，不触发「允许清空但物理列 NOT NULL」
+                field("parentId", "PARENT_ID", "STRING", false)));
+        FormModel model = new FormModelCompiler(json).compile(json.write(snapshot), 1L);
+        assertThatThrownBy(() -> contract.validate(model))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("SELF 树父列"));
+    }
+
+    @Test
     void masterSubWritesReadsReplacesAndCascades() {
         when(modelProvider.require("leave_item")).thenReturn(subModel());
         FormModel master = masterSubModel("CASCADE_DELETE");
@@ -588,6 +627,37 @@ class DynamicDataServiceJdbcTest {
         String id = service.create(master, Map.of("personName", "X", "leave_item", List.of(Map.of("itemName", "A1"))));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void inlineSubRowSubmissionAboveReadWindowIsRejected() {
+        // 写入口径与读窗口对称：超过 maxInlineSubRows 的子行提交直接拒绝（防单事务无限 INSERT）
+        formProperties.setMaxInlineSubRows(2);
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel master = masterSubModel("CASCADE_DELETE");
+        assertThatThrownBy(() -> service.create(
+                        master,
+                        Map.of(
+                                "personName",
+                                "X",
+                                "leave_item",
+                                List.of(Map.of("itemName", "A1"), Map.of("itemName", "A2"), Map.of("itemName", "A3")))))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
+        // 更新路径同口径
+        String id = service.create(master, Map.of("personName", "X", "leave_item", List.of(Map.of("itemName", "A1"))));
+        assertThatThrownBy(() -> service.update(
+                        master,
+                        id,
+                        Map.of(
+                                "personName",
+                                "Y",
+                                "leave_item",
+                                List.of(Map.of("itemName", "B1"), Map.of("itemName", "B2"), Map.of("itemName", "B3")))))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_INVALID.getCode()));
     }
 
     @Test
@@ -729,6 +799,46 @@ class DynamicDataServiceJdbcTest {
         assertThat(jdbc.queryForObject(
                         "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND DELETED=0", Integer.class, id))
                 .isEqualTo(0);
+    }
+
+    @Test
+    void notNullForeignKeyFieldSkipsRequiredNormalizationAndIsHiddenOnCompile() {
+        // 真实场景：外键列物理 NOT NULL，导入为 nullable=false 的从字段，前端不提交外键（服务端回填）。
+        // 归一阶段若按必填校验空外键，主从新增会误报「不能为空」——服务端绑定列须跳过归一必填/非空闸。
+        jdbc.execute("ALTER TABLE LA_TEST_SUB ALTER COLUMN LEAVE_ID SET NOT NULL");
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_master");
+        snapshot.setFormName("主从演示");
+        snapshot.setFormType("MASTER_SUB");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        snapshot.setFields(List.of(
+                field("personName", "PERSON_NAME", "STRING", false),
+                field("deleted", "DELETED", "INT", false),
+                subField("itemName", "ITEM_NAME", "STRING", false, "leave_item"),
+                subField("leaveId", "LEAVE_ID", "STRING", false, "leave_item")));
+        var relation = new FormDefSnapshot.Relation();
+        relation.setSubFormKey("leave_item");
+        relation.setSubTable("LA_TEST_SUB");
+        relation.setForeignKey("LEAVE_ID");
+        relation.setCascadeStrategy("CASCADE_DELETE");
+        snapshot.setRelations(List.of(relation));
+        FormModel master = compile(snapshot);
+
+        // 编译期强制外键字段表单/列表隐藏（设计期展示配置不得覆盖服务端绑定事实）
+        FormModel.FormField foreignKeyField = master.fields().stream()
+                .filter(field -> "leaveId".equals(field.name()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(foreignKeyField.form().show()).isFalse();
+        assertThat(foreignKeyField.list().show()).isFalse();
+
+        // 提交体不含外键：create 归一不再误报「不能为空」，外键由服务端回填主行 id
+        String id =
+                service.create(master, Map.of("personName", "Alice", "leave_item", List.of(Map.of("itemName", "A1"))));
+        assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM LA_TEST_SUB WHERE LEAVE_ID=? AND ITEM_NAME='A1'", Integer.class, id))
+                .isEqualTo(1);
     }
 
     @Test
@@ -1096,6 +1206,19 @@ class DynamicDataServiceJdbcTest {
     private static FormModel compile(FormDefSnapshot snapshot) {
         SnapshotJson json = new SnapshotJson(new ObjectMapper());
         return new FormModelCompiler(json).compile(json.write(snapshot), 1L);
+    }
+
+    /** SELF 树演示快照：LA_TEST_FORM（PARENT_ID 父列 + PERSON_NAME 节点列，字段集与 model(tree=true) 一致） */
+    private static FormDefSnapshot treeSnapshot() {
+        FormDefSnapshot snapshot = new FormDefSnapshot();
+        snapshot.setFormKey("test_form");
+        snapshot.setFormName("测试表单");
+        snapshot.setFormType("TREE");
+        snapshot.setTableName("LA_TEST_FORM");
+        snapshot.setLogicDeleteColumn("DELETED");
+        snapshot.setTreeConfig(
+                "{\"sourceType\":\"SELF\",\"parentColumn\":\"PARENT_ID\",\"nodeColumn\":\"PERSON_NAME\"}");
+        return snapshot;
     }
 
     private static FormDefSnapshot.Field field(String name, String column, String type, boolean nullable) {

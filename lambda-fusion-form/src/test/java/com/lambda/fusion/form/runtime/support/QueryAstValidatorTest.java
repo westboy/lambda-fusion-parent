@@ -157,6 +157,7 @@ class QueryAstValidatorTest {
                 "la_demo_leave",
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
                 null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", true, true, "like", 1),

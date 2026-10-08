@@ -136,6 +136,7 @@ class FormUploadControllerTest {
                 "la_demo_leave",
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
                 null,
                 fields,
                 List.of(),

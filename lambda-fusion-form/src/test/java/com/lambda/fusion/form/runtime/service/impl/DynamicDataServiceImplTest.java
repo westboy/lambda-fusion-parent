@@ -310,6 +310,7 @@ class DynamicDataServiceImplTest {
                 TABLE,
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
                 null,
                 List.of(
                         field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
@@ -329,6 +330,7 @@ class DynamicDataServiceImplTest {
                 TABLE,
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
                 null,
                 model().fields(),
                 List.of(new FormModel.FormRelation(
@@ -346,6 +348,7 @@ class DynamicDataServiceImplTest {
                 "LA_TEST_SUB",
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
                 null,
                 List.of(field("leaveId", "LEAVE_ID", "STRING", false, false, false, "eq", 0)),
                 List.of(),
