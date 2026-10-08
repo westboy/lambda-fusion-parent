@@ -95,8 +95,9 @@ public class FormConfigure {
         @Bean
         BizDataProvider bizDataProvider(
                 com.lambda.fusion.authority.organization.service.OrganizationService organizationService,
-                com.lambda.fusion.authority.user.service.UserInfoService userInfoService) {
-            return new AuthorityBizDataProvider(organizationService, userInfoService);
+                com.lambda.fusion.authority.user.service.UserInfoService userInfoService,
+                com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper) {
+            return new AuthorityBizDataProvider(organizationService, userInfoService, userOrganizationMapper);
         }
     }
 

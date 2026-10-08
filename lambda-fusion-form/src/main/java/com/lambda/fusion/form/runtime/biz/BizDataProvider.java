@@ -18,8 +18,11 @@ public interface BizDataProvider {
     /** 机构树（仅启用机构；节点 {id, name, parentId}，children 内嵌） */
     List<Map<String, Object>> organizationTree();
 
-    /** 用户检索（昵称/账号模糊匹配，分页；节点 {username, nickName}） */
-    List<Map<String, Object>> searchUsers(String keyword, int pageSize);
+    /**
+     * 用户检索（昵称/账号模糊匹配，分页；节点 {username, nickName}）。
+     * orgId 非空时仅返回该机构下的用户（空串/null 不限）。
+     */
+    List<Map<String, Object>> searchUsers(String keyword, int pageSize, String orgId);
 
     /**
      * 批量 id→名称（列表/详情/导出把 id 渲染为名称）：ORG 取机构名，USER 取用户昵称。

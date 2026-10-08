@@ -30,6 +30,7 @@ public class AuthorityBizDataProvider implements BizDataProvider {
 
     private final OrganizationService organizationService;
     private final UserInfoService userInfoService;
+    private final com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper;
 
     @Override
     public List<Map<String, Object>> organizationTree() {
@@ -57,17 +58,38 @@ public class AuthorityBizDataProvider implements BizDataProvider {
     }
 
     @Override
-    public List<Map<String, Object>> searchUsers(String keyword, int pageSize) {
+    public List<Map<String, Object>> searchUsers(String keyword, int pageSize, String orgId) {
         if (!StringUtils.hasText(keyword)) {
             return List.of();
         }
+        // 机构过滤：先取该机构下的用户名集合，空集合直接无结果
+        java.util.Set<String> orgUsernames = null;
+        if (StringUtils.hasText(orgId)) {
+            orgUsernames = userOrganizationMapper
+                    .selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                                    com.lambda.fusion.authority.organization.model.entity.UserOrganizationEntity>()
+                            .eq(
+                                    com.lambda.fusion.authority.organization.model.entity.UserOrganizationEntity
+                                            ::getOrganizationId,
+                                    orgId))
+                    .stream()
+                    .map(com.lambda.fusion.authority.organization.model.entity.UserOrganizationEntity::getUsername)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (orgUsernames.isEmpty()) {
+                return List.of();
+            }
+        }
         int limit = Math.min(Math.max(pageSize, 1), USER_SEARCH_LIMIT);
+        final java.util.Set<String> scope = orgUsernames;
         List<Map<String, Object>> result = new ArrayList<>();
         for (UserInfoEntity user : userInfoService
                 .lambdaQuery()
-                .and(wrapper -> wrapper.like(UserInfoEntity::getDdNick, keyword)
-                        .or()
-                        .like(UserInfoEntity::getUsername, keyword))
+                .and(wrapper -> {
+                    wrapper.like(UserInfoEntity::getDdNick, keyword).or().like(UserInfoEntity::getUsername, keyword);
+                    if (scope != null) {
+                        wrapper.and(w -> w.in(UserInfoEntity::getUsername, scope));
+                    }
+                })
                 .last("LIMIT " + limit)
                 .list()) {
             Map<String, Object> node = new LinkedHashMap<>();

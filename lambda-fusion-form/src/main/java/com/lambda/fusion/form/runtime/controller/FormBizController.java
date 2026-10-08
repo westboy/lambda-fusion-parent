@@ -45,11 +45,12 @@ public class FormBizController {
     public List<Map<String, Object>> users(
             @PathVariable String formKey,
             @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "20") int pageSize) {
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String orgId) {
         BizDataProvider provider = bizDataProviders.getIfAvailable();
         if (provider == null) {
             return List.of();
         }
-        return provider.searchUsers(keyword, pageSize);
+        return provider.searchUsers(keyword, pageSize, orgId);
     }
 }
