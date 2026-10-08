@@ -18,6 +18,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
@@ -126,7 +127,8 @@ class DynamicDataServiceJdbcTest {
                 contract,
                 formProperties,
                 new FormDataInterceptors(new GenericApplicationContext()),
-                new ObjectMapper());
+                new ObjectMapper(),
+                new StaticListableBeanFactory().getBeanProvider(BizDataProvider.class));
         TenantContextHolder.getInstance().setTenantId("tenantA");
     }
 

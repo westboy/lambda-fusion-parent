@@ -8,6 +8,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
@@ -44,6 +45,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
@@ -73,6 +75,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     /** 上级节点展示名随行下发的保留键（SELF/FORM 树；双下划线前缀，字段命名规则不会撞，同 __childCount） */
     private static final String TREE_PARENT_LABEL_KEY = "__treeParentLabel";
 
+    /** 系统主数据（ORG/USER）字段的名称随行下发前缀：__bizLabel_{字段标识} */
+    private static final String BIZ_LABEL_PREFIX = "__bizLabel_";
+
     private final DynamicTableMapper dynamicTableMapper;
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
@@ -80,6 +85,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     private final FormProperties formProperties;
     private final FormDataInterceptors interceptors;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<BizDataProvider> bizDataProviders;
 
     @Override
     public FormDataPageView page(FormModel model, FormDataPageQuery query) {
@@ -113,6 +119,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 records.stream().map(row -> project(model, row)).toList();
         attachSubRows(model, projected);
         attachTreeParentLabels(model, projected);
+        attachBizLabels(model, projected);
         projected.forEach(row -> row.put(ETAG_KEY, etagOf(row)));
         return FormDataPageView.builder()
                 .pageNum(pageNum)
@@ -162,6 +169,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             List<Map<String, Object>> rows =
                     records.stream().map(row -> project(model, row)).toList();
             attachTreeParentLabels(model, rows);
+            attachBizLabels(model, rows);
             for (Map<String, Object> row : rows) {
                 writer.write(columns.stream()
                         .map(field -> csvCell(formatExportValue(field, exportCellValue(parentFieldName, field, row))))
@@ -176,7 +184,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         writer.flush();
     }
 
-    /** 导出取值：树父字段优先用随行解析的上级节点名（未命中回退原值），其余字段取原值 */
+    /** 导出取值：树父字段/ORG/USER 优先用随行解析的名称（未命中回退原值），其余字段取原值 */
     private Object exportCellValue(String parentFieldName, FormField field, Map<String, Object> row) {
         if (parentFieldName != null && parentFieldName.equals(field.name())) {
             Object label = row.get(TREE_PARENT_LABEL_KEY);
@@ -184,7 +192,17 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 return label;
             }
         }
+        if (isBizField(field)) {
+            Object label = row.get(BIZ_LABEL_PREFIX + field.name());
+            if (label != null) {
+                return label;
+            }
+        }
         return row.get(field.name());
+    }
+
+    private static boolean isBizField(FormField field) {
+        return "ORG".equals(field.type()) || "USER".equals(field.type());
     }
 
     /** 导出值格式化：布尔转是/否、日期时间友好格式，其余原样 */
@@ -251,6 +269,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> result = project(model, row);
         attachSubRows(model, List.of(result));
         attachTreeParentLabels(model, List.of(result));
+        attachBizLabels(model, List.of(result));
         result.put(ETAG_KEY, etagOf(result));
         return result;
     }
@@ -1260,8 +1279,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> sorted = new TreeMap<>();
             map.forEach((key, item) -> {
-                // 保留键不参与指纹：__etag 本身、随行下发的展示辅助键（非落库数据，读写路径口径须一致）
-                if (ETAG_KEY.equals(key) || TREE_PARENT_LABEL_KEY.equals(key)) {
+                // 保留键不参与指纹：__etag 本身、随行下发的展示辅助键（树上级名/系统主数据名，非落库数据）
+                if (ETAG_KEY.equals(key) || TREE_PARENT_LABEL_KEY.equals(key) || isBizLabelKey(String.valueOf(key))) {
                     return;
                 }
                 sorted.put(String.valueOf(key), canonicalize(item));
@@ -1522,6 +1541,41 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     .orElse(null);
         }
         return tree.nodeIdField();
+    }
+
+    /**
+     * ORG/USER 字段 id→名称解析（随行下发 __bizLabel_{字段}）：机构走树打平、用户按用户名 IN 批量查。
+     * 数据源缺席（authority 裁剪）时跳过，列表/详情/导出回退原值显示。
+     */
+    private void attachBizLabels(FormModel model, List<Map<String, Object>> rows) {
+        List<FormField> bizFields = model.fields().stream()
+                .filter(field ->
+                        field.subFormKey() == null && ("ORG".equals(field.type()) || "USER".equals(field.type())))
+                .toList();
+        if (bizFields.isEmpty() || rows.isEmpty()) {
+            return;
+        }
+        BizDataProvider provider = bizDataProviders.getIfAvailable();
+        if (provider == null) {
+            return;
+        }
+        for (FormField field : bizFields) {
+            Set<String> ids = rows.stream()
+                    .map(row -> row.get(field.name()))
+                    .filter(java.util.Objects::nonNull)
+                    .map(String::valueOf)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            if (ids.isEmpty()) {
+                continue;
+            }
+            Map<String, String> labels = provider.labels(field.type(), ids);
+            String key = BIZ_LABEL_PREFIX + field.name();
+            rows.forEach(row -> row.put(key, labels.get(String.valueOf(row.get(field.name())))));
+        }
+    }
+
+    private static boolean isBizLabelKey(String key) {
+        return key != null && key.startsWith(BIZ_LABEL_PREFIX);
     }
 
     /**

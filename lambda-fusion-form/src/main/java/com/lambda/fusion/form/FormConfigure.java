@@ -8,6 +8,8 @@ import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
+import com.lambda.fusion.form.integration.biz.AuthorityBizDataProvider;
+import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.integration.DynamicFormBusinessProvider;
 import com.lambda.fusion.form.runtime.integration.DynamicFormFlowStatusListener;
@@ -80,6 +82,21 @@ public class FormConfigure {
                 DynamicTableMapper dynamicTableMapper,
                 TableMetadataReader metadataReader) {
             return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper, metadataReader);
+        }
+    }
+
+    /**
+     * 系统主数据集成（authority 模块在场时装配）：ORG/USER 字段选择器的机构树与用户检索数据源。
+     * 缺席（裁剪部署）时 FormBizController 经 ObjectProvider 降级为空列表。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.fusion.authority.organization.service.OrganizationService")
+    static class BizDataIntegration {
+        @Bean
+        BizDataProvider bizDataProvider(
+                com.lambda.fusion.authority.organization.service.OrganizationService organizationService,
+                com.lambda.fusion.authority.user.service.UserInfoService userInfoService) {
+            return new AuthorityBizDataProvider(organizationService, userInfoService);
         }
     }
 

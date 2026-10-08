@@ -17,6 +17,7 @@ import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
@@ -36,6 +37,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.support.GenericApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
@@ -75,7 +77,8 @@ class DynamicDataServiceImplTest {
                 contract,
                 formProperties,
                 new FormDataInterceptors(new GenericApplicationContext()),
-                new ObjectMapper());
+                new ObjectMapper(),
+                new StaticListableBeanFactory().getBeanProvider(BizDataProvider.class));
         when(mapper.updateDynamic(anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(1);
         when(mapper.deleteById(anyString(), anyString(), anyMap())).thenReturn(1);

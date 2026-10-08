@@ -51,7 +51,7 @@ public final class FormConstants {
 
     /** 字段类型白名单 */
     public static final Set<String> FIELD_TYPES =
-            Set.of("STRING", "TEXT", "INT", "DECIMAL", "DATE", "DATETIME", "DICT", "BOOL", "FILE");
+            Set.of("STRING", "TEXT", "INT", "DECIMAL", "DATE", "DATETIME", "DICT", "BOOL", "FILE", "ORG", "USER");
 
     /** 查询操作符白名单 */
     public static final Set<String> QUERY_OPERATORS =
