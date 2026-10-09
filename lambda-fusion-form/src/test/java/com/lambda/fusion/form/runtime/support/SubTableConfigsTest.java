@@ -1,6 +1,7 @@
 package com.lambda.fusion.form.runtime.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.lambda.fusion.form.exception.FormBusinessException;
@@ -27,6 +28,25 @@ class SubTableConfigsTest {
     void blankTextMeansUnconfigured() {
         assertThat(SubTableConfigs.columnFields(objectMapper, null)).isEmpty();
         assertThat(SubTableConfigs.columnFields(objectMapper, "  ")).isEmpty();
+    }
+
+    @Test
+    void titleValidation() {
+        // 合法标题通过；非字符串/空白/超长按业务明细拦截（明细存于 args）
+        assertThatCode(() -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"title\":\"订单明细\",\"columns\":[{\"field\":\"days\"}]}"))
+                .doesNotThrowAnyException();
+        assertDetail(
+                () -> SubTableConfigs.columnFields(objectMapper, "{\"title\":123,\"columns\":[{\"field\":\"days\"}]}"),
+                "subTableConfig.title 必须是非空字符串");
+        assertDetail(
+                () -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"title\":\"  \",\"columns\":[{\"field\":\"days\"}]}"),
+                "subTableConfig.title 必须是非空字符串");
+        assertDetail(
+                () -> SubTableConfigs.columnFields(
+                        objectMapper, "{\"title\":\"" + "长".repeat(65) + "\",\"columns\":[{\"field\":\"days\"}]}"),
+                "subTableConfig.title 不能超过 64 字符");
     }
 
     @Test

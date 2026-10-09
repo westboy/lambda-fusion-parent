@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 public final class SubTableConfigs {
 
-    public static final Set<String> ROOT_KEYS = Set.of("columns", "rowButtons");
+    public static final Set<String> ROOT_KEYS = Set.of("columns", "rowButtons", "title");
 
     public static final Set<String> COLUMN_KEYS = Set.of(
             "field", "width", "label", "required", "readonly", "defaultValue", "pattern", "min", "max", "message");
@@ -57,6 +57,15 @@ public final class SubTableConfigs {
                 throw new FormBusinessException(
                         FormErrorCode.INVALID_PARAMETER, "subTableConfig 存在非法键：" + entry.getKey());
             }
+        }
+        JsonNode title = root.get("title");
+        if (title != null
+                && !title.isNull()
+                && (!title.isTextual() || title.textValue().isBlank())) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.title 必须是非空字符串");
+        }
+        if (title != null && !title.isNull() && title.textValue().length() > 64) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.title 不能超过 64 字符");
         }
         JsonNode columns = root.get("columns");
         if (columns == null || columns.isNull()) {
