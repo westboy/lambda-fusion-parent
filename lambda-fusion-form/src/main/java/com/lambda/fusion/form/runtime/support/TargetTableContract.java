@@ -44,8 +44,9 @@ public class TargetTableContract {
      *   这些列允许「落库 + 表单不可见 + 数据库 NOT NULL」而无默认值——用户本就不该输入它们。
      */
     public Map<String, TableColumnView> validate(FormModel model, Set<String> serverBoundColumns) {
-        Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
-                .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
+        Map<String, TableColumnView> columns =
+                metadataReader.listColumns(model.datasourceId(), model.tableName()).stream()
+                        .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
         TableColumnView id = requireColumn(columns, FormConstants.COLUMN_ID);
         if (!Boolean.TRUE.equals(id.getPrimaryKey())
                 || columns.values().stream()
@@ -146,8 +147,9 @@ public class TargetTableContract {
      * 模式下被无过滤读写；返回列元数据供默认排序等复用。
      */
     public Map<String, TableColumnView> validateAccess(FormModel model) {
-        Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
-                .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
+        Map<String, TableColumnView> columns =
+                metadataReader.listColumns(model.datasourceId(), model.tableName()).stream()
+                        .collect(Collectors.toMap(TableColumnView::getColumnName, Function.identity()));
         validateTenantRule(model, columns);
         return columns;
     }
@@ -167,7 +169,7 @@ public class TargetTableContract {
         if (uniqueColumns.isEmpty()) {
             return;
         }
-        List<List<String>> indexes = metadataReader.listUniqueIndexColumns(model.tableName());
+        List<List<String>> indexes = metadataReader.listUniqueIndexColumns(model.datasourceId(), model.tableName());
         for (String column : uniqueColumns) {
             boolean covered = indexes.stream()
                     .anyMatch(index -> index.contains(column)

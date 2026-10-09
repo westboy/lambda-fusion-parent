@@ -1,7 +1,6 @@
 package com.lambda.fusion.form;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
@@ -19,31 +18,6 @@ public class FormProperties {
 
     /** 总开关 */
     private boolean enabled = true;
-
-    /**
-     * 允许动态读写的物理表名（大小写不敏感；未配置=不开放任何表）。
-     * 新建表单时主表与全部子表都必须在此清单内；存量已创建表单的编辑不受此限制。
-     */
-    private List<String> allowedTables = List.of();
-
-    public List<String> getAllowedTables() {
-        return List.copyOf(allowedTables);
-    }
-
-    /**
-     * 归一化为大写 Set：表名大小写在库间不一致（yml 小写配置、MySQL 元数据可能大写），
-     * allowsTable 与 tableExcludePattern 同按大小写不敏感口径比对。
-     */
-    public void setAllowedTables(List<String> allowedTables) {
-        if (allowedTables == null || allowedTables.isEmpty()) {
-            this.allowedTables = List.of();
-            return;
-        }
-        this.allowedTables = List.copyOf(allowedTables.stream()
-                .filter(table -> table != null && !table.isBlank())
-                .map(table -> table.toUpperCase(Locale.ROOT))
-                .toList());
-    }
 
     /** 查询条件数上限 */
     private int maxConditionCount = 20;
@@ -79,14 +53,21 @@ public class FormProperties {
                 uploadAllowedExtensions == null ? List.of() : List.copyOf(uploadAllowedExtensions);
     }
 
-    /** 选表导列与发布校验的表名排除正则（元数据表自身与 Liquibase 系统表默认不可映射） */
-    private String tableExcludePattern = "la_form_.*|databasechangelog.*|qrtz_.*";
+    /**
+     * 选表导列与发布校验的表名排除正则（大小写不敏感、整名匹配）。默认排除平台内部表：
+     * la_ 前缀（除 la_demo_ 演示表）覆盖平台各模块数据表（form/authority/datasource/message/
+     * logger/oss/tenant…），ai_ 前缀覆盖 AI 模块，flow_ 前缀覆盖流程引擎，另排除 Liquibase
+     * 与 Quartz 系统表。平台新增内部模块的数据表必须落入默认排除集（登记本注释或沿用约定前缀），
+     * 否则可被动态表单映射写入；业务表请使用自有前缀（如 la_demo_*、crm_*）。
+     */
+    private String tableExcludePattern = "la_(?!demo_).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*";
 
-    /** 设计、发布与运行共同使用的目标表边界。 */
-    public boolean allowsTable(String tableName) {
+    /**
+     * 目标表是否可被动态表单映射（设计、发布与运行共同使用的边界）：
+     * 标识合法且未命中排除正则。平台内部表一律保护，其余物理表开放。
+     */
+    public boolean isMappableTable(String tableName) {
         return FormConstants.isIdentifier(tableName)
-                && !allowedTables.isEmpty()
-                && allowedTables.contains(tableName.toUpperCase(Locale.ROOT))
                 && !Pattern.compile(tableExcludePattern, Pattern.CASE_INSENSITIVE)
                         .matcher(tableName)
                         .matches();

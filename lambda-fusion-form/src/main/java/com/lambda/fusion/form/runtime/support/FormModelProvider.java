@@ -53,7 +53,7 @@ public class FormModelProvider {
         if (def.getPublishedVersion() == null) {
             throw new FormBusinessException(FormErrorCode.FORM_NOT_PUBLISHED, formKey);
         }
-        if (!properties.allowsTable(def.getTableName())) {
+        if (!properties.isMappableTable(def.getTableName())) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表未开放动态读写：" + def.getTableName());
         }
         FormModel cached = cache.get(def.getId(), def.getPublishedVersion());
@@ -67,7 +67,7 @@ public class FormModelProvider {
             throw new FormBusinessException(FormErrorCode.FORM_VERSION_NOT_FOUND);
         }
         FormModel model = compiler.compile(version.getSnapshotJson(), version.getVersion());
-        if (!properties.allowsTable(model.tableName())) {
+        if (!properties.isMappableTable(model.tableName())) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表未开放动态读写：" + model.tableName());
         }
         cache.put(def.getId(), model);

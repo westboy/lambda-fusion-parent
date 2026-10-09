@@ -16,6 +16,7 @@ import com.lambda.fusion.form.design.service.FormDesignService;
 import com.lambda.fusion.form.design.service.FormPreviewService;
 import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.design.service.FormRouteService;
+import com.lambda.fusion.form.design.support.DataSourceCatalog;
 import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
@@ -196,17 +197,25 @@ public class FormDesignController {
     }
 
     @SaCheckPermission("form:design:table")
+    @GetMapping("datasources")
+    @Operation(summary = "设计器可选数据源清单（动态数据源组件缺席时空清单）")
+    public List<DataSourceCatalog.Option> datasources() {
+        return formDesignService.listDataSources();
+    }
+
+    @SaCheckPermission("form:design:table")
     @GetMapping("tables")
-    @Operation(summary = "可映射物理表清单")
-    public List<String> tables() {
-        return formDesignService.listTables();
+    @Operation(summary = "可映射物理表清单（按数据源注册 id 读取，空=平台主库）")
+    public List<String> tables(@RequestParam(required = false) String datasourceId) {
+        return formDesignService.listTables(datasourceId);
     }
 
     @SaCheckPermission("form:design:table")
     @GetMapping("tables/{tableName}/columns")
-    @Operation(summary = "列元数据（选表导列一键生成字段草稿）")
-    public List<TableColumnView> columns(@PathVariable String tableName) {
-        return formDesignService.listColumns(tableName);
+    @Operation(summary = "列元数据（选表导列一键生成字段草稿；按数据源注册 id 读取）")
+    public List<TableColumnView> columns(
+            @PathVariable String tableName, @RequestParam(required = false) String datasourceId) {
+        return formDesignService.listColumns(datasourceId, tableName);
     }
 
     @SaCheckPermission("form:design:edit")

@@ -92,12 +92,9 @@ lambda:
     directory: ${AI_LUCENE_DIRECTORY:${user.home}/.agentscope/fusion/rag/lucene}
   fusion:
     form:
-      # 动态表单可读写的物理表白名单（大小写不敏感）：新建表单的主表与所有子表
-      # 都必须在此清单内；存量已创建表单编辑不受限。未配置=不开放任何表。
-      # 仅开放专用动态表单演示表；新增业务表须显式加入清单。
-      allowed-tables:
-        - la_demo_area
-        - la_demo_leave
+      # 动态表单可映射的物理表 = 排除平台内部表后的全部表（默认排除集见 FormProperties：
+      # la_ 前缀除 la_demo_* 演示表外均属平台内部表，另含 ai_*/flow_* 与 Liquibase/Quartz 系统表；
+      # 可经 lambda.fusion.form.table-exclude-pattern 覆盖）
     permission:
       server:
         auth-token: 111

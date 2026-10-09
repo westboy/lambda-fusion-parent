@@ -515,7 +515,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
 
     private FormModel requireSubModel(FormModel model, FormRelation relation) {
         // 子表直连物理表：须在动态读写允许清单内（发布快照被篡改时此处拦截）
-        if (!formProperties.allowsTable(relation.subTable())) {
+        if (!formProperties.isMappableTable(relation.subTable())) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "子表未开放动态读写：" + relation.subTable());
         }
         List<FormField> subFields = new ArrayList<>();
@@ -561,6 +561,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 model.version(),
                 FormConstants.FORM_TYPE_SINGLE,
                 relation.subTable(),
+                model.datasourceId(),
                 model.logicDeleteColumn(),
                 model.listConfig(),
                 null,
@@ -590,6 +591,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 subModel.version(),
                 subModel.formType(),
                 subModel.tableName(),
+                subModel.datasourceId(),
                 subModel.logicDeleteColumn(),
                 subModel.listConfig(),
                 subModel.detailConfig(),

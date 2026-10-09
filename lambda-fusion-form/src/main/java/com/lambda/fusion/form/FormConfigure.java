@@ -1,15 +1,22 @@
 package com.lambda.fusion.form;
 
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
+import com.lambda.cloud.datasource.dynamic.DynamicDataSourceService;
 import com.lambda.fusion.authority.api.RemoteOrganizationService;
 import com.lambda.fusion.authority.api.RemoteResourceService;
 import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.datasource.api.RemoteDataSourceApi;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.adapter.RemoteFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
+import com.lambda.fusion.form.design.support.DataSourceCatalog;
+import com.lambda.fusion.form.design.support.RemoteDataSourceCatalog;
+import com.lambda.fusion.form.design.support.RuntimeDataSourceResolver;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
+import com.lambda.fusion.form.exception.FormBusinessException;
+import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.integration.biz.RemoteBizDataProvider;
 import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
@@ -133,6 +140,42 @@ public class FormConfigure {
                             () -> FormConfigure.dubboReference(RemoteOrganizationService.class)),
                     userServices.getIfAvailable(() -> FormConfigure.dubboReference(RemoteUserService.class)),
                     roleServices.getIfAvailable(() -> FormConfigure.dubboReference(RemoteRoleService.class)));
+        }
+    }
+
+    /**
+     * 动态数据源集成（datasource 组件在场时装配，契约 §4.1 可选依赖优雅降级）：
+     * 设计器数据源下拉经 {@code RemoteDataSourceApi} 契约枚举（容器已有 Bean 优先，单体 server
+     * 模式即本地实现；api 缺席或 Dubbo 不可用时枚举降级为空清单——仅主库可映射。跨进程引用
+     * 需先抽 datasource-api 模块并按 §7.3 装配，当前单体部署不预建）；
+     * 运行时数据源解析按注册 id 经基础框架 {@code DynamicDataSourceService} 取连接池，
+     * 路由未启用（无 dynamic primary）时解析端口降级为报错口径。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.fusion.datasource.api.RemoteDataSourceApi")
+    static class DataSourceIntegration {
+        @Bean
+        DataSourceCatalog dataSourceCatalog(ObjectProvider<RemoteDataSourceApi> remoteApis) {
+            return new RemoteDataSourceCatalog(remoteApis.getIfAvailable());
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "com.lambda.cloud.datasource.dynamic.DynamicDataSourceService")
+    static class DynamicRoutingIntegration {
+        @Bean
+        RuntimeDataSourceResolver runtimeDataSourceResolver(ObjectProvider<DynamicDataSourceService> services) {
+            return datasourceId -> {
+                DynamicDataSourceService service = services.getIfAvailable();
+                if (service == null) {
+                    throw RuntimeDataSourceResolver.missing();
+                }
+                javax.sql.DataSource resolved = service.getDataSource(datasourceId);
+                if (resolved == null) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "数据源不存在或未启用：" + datasourceId);
+                }
+                return resolved;
+            };
         }
     }
 

@@ -79,8 +79,9 @@ public class DynamicFormFlowStatusListener {
         }
         FormModel model = modelProvider.require(event.bizType());
         // 无 STATUS 列的表不启用回写（列元数据走短 TTL 缓存，DDL 变更后最长一个周期生效）
-        Map<String, TableColumnView> columns = metadataReader.listColumns(model.tableName()).stream()
-                .collect(java.util.stream.Collectors.toMap(TableColumnView::getColumnName, column -> column));
+        Map<String, TableColumnView> columns =
+                metadataReader.listColumns(model.datasourceId(), model.tableName()).stream()
+                        .collect(java.util.stream.Collectors.toMap(TableColumnView::getColumnName, column -> column));
         if (!columns.containsKey(STATUS_COLUMN)) {
             return;
         }

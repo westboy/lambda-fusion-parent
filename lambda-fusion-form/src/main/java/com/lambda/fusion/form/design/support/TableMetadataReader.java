@@ -31,9 +31,14 @@ import org.springframework.stereotype.Component;
  * {@link FormProperties#getTableExcludePattern()} 过滤。只读取当前连接的 catalog/schema，
  * 转义 JDBC 模式字符并核对返回的表名，不跨库合并同名表。
  *
+ * <p>数据源维度：空 id 读平台主库（注入的主 DataSource），非空 id 经
+ * {@link RuntimeDataSourceResolver} 按注册 id（la_datasources.ID）解析对应连接池；
+ * 解析端口缺席（未装配动态数据源组件）而传入非空 id 时报错。
+ *
  * <p>列元数据走 {@code formTableMeta} 短 TTL 缓存（lambda-cloud-starter-cache，TTL 由
- * {@code lambda.cache.caches.form-table-meta} 配置，默认 60s）：目标表结构演进走正常部署，
- * DDL 变更后最长一个 TTL 周期生效。CacheManager 缺失（缓存 starter 未装配）时直通实时读取。
+ * {@code lambda.cache.caches.form-table-meta} 配置，默认 60s），缓存键为 {@code 数据源id:表名}，
+ * 跨源同名表互不串用。目标表结构演进走正常部署，DDL 变更后最长一个 TTL 周期生效。
+ * CacheManager 缺失（缓存 starter 未装配）时直通实时读取。
  *
  * @author Zx
  */
@@ -49,13 +54,16 @@ public class TableMetadataReader {
     private final DataSource dataSource;
     private final FormProperties properties;
     private final ObjectProvider<CacheManager> cacheManagerProvider;
+    private final ObjectProvider<RuntimeDataSourceResolver> runtimeResolverProvider;
 
     /**
      * 列出可映射的物理表名（排除元数据表与系统表）
+     *
+     * @param datasourceId 数据源注册 id（空=平台主库）
      */
-    public List<String> listTables() {
+    public List<String> listTables(String datasourceId) {
         List<String> tables = new ArrayList<>();
-        try (Connection connection = dataSource.getConnection()) {
+        try (Connection connection = openConnection(datasourceId)) {
             DatabaseMetaData metaData = connection.getMetaData();
             String catalog = connection.getCatalog();
             String schema = connection.getSchema();
@@ -80,15 +88,17 @@ public class TableMetadataReader {
     /**
      * 列出目标表的列元数据（选表导列数据源）
      *
+     * @param datasourceId 数据源注册 id（空=平台主库）
      * @param tableName 物理表名
      */
-    public List<TableColumnView> listColumns(String tableName) {
+    public List<TableColumnView> listColumns(String datasourceId, String tableName) {
         if (isExcluded(tableName)) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不可映射：" + tableName);
         }
         Cache cache = metadataCache();
+        String cacheKey = cacheKey(datasourceId, tableName);
         if (cache != null) {
-            Cache.ValueWrapper hit = cache.get(tableName);
+            Cache.ValueWrapper hit = cache.get(cacheKey);
             if (hit != null) {
                 @SuppressWarnings("unchecked")
                 List<TableColumnView> cached = (List<TableColumnView>) hit.get();
@@ -97,9 +107,9 @@ public class TableMetadataReader {
                 }
             }
         }
-        List<TableColumnView> columns = readColumns(tableName);
+        List<TableColumnView> columns = readColumns(datasourceId, tableName);
         if (cache != null) {
-            cache.put(tableName, new ArrayList<>(columns));
+            cache.put(cacheKey, new ArrayList<>(columns));
         }
         return columns;
     }
@@ -110,9 +120,26 @@ public class TableMetadataReader {
         return manager == null ? null : manager.getCache(CACHE_NAME);
     }
 
-    private List<TableColumnView> readColumns(String tableName) {
+    /** 缓存键：数据源 id + 表名（表名受 isIdentifier 约束不含冒号，跨源同名表互不串用） */
+    private static String cacheKey(String datasourceId, String tableName) {
+        return (datasourceId == null || datasourceId.isBlank() ? "" : datasourceId) + ":" + tableName;
+    }
+
+    /** 空 id 直用主库连接；非空 id 经解析端口按注册 id 取对应连接池（端口缺席即报错） */
+    private Connection openConnection(String datasourceId) throws SQLException {
+        if (datasourceId == null || datasourceId.isBlank()) {
+            return dataSource.getConnection();
+        }
+        RuntimeDataSourceResolver resolver = runtimeResolverProvider.getIfAvailable();
+        if (resolver == null) {
+            throw RuntimeDataSourceResolver.missing();
+        }
+        return resolver.resolve(datasourceId).getConnection();
+    }
+
+    private List<TableColumnView> readColumns(String datasourceId, String tableName) {
         List<TableColumnView> columns = new ArrayList<>();
-        try (Connection connection = dataSource.getConnection()) {
+        try (Connection connection = openConnection(datasourceId)) {
             DatabaseMetaData metaData = connection.getMetaData();
             String catalog = connection.getCatalog();
             String schema = connection.getSchema();
@@ -146,15 +173,16 @@ public class TableMetadataReader {
     /**
      * 目标表的唯一索引列组合（发布期唯一约束校验用；主键索引除外）
      *
+     * @param datasourceId 数据源注册 id（空=平台主库）
      * @param tableName 物理表名
      * @return 每个元素为一个唯一索引的有序列名列表（大写）
      */
-    public List<List<String>> listUniqueIndexColumns(String tableName) {
+    public List<List<String>> listUniqueIndexColumns(String datasourceId, String tableName) {
         if (isExcluded(tableName)) {
             throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不可映射：" + tableName);
         }
         Map<String, List<String>> indexes = new java.util.LinkedHashMap<>();
-        try (Connection connection = dataSource.getConnection()) {
+        try (Connection connection = openConnection(datasourceId)) {
             DatabaseMetaData metaData = connection.getMetaData();
             String catalog = connection.getCatalog();
             String schema = connection.getSchema();
@@ -221,7 +249,7 @@ public class TableMetadataReader {
      * 表名是否命中排除模式
      */
     public boolean isExcluded(String tableName) {
-        return !properties.allowsTable(tableName);
+        return !properties.isMappableTable(tableName);
     }
 
     private TableColumnView toColumnView(ResultSet rs, Set<String> primaryKeys) throws SQLException {

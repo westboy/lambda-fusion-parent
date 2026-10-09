@@ -26,6 +26,9 @@ public class FormDefSnapshot {
 
     private String tableName;
 
+    /** 目标数据源注册 id（la_datasources.ID，空=平台主库） */
+    private String datasourceId;
+
     private String treeConfig;
 
     private String titleTemplate;

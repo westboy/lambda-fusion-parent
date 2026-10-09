@@ -5,6 +5,7 @@ import com.lambda.fusion.form.design.model.FormDefPage;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
 import com.lambda.fusion.form.design.model.FormDefView;
 import com.lambda.fusion.form.design.model.TableColumnView;
+import com.lambda.fusion.form.design.support.DataSourceCatalog;
 import java.util.List;
 
 /**
@@ -25,12 +26,17 @@ public interface FormDesignService {
     void remove(String id);
 
     /**
-     * 可映射物理表清单（排除元数据表与系统表）
+     * 可映射物理表清单（排除平台内部表；按数据源注册 id 读取，空=平台主库）
      */
-    List<String> listTables();
+    List<String> listTables(String datasourceId);
 
     /**
-     * 目标表列元数据（选表导列一键生成字段草稿）
+     * 目标表列元数据（选表导列一键生成字段草稿；按数据源注册 id 读取，空=平台主库）
      */
-    List<TableColumnView> listColumns(String tableName);
+    List<TableColumnView> listColumns(String datasourceId, String tableName);
+
+    /**
+     * 设计器数据源下拉清单（动态数据源组件缺席时为空清单，仅平台主库可映射）
+     */
+    List<DataSourceCatalog.Option> listDataSources();
 }

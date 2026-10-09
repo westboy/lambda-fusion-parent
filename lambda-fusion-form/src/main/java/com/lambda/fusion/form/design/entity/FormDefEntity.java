@@ -38,6 +38,10 @@ public class FormDefEntity extends BaseEntity {
     @TableField("TABLE_NAME")
     private String tableName;
 
+    /** 目标数据源注册 id（la_datasources.ID，空=平台主库；创建后不可修改） */
+    @TableField("DATASOURCE_ID")
+    private String datasourceId;
+
     /** TREE 类型：树数据源 JSON（字典/自关联字段/另一表单） */
     @TableField("TREE_CONFIG")
     private String treeConfig;

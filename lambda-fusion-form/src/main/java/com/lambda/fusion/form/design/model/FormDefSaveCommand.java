@@ -39,6 +39,10 @@ public class FormDefSaveCommand {
     @Schema(description = "目标物理表名")
     private String tableName;
 
+    @Size(max = 64, message = "数据源 id 不能超过 64 字符")
+    @Schema(description = "目标数据源注册 id（空=平台主库；创建后不可修改）")
+    private String datasourceId;
+
     @Schema(description = "TREE 类型：树数据源 JSON")
     private String treeConfig;
 

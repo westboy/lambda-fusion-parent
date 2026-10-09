@@ -22,6 +22,7 @@ import com.lambda.fusion.form.design.model.FormRelationItem;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.design.service.FormDesignService;
 import com.lambda.fusion.form.design.service.FormPublishService;
+import com.lambda.fusion.form.design.support.DataSourceCatalog;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
@@ -43,6 +44,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -74,6 +76,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private final FormModelProvider formModelProvider;
     private final FormDataInterceptors formDataInterceptors;
     private final FormProperties formProperties;
+    private final ObjectProvider<DataSourceCatalog> dataSourceCatalogProvider;
 
     @Override
     public PageView<FormDefView> page(FormDefPage page) {
@@ -128,8 +131,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         }
         if (!Objects.equals(def.getFormKey(), command.getFormKey())
                 || !Objects.equals(def.getFormType(), command.getFormType())
-                || !Objects.equals(def.getTableName(), command.getTableName())) {
-            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单标识、类型和目标表创建后不可修改");
+                || !Objects.equals(def.getTableName(), command.getTableName())
+                || !Objects.equals(def.getDatasourceId(), normalizeDatasource(command.getDatasourceId()))) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单标识、类型、目标表和数据源创建后不可修改");
         }
         apply(def, command);
         def.setUpdatedAt(null);
@@ -163,16 +167,22 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     }
 
     @Override
-    public List<String> listTables() {
-        // 与新建收口配套：下拉只列白名单内的表（存量表单回显不受影响，值不在 options 也展示）
-        return tableMetadataReader.listTables().stream()
-                .filter(formProperties::allowsTable)
-                .toList();
+    public List<String> listTables(String datasourceId) {
+        // 下拉列出排除平台内部表后的物理表（排除口径见 FormProperties#isMappableTable，
+        // 元数据读取器内部同口径过滤）
+        return tableMetadataReader.listTables(datasourceId);
     }
 
     @Override
-    public List<TableColumnView> listColumns(String tableName) {
-        return tableMetadataReader.listColumns(tableName);
+    public List<TableColumnView> listColumns(String datasourceId, String tableName) {
+        return tableMetadataReader.listColumns(datasourceId, tableName);
+    }
+
+    @Override
+    public List<DataSourceCatalog.Option> listDataSources() {
+        // 数据源组件缺席（未装配枚举端口）时降级为空清单，设计器仅展示平台主库
+        DataSourceCatalog catalog = dataSourceCatalogProvider.getIfAvailable();
+        return catalog == null ? List.of() : catalog.listEnabled();
     }
 
     private void replaceChildren(String formId, FormDefSaveCommand command) {
@@ -228,10 +238,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         if (!FormConstants.isIdentifier(command.getTableName())) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表名非法：" + command.getTableName());
         }
-        // 主表收口：目标表必须在动态读写白名单内且未被排除正则命中。
-        // 置于元数据读取前，避免下游 isExcluded 抛出泛化的「表不可映射」分不清是白名单还是正则
-        if (!formProperties.allowsTable(command.getTableName())) {
-            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "主表未开放动态读写：" + command.getTableName());
+        // 主表收口：目标表不得命中平台内部表排除集（置于元数据读取前，避免下游 isExcluded
+        // 抛出泛化的「表不可映射」分不清是内部表保护还是标识非法）
+        if (!formProperties.isMappableTable(command.getTableName())) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "主表不可映射（平台内部表受保护或标识非法）：" + command.getTableName());
         }
         if (FormConstants.FORM_TYPE_TREE.equals(command.getFormType())
                 && (command.getTreeConfig() == null || command.getTreeConfig().isBlank())) {
@@ -334,12 +345,14 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             if (!subFormKeys.add(item.getSubFormKey())) {
                 throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表关系标识重复：" + item.getSubFormKey());
             }
-            // 子表直连物理表：须在动态读写允许清单内
-            if (!formProperties.allowsTable(item.getSubTable())) {
-                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "子表未开放动态读写：" + item.getSubTable());
+            // 子表直连物理表：不得命中平台内部表排除集
+            if (!formProperties.isMappableTable(item.getSubTable())) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "子表不可映射（平台内部表受保护或标识非法）：" + item.getSubTable());
             }
             Set<String> physical = subTableColumns.computeIfAbsent(
-                    item.getSubTable(), table -> tableMetadataReader.listColumns(table).stream()
+                    item.getSubTable(),
+                    table -> tableMetadataReader.listColumns(command.getDatasourceId(), table).stream()
                             .map(TableColumnView::getColumnName)
                             .map(name -> name.toUpperCase(Locale.ROOT))
                             .collect(Collectors.toSet()));
@@ -497,10 +510,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
      */
     /** 落库字段的映射列须存在于各自的目标表：主表字段对照本表，FLAT 从表字段对照其子表单的目标表 */
     private void validateColumnsExist(FormDefSaveCommand command) {
-        Set<String> physicalColumns = tableMetadataReader.listColumns(command.getTableName()).stream()
-                .map(TableColumnView::getColumnName)
-                .map(column -> column.toUpperCase(Locale.ROOT))
-                .collect(Collectors.toSet());
+        Set<String> physicalColumns =
+                tableMetadataReader.listColumns(command.getDatasourceId(), command.getTableName()).stream()
+                        .map(TableColumnView::getColumnName)
+                        .map(column -> column.toUpperCase(Locale.ROOT))
+                        .collect(Collectors.toSet());
         Map<String, Set<String>> subColumns = new HashMap<>();
         for (FormFieldItem item : command.getFields()) {
             if (Boolean.FALSE.equals(item.getPersisted())) {
@@ -523,7 +537,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                         .findFirst()
                         .orElseThrow(() ->
                                 new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "从表字段归属的关系不存在：" + key));
-                return tableMetadataReader.listColumns(relation.getSubTable()).stream()
+                return tableMetadataReader.listColumns(command.getDatasourceId(), relation.getSubTable()).stream()
                         .map(TableColumnView::getColumnName)
                         .map(name -> name.toUpperCase(Locale.ROOT))
                         .collect(Collectors.toSet());
@@ -544,6 +558,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         return def;
     }
 
+    /** 数据源 id 归一：空白视为 null（=平台主库） */
+    private static String normalizeDatasource(String datasourceId) {
+        return datasourceId == null || datasourceId.isBlank() ? null : datasourceId;
+    }
+
     private void requireKeyFree(String formKey, String excludeId) {
         FormDefEntity existing = getBaseMapper()
                 .selectOne(new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, formKey));
@@ -557,6 +576,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setFormName(command.getFormName());
         def.setFormType(command.getFormType());
         def.setTableName(command.getTableName());
+        def.setDatasourceId(normalizeDatasource(command.getDatasourceId()));
         def.setTreeConfig(command.getTreeConfig());
         def.setProcessForm(command.getProcessForm());
         def.setTitleTemplate(command.getTitleTemplate());

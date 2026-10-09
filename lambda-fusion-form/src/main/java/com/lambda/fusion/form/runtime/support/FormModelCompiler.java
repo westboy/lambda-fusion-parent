@@ -167,6 +167,9 @@ public class FormModelCompiler {
                 version,
                 snapshot.getFormType(),
                 snapshot.getTableName(),
+                snapshot.getDatasourceId() == null || snapshot.getDatasourceId().isBlank()
+                        ? null
+                        : snapshot.getDatasourceId(),
                 snapshot.getLogicDeleteColumn() == null
                                 || snapshot.getLogicDeleteColumn().isBlank()
                         ? null

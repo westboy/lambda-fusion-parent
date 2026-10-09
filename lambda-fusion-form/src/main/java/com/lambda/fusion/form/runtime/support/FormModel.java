@@ -13,6 +13,7 @@ import java.util.Map;
  * @param version 生效快照版本号
  * @param formType SINGLE / TREE / MASTER_SUB
  * @param tableName 目标物理表（服务端私有，绝不出参）
+ * @param datasourceId 目标数据源注册 id（空=平台主库；元数据读取与运行时读写按同源解析）
  * @param fields 字段定义（按 sort 升序）
  * @param relations 主从关系
  * @param tree TREE 类型树配置（可空）
@@ -25,6 +26,7 @@ public record FormModel(
         long version,
         String formType,
         String tableName,
+        String datasourceId,
         String logicDeleteColumn,
         ListConfig listConfig,
         DetailConfig detailConfig,

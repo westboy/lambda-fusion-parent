@@ -36,6 +36,9 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "目标物理表名")
     private String tableName;
 
+    @Schema(description = "目标数据源注册 id（空=平台主库）")
+    private String datasourceId;
+
     @Schema(description = "TREE 类型：树数据源 JSON")
     private String treeConfig;
 
