@@ -12,6 +12,10 @@ import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.lambda.cloud.core.utils.StpLogicUtils;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
+import com.lambda.fusion.authority.api.RemoteCreateResource;
+import com.lambda.fusion.authority.api.RemoteMoveResource;
+import com.lambda.fusion.authority.api.RemoteResource;
+import com.lambda.fusion.authority.api.RemoteResourceService;
 import com.lambda.fusion.authority.authentication.assembler.MenuRouteAssembler;
 import com.lambda.fusion.authority.authentication.mapper.AuthenticationMapper;
 import com.lambda.fusion.authority.authentication.model.MenuQuery;
@@ -35,8 +39,8 @@ import com.lambda.fusion.core.FusionConstants;
 import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.tree.filter.TreeDataFilter;
 import com.lambda.fusion.core.utils.AuthUtils;
-import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
+import com.lambda.fusion.form.design.adapter.RemoteFormRouteGateway;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.design.model.FormRouteCommand;
 import com.lambda.fusion.form.design.model.FormRouteInfo;
@@ -429,7 +433,112 @@ class FormRouteIntegrationTest {
                 com.lambda.fusion.authority.resource.service.ResourceService resources,
                 com.lambda.fusion.authority.resource.service.PermissionService permissions,
                 ObjectMapper json) {
-            return new AuthorityFormRouteGateway(resources, permissions, json);
+            // 契约 stub：把真实 authority 服务包成 RemoteResourceService（对齐生产适配器的映射边界）
+            return new RemoteFormRouteGateway(new StubRemoteResourceService(resources, permissions), json);
+        }
+    }
+
+    /** RemoteResourceService 契约到真实 authority 服务的测试桩（映射与生产适配器一致） */
+    static class StubRemoteResourceService implements RemoteResourceService {
+        private final com.lambda.fusion.authority.resource.service.ResourceService resources;
+        private final com.lambda.fusion.authority.resource.service.PermissionService permissions;
+
+        StubRemoteResourceService(
+                com.lambda.fusion.authority.resource.service.ResourceService resources,
+                com.lambda.fusion.authority.resource.service.PermissionService permissions) {
+            this.resources = resources;
+            this.permissions = permissions;
+        }
+
+        @Override
+        public RemoteResource getResourceById(String id) {
+            return toRemote(resources.getResourceById(id));
+        }
+
+        @Override
+        public java.util.List<RemoteResource> queryAvailableChildren(String parentId) {
+            com.lambda.fusion.authority.resource.model.Resource parent = resources.getResourceById(parentId);
+            if (parent == null) {
+                return java.util.List.of();
+            }
+            return resources.queryAvailableChildren(parent).stream()
+                    .map(StubRemoteResourceService::toRemote)
+                    .toList();
+        }
+
+        @Override
+        public RemoteResource addResource(RemoteCreateResource create) {
+            com.lambda.fusion.authority.resource.model.CreateResource domain =
+                    new com.lambda.fusion.authority.resource.model.CreateResource();
+            domain.setParentId(create.getParentId());
+            domain.setResName(create.getResName());
+            domain.setResPath(create.getResPath());
+            domain.setResType(create.getResType());
+            domain.setResMode(create.getResMode());
+            domain.setApplication(create.getApplication());
+            domain.setIcon(create.getIcon());
+            domain.setExpand(create.getExpand());
+            domain.setBusinessExpand(create.getBusinessExpand());
+            return toRemote(resources.addResource(domain));
+        }
+
+        @Override
+        public void updateResource(RemoteResource resource) {
+            com.lambda.fusion.authority.resource.model.Resource current = resources.getResourceById(resource.getId());
+            current.setResName(resource.getResName());
+            current.setResPath(resource.getResPath());
+            current.setIcon(resource.getIcon());
+            current.setOrderNo(resource.getOrderNo());
+            current.setExpand(resource.getExpand());
+            current.setKeepAlive(resource.getKeepAlive());
+            current.setApplication(resource.getApplication());
+            resources.updateResource(current);
+        }
+
+        @Override
+        public void moveResource(RemoteMoveResource move) {
+            com.lambda.fusion.authority.resource.model.MoveResource domain =
+                    new com.lambda.fusion.authority.resource.model.MoveResource();
+            domain.setId(move.getId());
+            domain.setTid(move.getTid());
+            domain.setType(move.getType());
+            resources.move(domain);
+        }
+
+        @Override
+        public void deleteResource(String id) {
+            resources.deleteResource(id);
+        }
+
+        @Override
+        public void lockResourceTree() {
+            resources.lockResourceTree();
+        }
+
+        @Override
+        public void bindPermission(String resourceId, String permissionId) {
+            permissions.bind(resourceId, permissionId);
+        }
+
+        private static RemoteResource toRemote(com.lambda.fusion.authority.resource.model.Resource resource) {
+            if (resource == null) {
+                return null;
+            }
+            RemoteResource remote = new RemoteResource();
+            remote.setId(resource.getId());
+            remote.setParentId(resource.getParentId());
+            remote.setResName(resource.getResName());
+            remote.setResPath(resource.getResPath());
+            remote.setResType(resource.getResType());
+            remote.setResMode(resource.getResMode());
+            remote.setIcon(resource.getIcon());
+            remote.setOrderNo(resource.getOrderNo());
+            remote.setExpand(resource.getExpand());
+            remote.setKeepAlive(resource.getKeepAlive());
+            remote.setApplication(resource.getApplication());
+            remote.setParentKeys(resource.getParentKeys());
+            remote.setBusinessExpand(resource.getBusinessExpand());
+            return remote;
         }
     }
 }

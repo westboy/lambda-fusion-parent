@@ -2,12 +2,11 @@ package com.lambda.fusion.form;
 
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.authority.api.RemoteOrganizationService;
+import com.lambda.fusion.authority.api.RemoteResourceService;
 import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
-import com.lambda.fusion.authority.resource.service.PermissionService;
-import com.lambda.fusion.authority.resource.service.ResourceService;
-import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.FormRouteGateway;
+import com.lambda.fusion.form.design.adapter.RemoteFormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
@@ -55,13 +54,23 @@ import tools.jackson.databind.ObjectMapper;
 @MapperScan(basePackages = "com.lambda.fusion.form.**.mapper")
 public class FormConfigure {
 
+    /**
+     * 挂载路由集成（authority 资源契约在场时装配）：表单菜单挂载经 RemoteResourceService 远程契约。
+     * 容器已有 Bean（单体中 authority 适配器）优先，缺失且 Dubbo 可用时自建引用（check=false），
+     * 都没有时装配为空（NullBean），FormRouteServiceImpl 按网关缺席降级（设计/预览/发布仍可用）。
+     */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(ResourceService.class)
-    @ConditionalOnBean({ResourceService.class, PermissionService.class})
+    @ConditionalOnClass(name = "com.lambda.fusion.authority.api.RemoteResourceService")
     static class AuthorityIntegration {
         @Bean
-        FormRouteGateway formRouteGateway(ResourceService resources, PermissionService permissions, ObjectMapper json) {
-            return new AuthorityFormRouteGateway(resources, permissions, json);
+        FormRouteGateway formRouteGateway(ObjectProvider<RemoteResourceService> resourceServices, ObjectMapper json) {
+            RemoteResourceService service =
+                    resourceServices.getIfAvailable(() -> FormConfigure.dubboReference(RemoteResourceService.class));
+            if (service == null) {
+                log.info("authority 资源服务缺席，挂载路由能力降级不可用");
+                return null;
+            }
+            return new RemoteFormRouteGateway(service, json);
         }
     }
 
@@ -127,11 +136,17 @@ public class FormConfigure {
         }
     }
 
-    /** Dubbo 缺席时返回 null（provider 内部按服务缺席降级），不阻断启动 */
+    /**
+     * Dubbo 缺席时返回 null（provider/网关按服务缺席降级），不阻断启动。
+     * 同时探测线程上下文类加载器：当前执行上下文不可见 Dubbo（如测试的 FilteredClassLoader）视为缺席。
+     */
     private static <T> T dubboReference(Class<T> interfaceClass) {
         if (!org.springframework.util.ClassUtils.isPresent(
-                "org.apache.dubbo.config.ReferenceConfig", FormConfigure.class.getClassLoader())) {
-            log.debug("classpath 无 Dubbo，form biz 数据源 {} 降级为空", interfaceClass.getSimpleName());
+                        "org.apache.dubbo.config.ReferenceConfig", FormConfigure.class.getClassLoader())
+                || !org.springframework.util.ClassUtils.isPresent(
+                        "org.apache.dubbo.config.ReferenceConfig",
+                        org.springframework.util.ClassUtils.getDefaultClassLoader())) {
+            log.debug("classpath 无 Dubbo，form 集成 {} 降级为空", interfaceClass.getSimpleName());
             return null;
         }
         org.apache.dubbo.config.ReferenceConfig<T> reference = new org.apache.dubbo.config.ReferenceConfig<>();

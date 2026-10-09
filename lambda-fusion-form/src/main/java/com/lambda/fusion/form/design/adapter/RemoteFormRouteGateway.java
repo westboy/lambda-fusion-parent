@@ -1,11 +1,10 @@
 package com.lambda.fusion.form.design.adapter;
 
 import com.lambda.cloud.core.utils.StpLogicUtils;
-import com.lambda.fusion.authority.resource.model.CreateResource;
-import com.lambda.fusion.authority.resource.model.MoveResource;
-import com.lambda.fusion.authority.resource.model.Resource;
-import com.lambda.fusion.authority.resource.service.PermissionService;
-import com.lambda.fusion.authority.resource.service.ResourceService;
+import com.lambda.fusion.authority.api.RemoteCreateResource;
+import com.lambda.fusion.authority.api.RemoteMoveResource;
+import com.lambda.fusion.authority.api.RemoteResource;
+import com.lambda.fusion.authority.api.RemoteResourceService;
 import com.lambda.fusion.core.FusionConstants;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
@@ -24,22 +23,24 @@ import lombok.RequiredArgsConstructor;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-/** 使用 authority 服务管理本表单的菜单和操作资源，不直接写资源或授权表。 */
+/**
+ * 经 authority 远程契约（{@code RemoteResourceService}）管理本表单的菜单、操作资源与授权，
+ * 不直接写资源或授权表（工程契约 §7.3）。策略逻辑（归属标记、防环、路径保留）与远程适配前一致。
+ */
 @RequiredArgsConstructor
 @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "共享 Spring ObjectMapper，不修改其配置")
-public class AuthorityFormRouteGateway implements FormRouteGateway {
-    private final ResourceService resources;
-    private final PermissionService permissions;
+public class RemoteFormRouteGateway implements FormRouteGateway {
+    private final RemoteResourceService resources;
     private final ObjectMapper json;
 
     @Override
     public FormRouteInfo read(FormDefEntity form) {
-        Resource menu = menu(form);
+        RemoteResource menu = menu(form);
         if (menu == null) return new FormRouteInfo(true, false, null, null, null, null, null, null, List.of());
-        Map<FormAction, Resource> buttons = buttons(form, menu);
+        Map<FormAction, RemoteResource> buttons = buttons(form, menu);
         List<FormRouteInfo.Action> actions = new ArrayList<>();
         for (FormAction action : FormAction.values()) {
-            Resource button = buttons.get(action);
+            RemoteResource button = buttons.get(action);
             if (button != null)
                 actions.add(new FormRouteInfo.Action(
                         action.getCode(), action.getLabel(), action.permission(form.getFormKey()), button.getId()));
@@ -60,10 +61,10 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
     public String save(FormDefEntity form, FormRouteCommand command) {
         checkManager();
         resources.lockResourceTree();
-        Resource current = menu(form);
+        RemoteResource current = menu(form);
         AuthUtils.checkPermission(current == null ? "authority:resource:add" : "authority:resource:update");
         AuthUtils.checkPermission("authority:resource:api-permission-bind");
-        Resource parent = resources.getResourceById(command.parentId());
+        RemoteResource parent = resources.getResourceById(command.parentId());
         if (parent == null
                 || !Integer.valueOf(1).equals(parent.getResType())
                 || !Integer.valueOf(0).equals(parent.getResMode())) {
@@ -86,7 +87,7 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
                 "meta",
                 Map.of("formKey", form.getFormKey(), "formId", form.getId())));
         if (current == null) {
-            CreateResource create = new CreateResource();
+            RemoteCreateResource create = new RemoteCreateResource();
             create.setParentId(parent.getId());
             create.setResName(command.name().trim());
             create.setResPath(path);
@@ -101,11 +102,11 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
             buttons(form, current); // 有非本表单子资源时拒绝改写整个挂载结构。
             if (!Objects.equals(current.getParentId(), parent.getId())) {
                 AuthUtils.checkPermission("authority:resource:move");
-                MoveResource move = new MoveResource();
+                RemoteMoveResource move = new RemoteMoveResource();
                 move.setId(current.getId());
                 move.setTid(parent.getId());
                 move.setType(0);
-                resources.move(move);
+                resources.moveResource(move);
                 current = resources.getResourceById(current.getId());
             }
         }
@@ -117,12 +118,12 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
         current.setKeepAlive(false);
         current.setApplication(parent.getApplication());
         resources.updateResource(current);
-        Map<FormAction, Resource> existing = buttons(form, current);
+        Map<FormAction, RemoteResource> existing = buttons(form, current);
         for (FormAction action : FormAction.values()) {
-            Resource button = existing.get(action);
+            RemoteResource button = existing.get(action);
             if (button == null) {
                 AuthUtils.checkPermission("authority:resource:add");
-                CreateResource create = new CreateResource();
+                RemoteCreateResource create = new RemoteCreateResource();
                 create.setParentId(current.getId());
                 create.setResName(action.getLabel());
                 create.setResPath(action.resourceCode(form.getFormKey()));
@@ -132,7 +133,7 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
                 create.setBusinessExpand(marker(form, action.getCode()));
                 button = resources.addResource(create);
             }
-            permissions.bind(button.getId(), action.permission(form.getFormKey()));
+            resources.bindPermission(button.getId(), action.permission(form.getFormKey()));
         }
         return current.getId();
     }
@@ -143,15 +144,15 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
         AuthUtils.checkPermission("authority:resource:delete");
         AuthUtils.checkPermission("authority:resource:api-permission-unbind");
         resources.lockResourceTree();
-        Resource menu = menu(form);
+        RemoteResource menu = menu(form);
         if (menu == null) return;
         buttons(form, menu); // 只允许删除本功能拥有的完整资源子树。
         resources.deleteResource(menu.getId());
     }
 
-    private Resource menu(FormDefEntity form) {
+    private RemoteResource menu(FormDefEntity form) {
         if (form.getRouteResourceId() == null) return null;
-        Resource resource = resources.getResourceById(form.getRouteResourceId());
+        RemoteResource resource = resources.getResourceById(form.getRouteResourceId());
         if (resource != null
                 && (!owned(resource, form, "menu") || !Integer.valueOf(1).equals(resource.getResType()))) {
             throw conflict("菜单绑定已被其它功能修改，请检查资源归属");
@@ -159,10 +160,11 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
         return resource;
     }
 
-    private Map<FormAction, Resource> buttons(FormDefEntity form, Resource menu) {
-        Map<FormAction, Resource> result = new EnumMap<>(FormAction.class);
-        for (Resource child : resources.queryAvailableChildren(menu)) {
-            Resource resource = resources.getResourceById(child.getId());
+    private Map<FormAction, RemoteResource> buttons(FormDefEntity form, RemoteResource menu) {
+        Map<FormAction, RemoteResource> result = new EnumMap<>(FormAction.class);
+        // queryAvailableChildren 返回树节点（无归属标记字段），逐个按 id 取全量资源校验
+        for (RemoteResource child : resources.queryAvailableChildren(menu.getId())) {
+            RemoteResource resource = resources.getResourceById(child.getId());
             boolean matched = false;
             for (FormAction action : FormAction.values()) {
                 if (Objects.equals(resource.getParentId(), menu.getId())
@@ -183,7 +185,7 @@ public class AuthorityFormRouteGateway implements FormRouteGateway {
         return json.writeValueAsString(Map.of("kind", "dynamic-form", "formId", form.getId(), "action", action));
     }
 
-    private boolean owned(Resource resource, FormDefEntity form, String action) {
+    private boolean owned(RemoteResource resource, FormDefEntity form, String action) {
         if (resource.getBusinessExpand() == null) return false;
         try {
             var marker = json.readTree(resource.getBusinessExpand());

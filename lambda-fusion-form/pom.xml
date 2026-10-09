@@ -19,12 +19,14 @@
             <version>${project.version}</version>
             <optional>true</optional>
         </dependency>
-        <!-- 挂载路由网关（菜单资源写入）：authority 实现类契约缺席 api 层，裁剪部署时降级 -->
+        <!-- 仅测试作用域：FormRouteIntegrationTest 用真实 authority 服务做 H2 集成验证 -->
         <dependency>
             <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-fusion-authority</artifactId>
+            <scope>test</scope>
             <optional>true</optional>
         </dependency>
+
         <dependency>
             <groupId>com.lambda.cloud</groupId>
             <artifactId>lambda-fusion-permission-api</artifactId>
