@@ -78,7 +78,7 @@ public class AuthorityHandlerSelectService implements HandlerSelectService {
             case TYPE_USER -> {
                 if (remoteUserService != null) {
                     RemotePage<RemoteUser> page = safe(
-                            () -> remoteUserService.pageUsers(currentTenant(), keyword, pageNum, pageSize),
+                            () -> remoteUserService.pageUsers(currentTenant(), keyword, null, pageNum, pageSize),
                             () -> new RemotePage<RemoteUser>(0, Collections.emptyList()));
                     total = page.getTotal();
                     rows = page.getRows().stream().map(this::toUserAuth).toList();

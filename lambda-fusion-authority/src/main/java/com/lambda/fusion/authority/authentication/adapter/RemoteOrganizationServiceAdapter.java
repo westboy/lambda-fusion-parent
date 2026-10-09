@@ -34,7 +34,10 @@ public class RemoteOrganizationServiceAdapter implements RemoteOrganizationServi
         return organizationService.selectAll(query).stream()
                 .filter(org -> matchKeyword(org, keyword))
                 .map(org -> new RemoteOrg(
-                        org.getId(), StrUtil.isNotBlank(org.getAlias()) ? org.getAlias() : org.getName(), null))
+                        org.getId(),
+                        StrUtil.isNotBlank(org.getAlias()) ? org.getAlias() : org.getName(),
+                        null,
+                        org.getParentId()))
                 .toList();
     }
 

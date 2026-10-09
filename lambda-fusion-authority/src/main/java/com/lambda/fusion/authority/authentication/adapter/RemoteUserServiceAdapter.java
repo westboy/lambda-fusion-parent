@@ -9,6 +9,8 @@ import com.lambda.fusion.authority.role.model.SimpleRole;
 import com.lambda.fusion.authority.user.model.ThirdPartBinding;
 import com.lambda.fusion.authority.user.model.User;
 import com.lambda.fusion.authority.user.model.UserQueryContext;
+import com.lambda.fusion.authority.user.model.entity.UserInfoEntity;
+import com.lambda.fusion.authority.user.service.UserInfoService;
 import com.lambda.fusion.authority.user.service.UserService;
 import com.lambda.fusion.authority.user.service.UserThirdPartService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -35,6 +37,7 @@ public class RemoteUserServiceAdapter implements RemoteUserService {
 
     private final UserService userService;
     private final UserThirdPartService userThirdPartService;
+    private final UserInfoService userInfoService;
 
     @Override
     public RemoteUser getByUsername(String username) {
@@ -49,17 +52,43 @@ public class RemoteUserServiceAdapter implements RemoteUserService {
     }
 
     @Override
-    public RemotePage<RemoteUser> pageUsers(String tenantId, String keyword, int pageNum, int pageSize) {
+    public RemotePage<RemoteUser> pageUsers(String tenantId, String keyword, String orgId, int pageNum, int pageSize) {
         UserQueryContext context = new UserQueryContext();
         if (tenantId != null) {
             context.setTenantId(tenantId);
         }
         // UserMapper 的 like 不自动包裹通配符，由调用方补 %
         context.setKeyword(keyword == null || keyword.isBlank() ? null : "%" + keyword + "%");
+        if (orgId != null && !orgId.isBlank()) {
+            // 机构范围收窄（动态表单 USER 字段的 orgField 联动）：空机构直接无结果
+            context.setOrgIds(java.util.Set.of(orgId));
+        }
         Page<User> page = userService.getUsers(new Page<>(Math.max(pageNum, 1), Math.max(pageSize, 1)), context);
         List<RemoteUser> rows =
                 page.getRecords().stream().map(this::toRemoteUser).toList();
         return new RemotePage<>(page.getTotal(), rows);
+    }
+
+    @Override
+    public Map<String, String> mapNicknames(java.util.Collection<String> usernames) {
+        if (usernames == null || usernames.isEmpty()) {
+            return Map.of();
+        }
+        List<String> distinct = usernames.stream()
+                .filter(name -> name != null && !name.isBlank())
+                .distinct()
+                .toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        // 一次 IN 查询取昵称；缺失昵称回退用户名，未命中的用户名不进结果
+        return userInfoService.lambdaQuery().in(UserInfoEntity::getUsername, distinct).list().stream()
+                .collect(Collectors.toMap(
+                        UserInfoEntity::getUsername,
+                        user -> user.getDdNick() == null || user.getDdNick().isBlank()
+                                ? user.getUsername()
+                                : user.getDdNick(),
+                        (existing, replacement) -> existing));
     }
 
     private RemoteUser toRemoteUser(User user) {

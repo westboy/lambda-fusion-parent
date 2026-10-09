@@ -28,11 +28,21 @@ public class RemoteOrg implements Serializable {
     /** 组织全称（含层级路径） */
     private String fullName;
 
+    /** 父组织 ID（根节点为空串/null）；消费方按此自行嵌套成树 */
+    private String parentId;
+
     public RemoteOrg() {}
 
     public RemoteOrg(String id, String name, String fullName) {
         this.id = id;
         this.name = name;
         this.fullName = fullName;
+    }
+
+    public RemoteOrg(String id, String name, String fullName, String parentId) {
+        this.id = id;
+        this.name = name;
+        this.fullName = fullName;
+        this.parentId = parentId;
     }
 }
