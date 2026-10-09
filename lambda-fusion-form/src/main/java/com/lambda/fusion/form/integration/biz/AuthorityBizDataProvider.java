@@ -60,9 +60,6 @@ public class AuthorityBizDataProvider implements BizDataProvider {
 
     @Override
     public List<Map<String, Object>> searchUsers(String keyword, int pageSize, String orgId) {
-        if (!StringUtils.hasText(keyword)) {
-            return List.of();
-        }
         // 机构过滤：先取该机构下的用户名集合，空集合直接无结果
         java.util.Set<String> orgUsernames = null;
         if (StringUtils.hasText(orgId)) {
@@ -82,11 +79,17 @@ public class AuthorityBizDataProvider implements BizDataProvider {
         }
         int limit = Math.min(Math.max(pageSize, 1), USER_SEARCH_LIMIT);
         final java.util.Set<String> scope = orgUsernames;
+        final boolean byKeyword = StringUtils.hasText(keyword);
         List<Map<String, Object>> result = new ArrayList<>();
         for (UserInfoEntity user : userInfoService
                 .lambdaQuery()
                 .and(wrapper -> {
-                    wrapper.like(UserInfoEntity::getDdNick, keyword).or().like(UserInfoEntity::getUsername, keyword);
+                    // 空关键词=打开下拉时的初始列表（不下推 LIKE）；有关键词按昵称/账号模糊匹配
+                    if (byKeyword) {
+                        wrapper.like(UserInfoEntity::getDdNick, keyword)
+                                .or()
+                                .like(UserInfoEntity::getUsername, keyword);
+                    }
                     if (scope != null) {
                         wrapper.and(w -> w.in(UserInfoEntity::getUsername, scope));
                     }

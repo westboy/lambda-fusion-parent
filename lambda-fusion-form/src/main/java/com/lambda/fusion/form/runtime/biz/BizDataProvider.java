@@ -24,6 +24,7 @@ public interface BizDataProvider {
     /**
      * 用户检索（昵称/账号模糊匹配，分页；节点 {username, nickName}）。
      * orgId 非空时仅返回该机构下的用户（空串/null 不限）。
+     * keyword 为空时返回初始列表（打开下拉即有的可选用户，不下推 LIKE）。
      */
     List<Map<String, Object>> searchUsers(String keyword, int pageSize, String orgId);
 

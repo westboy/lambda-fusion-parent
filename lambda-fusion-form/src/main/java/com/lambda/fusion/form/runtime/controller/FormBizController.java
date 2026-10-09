@@ -49,7 +49,7 @@ public class FormBizController {
 
     @GetMapping("{formKey}/biz/users")
     @FormPermission(FormAction.PAGE)
-    @Operation(summary = "用户检索（USER 字段选择器数据源，昵称/账号模糊匹配）")
+    @Operation(summary = "用户检索（USER 字段选择器数据源，昵称/账号模糊匹配；空关键词返回初始列表）")
     public List<Map<String, Object>> users(
             @PathVariable String formKey,
             @RequestParam(required = false) String keyword,
