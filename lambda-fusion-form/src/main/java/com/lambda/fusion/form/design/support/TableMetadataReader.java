@@ -36,9 +36,9 @@ import org.springframework.stereotype.Component;
  * 解析端口缺席（未装配动态数据源组件）而传入非空 id 时报错。
  *
  * <p>列元数据走 {@code formTableMeta} 短 TTL 缓存（lambda-cloud-starter-cache，TTL 由
- * {@code lambda.cache.caches.form-table-meta} 配置，默认 60s），缓存键为 {@code 数据源id:表名}，
- * 跨源同名表互不串用。目标表结构演进走正常部署，DDL 变更后最长一个 TTL 周期生效。
- * CacheManager 缺失（缓存 starter 未装配）时直通实时读取。
+ * {@code lambda.cache.caches.form-table-meta} 配置，框架默认 1 小时、演示环境配 60s），
+ * 缓存键为 {@code 数据源id:表名}，跨源同名表互不串用。目标表结构演进走正常部署，DDL
+ * 变更后最长一个 TTL 周期生效。CacheManager 缺失（缓存 starter 未装配）时直通实时读取。
  *
  * @author Zx
  */
