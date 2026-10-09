@@ -39,7 +39,8 @@
 
 ### 2.3 运行时能力
 
-- 分页查询（AST 条件白名单编译）、树节点查询、详情、增删改（`__etag` 乐观锁）
+- 分页查询（AST 条件白名单编译）、树节点查询、详情、增删改
+- 编辑带 `__etag` 行指纹乐观锁（读端随响应下发，更新端回传比对，覆盖主行与内联子行）
 - 台账式子表独立分页/增删改（外键由服务端绑定主行 id）
 - CSV 导出（UTF-8 BOM，行数上限 `max-export-rows`）
 - FILE 字段上传（复用 OSS 附件体系，oss 模块在场时）
@@ -54,7 +55,7 @@
 | `la_form_def` | 草稿工作行（表单标识/类型/目标表/目标数据源/逻辑删除列/列表与详情配置/布局 JSON/乐观锁版本） |
 | `la_form_field` | 字段清单（列映射/类型/落库开关/查询与列表与表单配置 JSON/从表归属标记） |
 | `la_form_relation` | 主从关系（子表物理表/外键/级联策略/呈现方式/子表配置 JSON） |
-| `la_form_def_version` | 发布快照（`SNAPSHOT_JSON` 全量 + `CONTENT_MD5` + 指针语义的 `version`） |
+| `la_form_def_version` | 发布快照（`SNAPSHOT_JSON` 全量 + `CONTENT_MD5` + `version` 版本号）；`la_form_def.PUBLISHED_VERSION` 为指向生效版本的指针 |
 
 **草稿/发布双态**：设计期就地编辑三表；发布时校验 → 组装 `FormDefSnapshot`（MapStruct）→ 存版本 → 拨动 `la_form_def.PUBLISHED_VERSION`。运行时只读快照编译产物，发布物不可变；支持回滚到任意历史版本。
 
@@ -65,7 +66,7 @@
 ### 4.1 表元数据读取（`TableMetadataReader`）
 
 - 经 JDBC `DatabaseMetaData` 内省（表/列/主键/唯一索引），不执行任何 DDL；只读当前连接 catalog/schema，不跨库合并同名表。
-- 列元数据走 `formTableMeta` 短 TTL 缓存（`lambda.cache.caches.form-table-meta`，默认 60s；缓存 starter 缺席时直通），缓存键为 `数据源id:表名`。
+- 列元数据走 `formTableMeta` 短 TTL 缓存（`lambda.cache.caches.form-table-meta`，框架默认 1 小时、演示环境配 60s；缓存 starter 缺席时直通），缓存键为 `数据源id:表名`。
 
 ### 4.2 目标数据源绑定
 
@@ -118,7 +119,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 | POST | `/{id}/rollback/{version}` | 回滚到历史快照 |
 | PUT | `/{id}/route` 等 | 菜单挂载（经 authority 资源，独立于版本发布） |
 
-设计端权限码：`form:design:page/detail/add/edit/delete/table/preview/publish`。
+设计端权限码：`form:design:page/detail/add/edit/delete/table/preview/preview:write/publish/route`。
 
 ### 6.2 运行时 `/v1/form`
 
@@ -186,5 +187,5 @@ lambda:
 ```
 
 - 引入即用：自动装配 `FormAutoConfiguration`（`lambda.fusion.form.enabled=true` 默认开启），元数据四表由 Liquibase 自动建表。
-- 需要目标数据源绑定时，同时引入 `lambda-fusion-datasource` 并配置 `DynamicRoutingDataSource`。
+- 需要目标数据源绑定时，同时引入 `lambda-fusion-datasource` 并启用动态数据源路由（`spring.datasource.dynamic.primary` 有值时生效）。
 - 目标业务表任意（平台主库或已注册数据源中的现有表均可），须带 `ID` 主键（19 位雪花可容纳）；租户列策略见 §5 目标表契约。
