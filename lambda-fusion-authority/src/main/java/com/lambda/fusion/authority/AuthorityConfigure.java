@@ -6,12 +6,14 @@ import com.lambda.cloud.mybatis.handler.EntityMetaFiller;
 import com.lambda.cloud.sse.listener.SseEventListener;
 import com.lambda.fusion.authority.api.RemoteAuthenticationService;
 import com.lambda.fusion.authority.api.RemoteOrganizationService;
+import com.lambda.fusion.authority.api.RemoteResourceService;
 import com.lambda.fusion.authority.api.RemoteRoleService;
 import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.authority.application.service.ApplicationService;
 import com.lambda.fusion.authority.application.service.impl.DbPermissionTokenVerifier;
 import com.lambda.fusion.authority.authentication.adapter.RemoteAuthenticationServiceAdapter;
 import com.lambda.fusion.authority.authentication.adapter.RemoteOrganizationServiceAdapter;
+import com.lambda.fusion.authority.authentication.adapter.RemoteResourceServiceAdapter;
 import com.lambda.fusion.authority.authentication.adapter.RemoteRoleServiceAdapter;
 import com.lambda.fusion.authority.authentication.adapter.RemoteUserServiceAdapter;
 import com.lambda.fusion.authority.authentication.provider.alipay.AlipayMaLoginAdapter;
@@ -119,6 +121,12 @@ public class AuthorityConfigure implements WebMvcConfigurer {
         public RemoteOrganizationService remoteOrganizationService(
                 RemoteOrganizationServiceAdapter remoteOrganizationServiceAdapter) {
             return remoteOrganizationServiceAdapter;
+        }
+
+        @Bean
+        @DubboService(interfaceClass = RemoteResourceService.class)
+        public RemoteResourceService remoteResourceService(RemoteResourceServiceAdapter remoteResourceServiceAdapter) {
+            return remoteResourceServiceAdapter;
         }
     }
 
