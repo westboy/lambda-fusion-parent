@@ -132,6 +132,8 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单标识、类型和目标表创建后不可修改");
         }
         apply(def, command);
+        def.setUpdatedAt(null);
+        def.setUpdatedBy(null);
         if (!updateById(def)) {
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         }

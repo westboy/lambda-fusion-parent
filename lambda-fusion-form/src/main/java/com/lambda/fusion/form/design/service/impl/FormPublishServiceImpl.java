@@ -86,6 +86,7 @@ public class FormPublishServiceImpl implements FormPublishService {
         version.setPublishedAt(LocalDateTime.now());
         def.setPublishedVersion(nextVersion);
         def.setStatus(FormConstants.STATUS_PUBLISHED);
+        freshenAuditStamp(def);
         if (formDefMapper.updateById(def) == 0) {
             // @Version 冲突：草稿在读取后被并发修改，快照随事务回滚
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
@@ -105,6 +106,7 @@ public class FormPublishServiceImpl implements FormPublishService {
             return;
         }
         def.setStatus(FormConstants.STATUS_DISABLED);
+        freshenAuditStamp(def);
         if (formDefMapper.updateById(def) == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         }
@@ -124,6 +126,7 @@ public class FormPublishServiceImpl implements FormPublishService {
         targetTableContract.validate(modelCompiler.compile(snapshot.getSnapshotJson(), snapshot.getVersion()));
         def.setPublishedVersion(version);
         def.setStatus(FormConstants.STATUS_PUBLISHED);
+        freshenAuditStamp(def);
         if (formDefMapper.updateById(def) == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         }
@@ -148,6 +151,7 @@ public class FormPublishServiceImpl implements FormPublishService {
             return;
         }
         def.setStatus(FormConstants.STATUS_PUBLISHED);
+        freshenAuditStamp(def);
         if (formDefMapper.updateById(def) == 0) {
             throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         }
@@ -200,5 +204,11 @@ public class FormPublishServiceImpl implements FormPublishService {
             throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND, id);
         }
         return def;
+    }
+
+    /** 审计字段交由 updateFill 填充：清空载入值，避免 strictUpdateFill 跳过导致更新时间停在旧值 */
+    private static void freshenAuditStamp(FormDefEntity def) {
+        def.setUpdatedAt(null);
+        def.setUpdatedBy(null);
     }
 }

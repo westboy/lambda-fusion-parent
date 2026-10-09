@@ -61,6 +61,8 @@ public class FormRouteServiceImpl implements FormRouteService {
             throw new FormBusinessException(FormErrorCode.FORM_DISABLED);
         }
         form.setRouteResourceId(gateway.save(form, command));
+        form.setUpdatedAt(null);
+        form.setUpdatedBy(null);
         if (forms.updateById(form) == 0) throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
         return gateway.read(form);
     }
@@ -72,6 +74,8 @@ public class FormRouteServiceImpl implements FormRouteService {
         FormDefEntity form = requireLocked(id);
         gateway.remove(form);
         form.setRouteResourceId(null);
+        form.setUpdatedAt(null);
+        form.setUpdatedBy(null);
         if (forms.updateById(form) == 0) throw new FormBusinessException(FormErrorCode.FORM_DRAFT_CONFLICT);
     }
 
