@@ -14,10 +14,10 @@
 | 维度 | 说明 |
 |------|------|
 | **负责** | 表单元数据管理、表元数据内省、动态 SQL 编译与执行、目标表契约校验、发布快照 |
-| **不负责** | 物理表 DDL（表须在 changelog 治理下预先建好）、流程定义编排（workflow 模块）、菜单资源管理（authority 模块） |
+| **不负责** | 物理表 DDL（目标表由使用方在库中自行建好，模块按元数据内省对接）、流程定义编排（workflow 模块）、菜单资源管理（authority 模块） |
 
-- 设计器前端位于 `_lambda_fusion_web` 的 `/form/designer/` 路由（三步向导）。
-- 动态读写只面向**已存在的物理表**，模块自身不做任何 DDL。
+- 设计器前端为「动态表单 → 表单设计」菜单下的三步向导。
+- 动态读写面向**任意已存在的物理表**（平台主库或任一已注册数据源中的表），模块自身不做任何 DDL，也不要求目标表经 Liquibase 治理。
 
 ---
 
@@ -171,8 +171,9 @@ lambda:
 
 ## 9. 数据库变更治理
 
-- changelog：`META-INF/db/changelogs/lambda-form-changelog.xml`（契约 §6.1：数据源 changelog 最先执行，本模块跟随其后）。
-- 新增列/表一律追加 changeSet，带 `preConditions onFail="MARK_RAN"` 幂等保护；历史快照 JSON 不做破坏性迁移，结构演进经 `snapshotVersion` 兼容。
+- Liquibase **仅治理模块自身的元数据四表**（`la_form_*`）：新增列/表一律追加 changeSet，带 `preConditions onFail="MARK_RAN"` 幂等保护。
+- 目标业务表不属于本模块 changelog 管辖：任意库、任意命名（未命中 §4.3 排除正则即可映射），建表与结构演进由使用方自行负责。
+- 发布快照 JSON 不做破坏性迁移，结构演进经 `snapshotVersion` 兼容。
 
 ## 10. 接入说明
 
@@ -186,4 +187,4 @@ lambda:
 
 - 引入即用：自动装配 `FormAutoConfiguration`（`lambda.fusion.form.enabled=true` 默认开启），元数据四表由 Liquibase 自动建表。
 - 需要目标数据源绑定时，同时引入 `lambda-fusion-datasource` 并配置 `DynamicRoutingDataSource`。
-- 目标业务表须已存在且带 `ID` 主键（19 位雪花可容纳）；租户列策略见 §5 目标表契约。
+- 目标业务表任意（平台主库或已注册数据源中的现有表均可），须带 `ID` 主键（19 位雪花可容纳）；租户列策略见 §5 目标表契约。
