@@ -33,6 +33,9 @@ public class HistoryView implements BizInfoAware {
     @Schema(description = "业务类型（服务层从实例补齐）")
     private String bizType;
 
+    /** 提交时表单生效版本（实例变量 __formVersion；存量实例无 → null，渲染端回退当前发布版） */
+    private Long formVersion;
+
     @Schema(description = "开始节点编码")
     private String nodeCode;
 

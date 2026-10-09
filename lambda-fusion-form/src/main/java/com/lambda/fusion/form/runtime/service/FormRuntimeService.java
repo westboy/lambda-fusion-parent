@@ -19,6 +19,17 @@ public interface FormRuntimeService {
      */
     FormSchemaView schema(String formKey);
 
+    /**
+     * 按版本渲染元数据：version 为空 = 当前生效版；非空 = 该历史快照现场编译
+     * （流程实例按发起时版本渲染单据用），权限解析口径不变。
+     */
+    FormSchemaView schema(String formKey, Long version);
+
+    /**
+     * 提交时点的生效快照版本号（流程实例记录发起版本用）
+     */
+    long liveVersion(String formKey);
+
     FormDataPageView page(String formKey, FormDataPageQuery query);
 
     /**
@@ -50,6 +61,12 @@ public interface FormRuntimeService {
     void deleteSubRow(String formKey, String id, String subFormKey, String subId);
 
     Map<String, Object> getById(String formKey, String id);
+
+    /**
+     * 按版本读单据：version 为空 = 当前生效版模型投影；非空 = 历史快照模型投影
+     * （与按版本 schema 配套，实例按发起版本渲染时字段集合一致）
+     */
+    Map<String, Object> getById(String formKey, String id, Long version);
 
     String create(String formKey, Map<String, Object> data);
 

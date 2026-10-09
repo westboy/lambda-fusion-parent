@@ -47,8 +47,9 @@ public class FormDataController {
     @GetMapping("{formKey}/schema")
     @FormPermission(FormAction.PAGE)
     @Operation(summary = "渲染元数据（含当前用户按钮权限）")
-    public FormSchemaView schema(@PathVariable String formKey) {
-        return formRuntimeService.schema(formKey);
+    public FormSchemaView schema(
+            @PathVariable String formKey, @RequestParam(name = "version", required = false) Long version) {
+        return formRuntimeService.schema(formKey, version);
     }
 
     @PostMapping("{formKey}/page")
@@ -69,8 +70,11 @@ public class FormDataController {
     @GetMapping("{formKey}/{id}")
     @FormPermission(FormAction.PAGE)
     @Operation(summary = "详情")
-    public Map<String, Object> detail(@PathVariable String formKey, @PathVariable String id) {
-        return formRuntimeService.getById(formKey, id);
+    public Map<String, Object> detail(
+            @PathVariable String formKey,
+            @PathVariable String id,
+            @RequestParam(name = "version", required = false) Long version) {
+        return formRuntimeService.getById(formKey, id, version);
     }
 
     @GetMapping("{formKey}/{id}/subs/{subFormKey}")

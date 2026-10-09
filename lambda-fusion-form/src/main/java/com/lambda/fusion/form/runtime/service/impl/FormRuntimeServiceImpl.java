@@ -1,7 +1,14 @@
 package com.lambda.fusion.form.runtime.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
+import com.lambda.fusion.form.design.entity.FormDefEntity;
+import com.lambda.fusion.form.design.entity.FormDefVersionEntity;
+import com.lambda.fusion.form.design.mapper.FormDefMapper;
+import com.lambda.fusion.form.design.mapper.FormDefVersionMapper;
+import com.lambda.fusion.form.exception.FormBusinessException;
+import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
@@ -10,6 +17,7 @@ import com.lambda.fusion.form.runtime.service.DynamicDataService;
 import com.lambda.fusion.form.runtime.service.FormRuntimeService;
 import com.lambda.fusion.form.runtime.support.FormAction;
 import com.lambda.fusion.form.runtime.support.FormModel;
+import com.lambda.fusion.form.runtime.support.FormModelCompiler;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
@@ -32,15 +40,50 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     private final FormModelProvider modelProvider;
     private final DynamicDataService dynamicDataService;
     private final FormSchemaAssembler schemaAssembler;
+    private final FormDefMapper formDefMapper;
+    private final FormDefVersionMapper formDefVersionMapper;
+    private final FormModelCompiler modelCompiler;
 
     @Override
     public FormSchemaView schema(String formKey) {
-        FormModel model = modelProvider.require(formKey);
+        return schema(formKey, null);
+    }
+
+    @Override
+    public FormSchemaView schema(String formKey, Long version) {
+        FormModel model = modelFor(formKey, version);
         FormSchemaView view = schemaAssembler.assemble(model);
         for (FormAction action : FormAction.values()) {
             view.getPermissions().put(action.getCode(), AuthUtils.hasPermission(action.permission(formKey)));
         }
         return view;
+    }
+
+    @Override
+    public long liveVersion(String formKey) {
+        return modelProvider.require(formKey).version();
+    }
+
+    /**
+     * 渲染模型：version 为空 = 当前生效版（缓存）；非空 = 历史快照现场编译
+     * （发布缓存只服务生效指针，历史版本不进缓存）。表单或版本缺失时按业务错误码拒绝。
+     */
+    private FormModel modelFor(String formKey, Long version) {
+        if (version == null) {
+            return modelProvider.require(formKey);
+        }
+        FormDefEntity def =
+                formDefMapper.selectOne(new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, formKey));
+        if (def == null) {
+            throw new FormBusinessException(FormErrorCode.FORM_NOT_FOUND, formKey);
+        }
+        FormDefVersionEntity snapshot = formDefVersionMapper.selectOne(new LambdaQueryWrapper<FormDefVersionEntity>()
+                .eq(FormDefVersionEntity::getFormId, def.getId())
+                .eq(FormDefVersionEntity::getVersion, version));
+        if (snapshot == null) {
+            throw new FormBusinessException(FormErrorCode.FORM_VERSION_NOT_FOUND, formKey + " v" + version);
+        }
+        return modelCompiler.compile(snapshot.getSnapshotJson(), snapshot.getVersion());
     }
 
     @Override
@@ -81,7 +124,12 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
 
     @Override
     public Map<String, Object> getById(String formKey, String id) {
-        return dynamicDataService.getById(modelProvider.require(formKey), id);
+        return getById(formKey, id, null);
+    }
+
+    @Override
+    public Map<String, Object> getById(String formKey, String id, Long version) {
+        return dynamicDataService.getById(modelFor(formKey, version), id);
     }
 
     @Override

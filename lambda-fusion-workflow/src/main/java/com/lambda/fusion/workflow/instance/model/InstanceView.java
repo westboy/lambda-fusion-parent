@@ -27,6 +27,9 @@ public class InstanceView implements BizInfoAware {
     @Schema(description = "业务类型（发起时传入，供展示信息解析）")
     private String bizType;
 
+    /** 提交时表单生效版本（实例变量 __formVersion；存量实例无 → null，渲染端回退当前发布版） */
+    private Long formVersion;
+
     @Schema(description = "当前节点编码")
     private String nodeCode;
 

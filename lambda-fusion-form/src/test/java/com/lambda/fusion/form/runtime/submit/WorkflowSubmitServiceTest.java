@@ -33,8 +33,13 @@ class WorkflowSubmitServiceTest {
     private final FormModelProvider models = mock(FormModelProvider.class);
     private final DynamicDataService data = mock(DynamicDataService.class);
     private final InstanceService instances = mock(InstanceService.class);
-    private final FormRuntimeServiceImpl runtimeService =
-            new FormRuntimeServiceImpl(models, data, mock(FormSchemaAssembler.class));
+    private final FormRuntimeServiceImpl runtimeService = new FormRuntimeServiceImpl(
+            models,
+            data,
+            mock(FormSchemaAssembler.class),
+            mock(com.lambda.fusion.form.design.mapper.FormDefMapper.class),
+            mock(com.lambda.fusion.form.design.mapper.FormDefVersionMapper.class),
+            mock(com.lambda.fusion.form.runtime.support.FormModelCompiler.class));
     private WorkflowSubmitService service;
 
     @BeforeEach
@@ -56,6 +61,8 @@ class WorkflowSubmitServiceTest {
         assertThat(command.getFlowCode()).isEqualTo("leave_flow");
         assertThat(command.getBizType()).isEqualTo("leave");
         assertThat(command.getVariable()).containsEntry("days", 3);
+        // 提交时点版本入实例变量：办理/详情按发起版本快照渲染（liveVersion 读生效模型版本）
+        assertThat(command.getVariable()).containsEntry(WorkflowSubmitService.FORM_VERSION_VARIABLE, 1L);
     }
 
     @Test

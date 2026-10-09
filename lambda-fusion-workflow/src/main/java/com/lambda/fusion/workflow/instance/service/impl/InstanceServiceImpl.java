@@ -172,6 +172,7 @@ public class InstanceServiceImpl implements InstanceService {
         view.setDefinitionId(instance.getDefinitionId());
         view.setBusinessId(instance.getBusinessId());
         view.setBizType(instance.getExt());
+        view.setFormVersion(formVersionOf(instance));
         view.setNodeCode(instance.getNodeCode());
         view.setNodeName(instance.getNodeName());
         view.setNodeType(instance.getNodeType());
@@ -199,5 +200,12 @@ public class InstanceServiceImpl implements InstanceService {
         view.setCreateTime(hisTask.getCreateTime());
         view.setUpdateTime(hisTask.getUpdateTime());
         return view;
+    }
+    /** 提交时表单生效版本：实例变量 __formVersion（legacy 实例无该变量 → null） */
+    private static Long formVersionOf(org.dromara.warm.flow.core.entity.Instance instance) {
+        Object value = instance.getVariableMap() == null
+                ? null
+                : instance.getVariableMap().get("__formVersion");
+        return value instanceof Number number ? number.longValue() : null;
     }
 }

@@ -28,6 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class WorkflowSubmitService {
 
+    /** 实例变量键：提交时表单生效版本（workflow 侧读出随 TaskView/InstanceView 下发） */
+    public static final String FORM_VERSION_VARIABLE = "__formVersion";
+
     private final FormRuntimeService formRuntimeService;
     private final ObjectProvider<InstanceService> instanceServices;
 
@@ -47,6 +50,8 @@ public class WorkflowSubmitService {
         command.setBusinessId(businessId);
         command.setBizType(formKey);
         command.setVariable(new HashMap<>(data));
+        // 实例记录发起时的生效版本：办理/详情按该版本快照渲染单据（发布迭代不影响在途实例）
+        command.getVariable().put(FORM_VERSION_VARIABLE, formRuntimeService.liveVersion(formKey));
         instanceService.start(command);
         return businessId;
     }
