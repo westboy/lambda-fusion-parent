@@ -5,7 +5,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 表单运行时系统主数据源（机构/用户）SPI：authority 模块在场时由适配实现注入，
+ * 表单运行时系统主数据源（机构/用户）SPI：authority 远程契约在场时由适配实现注入
+ * （单体注入本地适配器 Bean，拆分部署注入 Dubbo 引用），
  * 缺席时端点降级返回空（动态表单不硬依赖权限模块）。
  *
  * <p>权限模型：消费方是运行时表单页（form:page 权限），不是系统管理端——

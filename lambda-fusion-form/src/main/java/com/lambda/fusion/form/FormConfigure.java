@@ -1,6 +1,9 @@
 package com.lambda.fusion.form;
 
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
+import com.lambda.fusion.authority.api.RemoteOrganizationService;
+import com.lambda.fusion.authority.api.RemoteRoleService;
+import com.lambda.fusion.authority.api.RemoteUserService;
 import com.lambda.fusion.authority.resource.service.PermissionService;
 import com.lambda.fusion.authority.resource.service.ResourceService;
 import com.lambda.fusion.form.design.adapter.AuthorityFormRouteGateway;
@@ -8,7 +11,7 @@ import com.lambda.fusion.form.design.adapter.FormRouteGateway;
 import com.lambda.fusion.form.design.adapter.WorkflowProcessFormSource;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
-import com.lambda.fusion.form.integration.biz.AuthorityBizDataProvider;
+import com.lambda.fusion.form.integration.biz.RemoteBizDataProvider;
 import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.integration.DynamicFormBusinessProvider;
@@ -103,21 +106,38 @@ public class FormConfigure {
     }
 
     /**
-     * 系统主数据集成（authority 模块在场时装配）：ORG/USER 字段选择器的机构树与用户检索数据源。
-     * 缺席（裁剪部署）时 FormBizController 经 ObjectProvider 降级为空列表。
+     * 系统主数据集成（authority 契约在场时装配）：ORG/USER/ROLE 字段选择器的机构树/用户检索/角色清单数据源。
+     * 经 {@code lambda-fusion-authority-api} 远程契约取数（工程契约 §7.3，不引用实现类）：
+     * 容器已有 Bean（单体中 authority 适配器）优先，缺失且 Dubbo 可用时自建引用（check=false），
+     * 都没有时注入服务为 null 的 provider，端点经 ObjectProvider 降级为空列表。
      */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(name = "com.lambda.fusion.authority.organization.service.OrganizationService")
+    @ConditionalOnClass(name = "com.lambda.fusion.authority.api.RemoteUserService")
     static class BizDataIntegration {
         @Bean
         BizDataProvider bizDataProvider(
-                com.lambda.fusion.authority.organization.service.OrganizationService organizationService,
-                com.lambda.fusion.authority.user.service.UserInfoService userInfoService,
-                com.lambda.fusion.authority.user.mapper.UserOrganizationMapper userOrganizationMapper,
-                com.lambda.fusion.authority.role.service.RoleService roleService) {
-            return new AuthorityBizDataProvider(
-                    organizationService, userInfoService, userOrganizationMapper, roleService);
+                ObjectProvider<RemoteUserService> userServices,
+                ObjectProvider<RemoteOrganizationService> organizationServices,
+                ObjectProvider<RemoteRoleService> roleServices) {
+            return new RemoteBizDataProvider(
+                    organizationServices.getIfAvailable(
+                            () -> FormConfigure.dubboReference(RemoteOrganizationService.class)),
+                    userServices.getIfAvailable(() -> FormConfigure.dubboReference(RemoteUserService.class)),
+                    roleServices.getIfAvailable(() -> FormConfigure.dubboReference(RemoteRoleService.class)));
         }
+    }
+
+    /** Dubbo 缺席时返回 null（provider 内部按服务缺席降级），不阻断启动 */
+    private static <T> T dubboReference(Class<T> interfaceClass) {
+        if (!org.springframework.util.ClassUtils.isPresent(
+                "org.apache.dubbo.config.ReferenceConfig", FormConfigure.class.getClassLoader())) {
+            log.debug("classpath 无 Dubbo，form biz 数据源 {} 降级为空", interfaceClass.getSimpleName());
+            return null;
+        }
+        org.apache.dubbo.config.ReferenceConfig<T> reference = new org.apache.dubbo.config.ReferenceConfig<>();
+        reference.setInterface(interfaceClass);
+        reference.setCheck(false);
+        return reference.get();
     }
 
     @Configuration(proxyBeanMethods = false)
