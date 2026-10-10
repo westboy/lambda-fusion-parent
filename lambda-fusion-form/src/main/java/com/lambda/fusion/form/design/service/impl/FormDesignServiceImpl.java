@@ -204,9 +204,9 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             entity.setNullable(!Boolean.FALSE.equals(item.getNullable()));
             entity.setDefaultValue(item.getDefaultValue());
             entity.setDictType(item.getDictType());
-            entity.setQueryConfig(item.getQueryConfig());
-            entity.setListConfig(item.getListConfig());
-            entity.setFormConfig(item.getFormConfig());
+            entity.setQueryConfig(blankToNull(item.getQueryConfig()));
+            entity.setListConfig(blankToNull(item.getListConfig()));
+            entity.setFormConfig(blankToNull(item.getFormConfig()));
             entity.setPersisted(!Boolean.FALSE.equals(item.getPersisted()));
             // 从表归属标记：漏写会让发布快照丢掉主子表分组（从字段全按主表字段编译）
             entity.setSubFormKey(item.getSubFormKey());
@@ -223,7 +223,7 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             entity.setCascadeStrategy(
                     item.getCascadeStrategy() == null ? FormConstants.CASCADE_DELETE : item.getCascadeStrategy());
             entity.setMode(item.getMode() == null ? FormConstants.RELATION_MODE_INLINE : item.getMode());
-            entity.setSubTableConfig(item.getSubTableConfig());
+            entity.setSubTableConfig(blankToNull(item.getSubTableConfig()));
             formRelationMapper.insert(entity);
         }
     }
@@ -618,9 +618,17 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         def.setInterceptor(command.getInterceptor());
         def.setPublishOnSave(command.getPublishOnSave());
         def.setLogicDeleteColumn(command.getLogicDeleteColumn());
-        def.setListConfig(command.getListConfig());
+        def.setListConfig(blankToNull(command.getListConfig()));
         def.setDetailConfig(command.getDetailConfig());
-        def.setFormLayout(command.getFormLayout());
+        def.setFormLayout(blankToNull(command.getFormLayout()));
+    }
+
+    /**
+     * JSON 配置列的空白归一：MySQL json 列拒绝空串（Invalid JSON text），设计器对
+     * 「均未配置」存空串，编译/预览对 null 与 blank 又同按「未配置」处理——落库统一收口为 NULL。
+     */
+    private static String blankToNull(String json) {
+        return json == null || json.isBlank() ? null : json;
     }
 
     /** 详情呈现配置 JSON 预校验：保存期即拒绝非法 JSON，不拖到发布期 */

@@ -340,6 +340,28 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
+    void saveNormalizesBlankJsonConfigsToNullForJsonColumns() {
+        // MySQL json 列拒绝空串（Invalid JSON text: The document is empty）：设计器对未配置的
+        // 子表呈现/列配置存空串，保存期须归一为 NULL（H2 夹具为 VARCHAR 测不出，直接断言库值）
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        addSubFields(command, "sub_area");
+        FormRelationItem relation = relation("sub_area", "LEAVE_ID");
+        relation.setSubTableConfig("");
+        command.setRelations(List.of(relation));
+        command.getFields().getFirst().setListConfig("");
+        String id = design.save(command);
+        assertThat(jdbc.queryForObject(
+                        "SELECT SUB_TABLE_CONFIG FROM la_form_relation WHERE FORM_ID=?", String.class, id))
+                .isNull();
+        assertThat(jdbc.queryForObject(
+                        "SELECT LIST_CONFIG FROM la_form_field WHERE FORM_ID=? AND FIELD_NAME='personName'",
+                        String.class,
+                        id))
+                .isNull();
+    }
+
+    @Test
     void saveRejectsTableMatchingExcludePattern() {
         FormDefSaveCommand command = command();
         command.setTableName("la_area");
