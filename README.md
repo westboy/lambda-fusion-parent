@@ -237,7 +237,7 @@ mvn -pl lambda-fusion-authority -am clean install
 # 仅编译（同时触发 Spotless 检查 + SpotBugs 检查，见「代码风格与静态检查」）
 mvn -pl lambda-fusion-config compile
 
-# 运行某模块的全部测试（目前 lambda-fusion-ai、lambda-fusion-core、lambda-fusion-form、lambda-fusion-logger、lambda-fusion-message 有测试）
+# 运行某模块的全部测试
 mvn -pl lambda-fusion-ai test
 
 # 运行单个测试类 / 单个方法
