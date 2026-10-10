@@ -2,7 +2,7 @@ package com.lambda.fusion.dict.model;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.Data;
 
@@ -17,7 +17,7 @@ public class DictType {
     @Schema(description = "id", hidden = true)
     private String id;
 
-    @Max(30)
+    @Size(max = 30, message = "字典编码长度不能超过30")
     @Schema(description = "字典类型")
     private String dictType;
 

@@ -5,9 +5,9 @@ import static com.lambda.fusion.dict.DictConstants.*;
 import com.lambda.cloud.core.annotation.AutoConverter;
 import com.lambda.cloud.core.shared.BaseDTO;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -27,7 +27,7 @@ public class InputDictInfo extends BaseDTO<DictInfo> {
     String id;
 
     @NotBlank(message = MSG_DICT_FIELD_NAME_NOT_EMPTY)
-    @Max(200)
+    @Size(max = 200, message = "字典项名长度不能超过200")
     String fieldName;
 
     @NotNull(message = MSG_DICT_SORT_NUMBER_NOT_EMPTY)
@@ -45,7 +45,7 @@ public class InputDictInfo extends BaseDTO<DictInfo> {
     String remarks;
 
     @NotBlank
-    @Max(30)
+    @Size(max = 30, message = "字典编码长度不能超过30")
     private String dictType;
 
     private Additional additional;
