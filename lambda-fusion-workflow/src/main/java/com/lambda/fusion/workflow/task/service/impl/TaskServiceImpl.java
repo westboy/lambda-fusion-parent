@@ -6,8 +6,11 @@ import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.workflow.WorkflowConstants;
 import com.lambda.fusion.workflow.exception.EngineCalls;
+import com.lambda.fusion.workflow.exception.WorkflowBusinessException;
+import com.lambda.fusion.workflow.exception.WorkflowErrorCode;
 import com.lambda.fusion.workflow.instance.model.HistoryView;
 import com.lambda.fusion.workflow.integration.BizInfoResolver;
+import com.lambda.fusion.workflow.integration.TaskFormHandler;
 import com.lambda.fusion.workflow.task.model.ApproveCommand;
 import com.lambda.fusion.workflow.task.model.RejectCommand;
 import com.lambda.fusion.workflow.task.model.SignatureCommand;
@@ -35,7 +38,9 @@ import org.dromara.warm.flow.orm.mapper.FlowHisTaskMapper;
 import org.dromara.warm.flow.orm.mapper.FlowInstanceMapper;
 import org.dromara.warm.flow.orm.mapper.FlowTaskMapper;
 import org.dromara.warm.flow.orm.mapper.FlowUserMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 待办任务服务实现
@@ -59,6 +64,8 @@ public class TaskServiceImpl implements TaskService {
     private final org.dromara.warm.flow.core.service.TaskService engineTaskService;
     private final PermissionHandler permissionHandler;
     private final BizInfoResolver bizInfoResolver;
+    /** 任务随单表单写入（form 模块在场时提供；ObjectProvider 适配裁剪部署） */
+    private final ObjectProvider<TaskFormHandler> taskFormHandlers;
 
     @Override
     public PageView<TaskView> pageTodo(TaskTodoPage page) {
@@ -95,8 +102,28 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean pass(Long taskId, ApproveCommand command) {
         Map<String, Object> variable = command.getVariable() == null ? new HashMap<>() : command.getVariable();
+        // 随办理提交表单数据：同事务内先按节点白名单回写业务行（失败整体回滚，不留半提交），
+        // 实际写入字段并入流程变量供后续条件分支；表单能力缺席时显式拒绝而非静默丢弃
+        if (command.getFormData() != null && !command.getFormData().isEmpty()) {
+            TaskFormHandler handler = taskFormHandlers.getIfAvailable();
+            if (handler == null) {
+                throw new WorkflowBusinessException(WorkflowErrorCode.FORM_DATA_UNSUPPORTED);
+            }
+            FlowTask task = flowTaskMapper.selectById(taskId);
+            if (task == null) {
+                throw new WorkflowBusinessException(WorkflowErrorCode.TASK_NOT_FOUND);
+            }
+            FlowInstance instance = flowInstanceMapper.selectById(task.getInstanceId());
+            if (instance == null) {
+                throw new WorkflowBusinessException(WorkflowErrorCode.INSTANCE_NOT_FOUND);
+            }
+            Map<String, Object> written = handler.writeTaskFormData(
+                    instance.getExt(), instance.getBusinessId(), task.getNodeCode(), command.getFormData());
+            variable.putAll(written);
+        }
         EngineCalls.call(() -> engineTaskService.pass(taskId, command.getMessage(), variable));
         return true;
     }

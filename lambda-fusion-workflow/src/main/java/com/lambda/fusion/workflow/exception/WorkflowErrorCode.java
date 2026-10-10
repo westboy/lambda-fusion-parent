@@ -69,7 +69,12 @@ public enum WorkflowErrorCode implements ErrorCode {
     /**
      * 定义绑定的自定义表单不可挂载（未标记流程表单、未发布或已停用），消息携带 formPath
      */
-    FORM_NOT_MOUNTABLE(16150, "绑定的自定义表单不可挂载：{0}");
+    FORM_NOT_MOUNTABLE(16150, "绑定的自定义表单不可挂载：{0}"),
+
+    /**
+     * 当前服务未提供动态表单能力，办理不支持随单提交表单数据
+     */
+    FORM_DATA_UNSUPPORTED(16151, "当前服务不支持随办理提交表单数据");
 
     private final Integer code;
 

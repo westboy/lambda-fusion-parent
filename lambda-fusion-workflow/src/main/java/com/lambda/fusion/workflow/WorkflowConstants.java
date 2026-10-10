@@ -55,6 +55,13 @@ public interface WorkflowConstants {
         return "4".equals(flowStatus) || "5".equals(flowStatus) || "10".equals(flowStatus);
     }
 
+    /**
+     * 审批在途：1 审批中（单据被流程锁定，业务侧仅允许当前节点随单填写，不得旁路编辑）
+     */
+    static boolean isProcessing(String flowStatus) {
+        return "1".equals(flowStatus);
+    }
+
     enum Type {
         /**
          * 任务开始办理
