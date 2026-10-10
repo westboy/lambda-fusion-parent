@@ -181,6 +181,12 @@ public class FormSchemaView {
         @Schema(description = "表单中只读（详情天然只读）")
         private Boolean readonly;
 
+        @Schema(description = "节点渲染上下文（schema 请求携带 nodeCode 时解析）：该节点办理时可填写；null=非节点上下文")
+        private Boolean nodeEditable;
+
+        @Schema(description = "节点渲染上下文（schema 请求携带 nodeCode 时解析）：该节点单据上是否展示；null=非节点上下文")
+        private Boolean nodeShow;
+
         @Schema(description = "是否落库（false=不入库/纯展示或计算字段）")
         private Boolean persisted;
 

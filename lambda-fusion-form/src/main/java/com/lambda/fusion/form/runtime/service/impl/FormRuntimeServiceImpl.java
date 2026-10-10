@@ -10,6 +10,7 @@ import com.lambda.fusion.form.design.mapper.FormDefVersionMapper;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.assembler.FormSchemaAssembler;
+import com.lambda.fusion.form.runtime.integration.ProcessFormGuard;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
@@ -23,6 +24,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,6 +45,8 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     private final FormDefMapper formDefMapper;
     private final FormDefVersionMapper formDefVersionMapper;
     private final FormModelCompiler modelCompiler;
+    /** 流程表单数据锁（workflow 在场时装配；缺席不锁） */
+    private final ObjectProvider<ProcessFormGuard> processFormGuards;
 
     @Override
     public FormSchemaView schema(String formKey) {
@@ -51,8 +55,13 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
 
     @Override
     public FormSchemaView schema(String formKey, Long version) {
+        return schema(formKey, version, null);
+    }
+
+    @Override
+    public FormSchemaView schema(String formKey, Long version, String nodeCode) {
         FormModel model = modelFor(formKey, version);
-        FormSchemaView view = schemaAssembler.assemble(model);
+        FormSchemaView view = schemaAssembler.assemble(model, nodeCode);
         for (FormAction action : FormAction.values()) {
             view.getPermissions().put(action.getCode(), AuthUtils.hasPermission(action.permission(formKey)));
         }
@@ -109,16 +118,19 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
 
     @Override
     public void createSubRow(String formKey, String id, String subFormKey, Map<String, Object> data) {
+        checkWritable(id);
         dynamicDataService.createSubRow(modelProvider.require(formKey), id, subFormKey, data);
     }
 
     @Override
     public void updateSubRow(String formKey, String id, String subFormKey, String subId, Map<String, Object> data) {
+        checkWritable(id);
         dynamicDataService.updateSubRow(modelProvider.require(formKey), id, subFormKey, subId, data);
     }
 
     @Override
     public void deleteSubRow(String formKey, String id, String subFormKey, String subId) {
+        checkWritable(id);
         dynamicDataService.deleteSubRow(modelProvider.require(formKey), id, subFormKey, subId);
     }
 
@@ -139,11 +151,21 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
 
     @Override
     public void update(String formKey, String id, Map<String, Object> data) {
+        checkWritable(id);
         dynamicDataService.update(modelProvider.require(formKey), id, data);
     }
 
     @Override
     public void delete(String formKey, String id) {
+        checkWritable(id);
         dynamicDataService.delete(modelProvider.require(formKey), id);
+    }
+
+    /** 审批在途锁定：该业务行存在审批中实例时拒绝旁路写（节点级填写走任务随单写入，不经过本类） */
+    private void checkWritable(String businessId) {
+        ProcessFormGuard guard = processFormGuards.getIfAvailable();
+        if (guard != null) {
+            guard.checkWritable(businessId);
+        }
     }
 }

@@ -226,7 +226,8 @@ public class FormModelCompiler {
                                 field.form().component(),
                                 field.form().props(),
                                 field.form().rules(),
-                                field.form().readonly()));
+                                field.form().readonly(),
+                                field.form().nodePerms()));
                 if (result == fields) {
                     result = new ArrayList<>(fields);
                 }
@@ -416,7 +417,21 @@ public class FormModelCompiler {
                 formConf.getRules() == null
                         ? Map.of()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(formConf.getRules())),
-                Boolean.TRUE.equals(formConf.getReadonly()));
+                Boolean.TRUE.equals(formConf.getReadonly()),
+                compileNodePerms(formConf.getNodePerms()));
+    }
+
+    /** 节点填写权限归一：editable/show 缺省为 false/true，产出不可变映射（空配置 → null，避免每字段空 map） */
+    private Map<String, FormModel.NodeConf> compileNodePerms(Map<String, FormDefSnapshot.NodePerm> nodePerms) {
+        if (nodePerms == null || nodePerms.isEmpty()) {
+            return null;
+        }
+        Map<String, FormModel.NodeConf> compiled = new LinkedHashMap<>();
+        nodePerms.forEach((nodeCode, perm) -> compiled.put(
+                nodeCode,
+                new FormModel.NodeConf(
+                        Boolean.TRUE.equals(perm.getEditable()), !Boolean.FALSE.equals(perm.getShow()))));
+        return Collections.unmodifiableMap(compiled);
     }
 
     /** 查询操作符归一：显式值走白名单，缺省按字段类型取 like/eq */

@@ -4,6 +4,7 @@ import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import tools.jackson.core.JacksonException;
@@ -25,7 +26,13 @@ public final class FieldConfigs {
     public static final Set<String> LIST_KEYS =
             Set.of("show", "width", "align", "format", "frozen", "summary", "defaultSort", "sortOrder");
 
-    public static final Set<String> FORM_KEYS = Set.of("show", "component", "props", "rules", "readonly");
+    public static final Set<String> FORM_KEYS = Set.of("show", "component", "props", "rules", "readonly", "nodePerms");
+
+    /** nodePerms 值对象允许的键 */
+    public static final Set<String> NODE_PERM_KEYS = Set.of("editable", "show");
+
+    /** nodePerms 键 = 流程节点编码（warm-flow nodeCode），长度上限 */
+    public static final int NODE_CODE_MAX_LENGTH = 64;
 
     public static final Set<String> ALIGNS = Set.of("left", "center", "right");
 
@@ -130,7 +137,7 @@ public final class FieldConfigs {
         }
     }
 
-    /** 表单与详情配置：{show, component, props, rules, readonly} */
+    /** 表单与详情配置：{show, component, props, rules, readonly, nodePerms} */
     public static FormDefSnapshot.FormConf toFormConf(ObjectMapper mapper, String json) {
         JsonNode node = readObject(mapper, json, FORM_KEYS, "formConfig");
         FormDefSnapshot.FormConf conf = new FormDefSnapshot.FormConf();
@@ -146,7 +153,50 @@ public final class FieldConfigs {
         conf.setProps(objectValue(mapper, node.get("props"), "formConfig.props"));
         conf.setRules(objectValue(mapper, node.get("rules"), "formConfig.rules"));
         conf.setReadonly(booleanValue(node.get("readonly"), "formConfig.readonly"));
+        conf.setNodePerms(toNodePerms(node.get("nodePerms")));
         return conf;
+    }
+
+    /** 节点填写权限：{nodeCode: {editable, show}}；null/空对象返回 null（无节点配置） */
+    private static Map<String, FormDefSnapshot.NodePerm> toNodePerms(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isObject() || node.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "formConfig.nodePerms 必须是非空 JSON 对象");
+        }
+        Map<String, FormDefSnapshot.NodePerm> perms = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
+            String nodeCode = entry.getKey();
+            if (nodeCode == null || nodeCode.isBlank() || nodeCode.length() > NODE_CODE_MAX_LENGTH) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER,
+                        "formConfig.nodePerms 节点编码非法（1-" + NODE_CODE_MAX_LENGTH + " 字符）");
+            }
+            JsonNode permNode = entry.getValue();
+            if (permNode == null || permNode.isNull() || !permNode.isObject()) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "formConfig.nodePerms." + nodeCode + " 必须是 JSON 对象");
+            }
+            for (Map.Entry<String, JsonNode> perm : permNode.properties()) {
+                if (!NODE_PERM_KEYS.contains(perm.getKey())) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER,
+                            "formConfig.nodePerms." + nodeCode + " 存在非法键：" + perm.getKey());
+                }
+                Boolean value = booleanValue(perm.getValue(), "formConfig.nodePerms." + nodeCode + "." + perm.getKey());
+                if (value == null) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER,
+                            "formConfig.nodePerms." + nodeCode + "." + perm.getKey() + " 必须是布尔");
+                }
+            }
+            FormDefSnapshot.NodePerm perm = new FormDefSnapshot.NodePerm();
+            perm.setEditable(booleanValue(permNode.get("editable"), "formConfig.nodePerms." + nodeCode + ".editable"));
+            perm.setShow(booleanValue(permNode.get("show"), "formConfig.nodePerms." + nodeCode + ".show"));
+            perms.put(nodeCode, perm);
+        }
+        return perms;
     }
 
     /** 解析为 JSON 对象并校验键白名单；null/blank 返回 null */

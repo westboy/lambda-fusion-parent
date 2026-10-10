@@ -39,7 +39,8 @@ class WorkflowSubmitServiceTest {
             mock(FormSchemaAssembler.class),
             mock(com.lambda.fusion.form.design.mapper.FormDefMapper.class),
             mock(com.lambda.fusion.form.design.mapper.FormDefVersionMapper.class),
-            mock(com.lambda.fusion.form.runtime.support.FormModelCompiler.class));
+            mock(com.lambda.fusion.form.runtime.support.FormModelCompiler.class),
+            mock(org.springframework.beans.factory.ObjectProvider.class));
     private WorkflowSubmitService service;
 
     @BeforeEach

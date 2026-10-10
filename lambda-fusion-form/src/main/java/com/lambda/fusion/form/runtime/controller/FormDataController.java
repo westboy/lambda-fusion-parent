@@ -46,10 +46,12 @@ public class FormDataController {
 
     @GetMapping("{formKey}/schema")
     @FormPermission(FormAction.PAGE)
-    @Operation(summary = "渲染元数据（含当前用户按钮权限）")
+    @Operation(summary = "渲染元数据（含当前用户按钮权限；nodeCode 非空时解析节点填写权限）")
     public FormSchemaView schema(
-            @PathVariable String formKey, @RequestParam(name = "version", required = false) Long version) {
-        return formRuntimeService.schema(formKey, version);
+            @PathVariable String formKey,
+            @RequestParam(name = "version", required = false) Long version,
+            @RequestParam(name = "nodeCode", required = false) String nodeCode) {
+        return formRuntimeService.schema(formKey, version, nodeCode);
     }
 
     @PostMapping("{formKey}/page")

@@ -22,6 +22,8 @@ import com.lambda.fusion.form.runtime.biz.BizDataProvider;
 import com.lambda.fusion.form.runtime.controller.FormUploadController;
 import com.lambda.fusion.form.runtime.integration.DynamicFormBusinessProvider;
 import com.lambda.fusion.form.runtime.integration.DynamicFormFlowStatusListener;
+import com.lambda.fusion.form.runtime.integration.DynamicFormTaskFormHandler;
+import com.lambda.fusion.form.runtime.integration.ProcessFormGuard;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.provider.FormApiPermissionProvider;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
@@ -104,6 +106,12 @@ public class FormConfigure {
                 TableMetadataReader metadataReader) {
             return new DynamicFormFlowStatusListener(forms, modelProvider, dynamicTableMapper, metadataReader);
         }
+
+        @Bean
+        DynamicFormTaskFormHandler dynamicFormTaskFormHandler(
+                FormModelProvider modelProvider, DynamicDataService dynamicDataService) {
+            return new DynamicFormTaskFormHandler(modelProvider, dynamicDataService);
+        }
     }
 
     /**
@@ -118,6 +126,11 @@ public class FormConfigure {
                 FormRuntimeService formRuntimeService,
                 ObjectProvider<com.lambda.fusion.workflow.instance.service.InstanceService> instanceServices) {
             return new WorkflowSubmitService(formRuntimeService, instanceServices);
+        }
+
+        @Bean
+        ProcessFormGuard processFormGuard(com.lambda.fusion.workflow.instance.service.InstanceService instanceService) {
+            return new ProcessFormGuard(instanceService);
         }
     }
 

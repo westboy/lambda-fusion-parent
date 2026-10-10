@@ -586,7 +586,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     null,
                     new FormModel.QueryConf(false, null, null),
                     new FormModel.ListConf(true, null, null, null, null, false, null, 0),
-                    new FormModel.FormConf(true, null, Map.of(), Map.of(), false)));
+                    new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null)));
         }
         return new FormModel(
                 relation.subFormKey(),
@@ -669,7 +669,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         field.form().component(),
                         field.form().props(),
                         rules,
-                        readonly));
+                        readonly,
+                        // 子表区块不参与节点填写：从字段不带节点权限（渲染端子表恒只读）
+                        null));
     }
 
     /** 按子表单标识定位主从关系；不存在即非法参数 */

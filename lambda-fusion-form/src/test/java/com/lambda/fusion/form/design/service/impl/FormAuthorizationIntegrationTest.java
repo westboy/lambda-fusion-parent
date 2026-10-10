@@ -108,7 +108,8 @@ class FormAuthorizationIntegrationTest {
                 context.getBean(FormSchemaAssembler.class),
                 context.getBean(com.lambda.fusion.form.design.mapper.FormDefMapper.class),
                 context.getBean(com.lambda.fusion.form.design.mapper.FormDefVersionMapper.class),
-                context.getBean(com.lambda.fusion.form.runtime.support.FormModelCompiler.class));
+                context.getBean(com.lambda.fusion.form.runtime.support.FormModelCompiler.class),
+                org.mockito.Mockito.mock(org.springframework.beans.factory.ObjectProvider.class));
         UserDetails operator = new UserDetails();
         operator.setUsername("designer");
         mvc = MockMvcBuilders.standaloneSetup(

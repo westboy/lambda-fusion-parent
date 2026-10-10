@@ -105,6 +105,29 @@ class FieldConfigsTest {
         assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"readonly\":\"true\"}"));
     }
 
+    @Test
+    void parsesNodePerms() {
+        FormDefSnapshot.FormConf form = FieldConfigs.toFormConf(
+                objectMapper, "{\"nodePerms\":{\"node_b\":{\"editable\":true},\"node_c\":{\"show\":false}}}");
+
+        assertThat(form.getNodePerms()).hasSize(2);
+        assertThat(form.getNodePerms().get("node_b").getEditable()).isTrue();
+        assertThat(form.getNodePerms().get("node_b").getShow()).isNull();
+        assertThat(form.getNodePerms().get("node_c").getEditable()).isNull();
+        assertThat(form.getNodePerms().get("node_c").getShow()).isFalse();
+    }
+
+    @Test
+    void rejectsIllegalNodePerms() {
+        assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":[]}"));
+        assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{}}"));
+        assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{\" \":{\"editable\":true}}}"));
+        assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{\"node_b\":\"yes\"}}"));
+        assertInvalid(() -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{\"node_b\":{\"write\":true}}}"));
+        assertInvalid(
+                () -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{\"node_b\":{\"editable\":\"yes\"}}}"));
+    }
+
     private static void assertInvalid(ThrowingCallable callable) {
         assertThatThrownBy(callable).isInstanceOf(FormBusinessException.class);
     }

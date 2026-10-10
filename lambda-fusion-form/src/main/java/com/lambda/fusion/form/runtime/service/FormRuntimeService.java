@@ -26,6 +26,12 @@ public interface FormRuntimeService {
     FormSchemaView schema(String formKey, Long version);
 
     /**
+     * 按版本渲染元数据并解析节点维度权限：nodeCode 非空时每个字段携带
+     * nodeEditable（该节点可填写）/ nodeShow（该节点是否展示），供办理端渲染填写区。
+     */
+    FormSchemaView schema(String formKey, Long version, String nodeCode);
+
+    /**
      * 提交时点的生效快照版本号（流程实例记录发起版本用）
      */
     long liveVersion(String formKey);

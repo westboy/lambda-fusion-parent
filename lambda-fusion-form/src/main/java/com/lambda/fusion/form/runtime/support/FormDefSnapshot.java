@@ -129,6 +129,17 @@ public class FormDefSnapshot {
         private Map<String, Object> props;
         private Map<String, Object> rules;
         private Boolean readonly = Boolean.FALSE;
+
+        /** 流程节点填写权限：nodeCode → {editable 可填写, show 是否展示}（仅流程表单消费） */
+        private Map<String, NodePerm> nodePerms;
+    }
+
+    /** 节点填写权限项（null 属性=该维度未配置） */
+    @Data
+    public static class NodePerm {
+        private Boolean editable;
+
+        private Boolean show;
     }
 
     /**

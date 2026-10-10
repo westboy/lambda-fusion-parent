@@ -100,6 +100,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 - **标记唯一字段**：发布期校验目标表存在覆盖该列（或与 `TENANT_ID` 联合）的唯一索引。
 - **过滤列索引**：发布期校验主从外键列与 SELF 树父列被某个索引的**最左列**直接覆盖（主子查询、级联与树解析的高频过滤列；平台管理模式查询不带租户条件，`(TENANT_ID, FK)` 组合索引不构成兜底）。
 - **数据写入拦截器**：实现 `FormDataInterceptor` 并注册为 bean，表单经 `INTERCEPTOR` 字段引用，写入前后生效。
+- **流程节点填写（nodePerms）**：字段 `FORM_CONFIG.nodePerms`（`{nodeCode: {editable, show}}`）声明流程节点维度的填写权限——`editable=true` 该节点办理时可填写（随「通过」按节点白名单回写业务行并并入流程变量，与引擎办理同事务），`show=false` 该节点单据上隐藏，未配置只读可见。白名单口径：主表落库字段且画布可见；子表区块在办理端恒只读。审批在途（存在审批中的实例）时通用 update/delete/子表写端点被 `ProcessFormGuard` 拦截（`FORM_DATA_LOCKED`），节点级填写只走任务随单写入；退回/撤销/终态不锁（业务可改后重提）。
 
 ---
 
@@ -126,7 +127,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/{formKey}/schema` | 渲染元数据（含当前用户按钮权限） |
+| GET | `/{formKey}/schema` | 渲染元数据（含当前用户按钮权限；携带 `nodeCode` 时逐字段解析节点填写权限 `nodeEditable`/`nodeShow`） |
 | POST | `/{formKey}/page`、GET `/{formKey}/tree` | 分页查询 / 树节点 |
 | GET / POST / PUT / DELETE | `/{formKey}/...` | 详情 / 新增 / 编辑 / 删除（按级联策略） |
 | POST | `/{formKey}/submit` | 流程表单提交 |
@@ -143,7 +144,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 | 依赖 | 扩展点 | 缺席时行为 |
 |------|------|------|
 | `lambda-fusion-authority-api` | `BizDataProvider`（ORG/USER/ROLE 选择器数据）、`FormRouteGateway`（菜单挂载） | 选择器数据为空；挂载端点降级不可用 |
-| `lambda-fusion-workflow` | `ProcessFormSource`、`WorkflowSubmitService` | 流程表单开关与提交端点降级为不可用 |
+| `lambda-fusion-workflow` | `ProcessFormSource`、`WorkflowSubmitService`、`TaskFormHandler` 实现 | 流程表单开关与提交端点降级为不可用；随办理提交表单数据被引擎侧拒绝 |
 | `lambda-fusion-datasource` | `DataSourceCatalog`、`RuntimeDataSourceResolver` | 数据源下拉为空，仅平台主库可映射 |
 | `lambda-fusion-oss` | `AttachmentService`（FILE 字段） | FILE 字段退化为文本输入 |
 | `lambda-cloud-starter-cache` | `formTableMeta` 缓存 | 直通实时读取 |

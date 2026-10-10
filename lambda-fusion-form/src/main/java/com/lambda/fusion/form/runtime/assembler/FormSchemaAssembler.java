@@ -19,6 +19,14 @@ public class FormSchemaAssembler {
     }
 
     public FormSchemaView assemble(FormModel model) {
+        return assemble(model, null);
+    }
+
+    /**
+     * @param nodeCode 流程节点编码（可空）：非空时为每个字段解析节点维度权限
+     *                 （nodeEditable 该节点可填写 / nodeShow 该节点是否展示），供办理端渲染填写区
+     */
+    public FormSchemaView assemble(FormModel model, String nodeCode) {
         FormSchemaView view = new FormSchemaView();
         view.setFormKey(model.formKey());
         view.setFormName(model.formName());
@@ -73,7 +81,7 @@ public class FormSchemaAssembler {
         view.setFormLayout(model.formLayout());
         List<FormSchemaView.FieldSchema> fields = new ArrayList<>();
         model.fields().forEach(field -> {
-            FormSchemaView.FieldSchema schema = toFieldSchema(field);
+            FormSchemaView.FieldSchema schema = toFieldSchema(field, nodeCode);
             if (field.column().equals(model.logicDeleteColumn())) {
                 schema.setFormShow(false);
                 schema.setReadonly(true);
@@ -118,7 +126,7 @@ public class FormSchemaAssembler {
         return view;
     }
 
-    private FormSchemaView.FieldSchema toFieldSchema(FormModel.FormField field) {
+    private FormSchemaView.FieldSchema toFieldSchema(FormModel.FormField field, String nodeCode) {
         FormSchemaView.FieldSchema schema = new FormSchemaView.FieldSchema();
         schema.setName(field.name());
         schema.setLabel(field.label());
@@ -145,6 +153,21 @@ public class FormSchemaAssembler {
         schema.setPersisted(field.persisted());
         schema.setSubFormKey(field.subFormKey());
         schema.setSort(field.sort());
+        if (nodeCode != null) {
+            resolveNodePerms(field, nodeCode, schema);
+        }
         return schema;
+    }
+
+    /**
+     * 节点维度权限解析（仅主表、画布可见、落库字段可成为填写字段）：
+     * 有该节点配置时 editable/show 显式生效，否则 show=true / editable=false（单据只读可见）。
+     */
+    private void resolveNodePerms(FormModel.FormField field, String nodeCode, FormSchemaView.FieldSchema schema) {
+        FormModel.NodeConf conf = field.form().nodeConf(nodeCode);
+        boolean fillable =
+                field.subFormKey() == null && field.persisted() && field.form().show();
+        schema.setNodeEditable(fillable && conf != null && conf.editable());
+        schema.setNodeShow(conf == null || conf.show());
     }
 }

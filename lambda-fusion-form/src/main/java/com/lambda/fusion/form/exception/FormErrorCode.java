@@ -136,6 +136,16 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_WORKFLOW_UNAVAILABLE(18138, "当前服务未提供流程能力"),
 
+    /**
+     * 数据处于流程审批中，暂不可编辑或删除（退回/撤销后恢复）
+     */
+    FORM_DATA_LOCKED(18139, "数据正在流程审批中，暂不可编辑或删除"),
+
+    /**
+     * 字段不在该节点的可填写范围：{0}
+     */
+    FORM_TASK_FIELD_FORBIDDEN(18140, "字段不在该节点的可填写范围：{0}"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");

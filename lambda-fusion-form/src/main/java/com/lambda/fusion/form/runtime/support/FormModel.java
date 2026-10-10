@@ -158,9 +158,29 @@ public record FormModel(
      * @param props 组件属性
      * @param rules 校验规则
      * @param readonly 表单中只读（详情天然只读）
+     * @param nodePerms 流程节点填写权限：nodeCode → 生效配置（编译期归一缺省，不可变；空=无节点配置）
      */
     public record FormConf(
-            boolean show, String component, Map<String, Object> props, Map<String, Object> rules, boolean readonly) {}
+            boolean show,
+            String component,
+            Map<String, Object> props,
+            Map<String, Object> rules,
+            boolean readonly,
+            Map<String, NodeConf> nodePerms) {
+
+        /** 指定节点的生效权限；无该节点配置返回 null（调用方按缺省处理） */
+        public NodeConf nodeConf(String nodeCode) {
+            return nodePerms == null ? null : nodePerms.get(nodeCode);
+        }
+    }
+
+    /**
+     * 节点填写权限（编译期归一：editable/show 均有确定值）
+     *
+     * @param editable 该节点办理时可填写（随办理提交回写本行）
+     * @param show 该节点单据上是否展示（false=对该节点隐藏）
+     */
+    public record NodeConf(boolean editable, boolean show) {}
 
     /**
      * 主从关系（子表直连物理表，字段内嵌主表单）
