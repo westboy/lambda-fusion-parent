@@ -269,12 +269,12 @@ fusion 模块之间的 `optional=true` 依赖（如 authority → datasource/con
 ### 15.1 运行约定（MUST）
 
 - 测试运行在 classpath 上而非 module path（父 POM 设置 `surefire.useModulePath=false`）；遇到 JPMS 相关测试失败时据此排查。
-- 目前仅 `lambda-fusion-ai` 带完整测试套件；改动 agent / graph / evaluator / node 逻辑时，必须执行 `mvn -pl lambda-fusion-ai test`。
+- `lambda-fusion-ai` 带完整测试套件，`core` / `form` / `logger` 已陆续补充针对性测试；改动 agent / graph / evaluator / node 逻辑时，必须执行 `mvn -pl lambda-fusion-ai test`，其他模块改动执行对应模块测试。
 
 ### 15.2 测试分层（SHOULD）
 
 - 单元测试优先复用基础框架 `lambda-cloud-starter-test` 提供的设施。
-- 鼓励为核心模块（core / authority / config / dictionary）补充测试，逐步消除“仅 ai 有测试”的现状。
+- 鼓励为其余核心模块（authority / config / dictionary 等）补充测试，持续扩大覆盖面。
 
 ### 15.3 禁令（MUST NOT）
 
