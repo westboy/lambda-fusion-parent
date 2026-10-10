@@ -77,6 +77,8 @@ public class FormPublishServiceImpl implements FormPublishService {
         targetTableContract.validate(compiledModel);
         // 唯一字段必须有数据库唯一索引兜底（应用层查重挡不住并发窗口）
         targetTableContract.validateUniqueIndexes(compiledModel);
+        // 外键/树父列是运行时高频过滤列：最左前缀索引缺失时拒绝发布（防读路径全表扫描）
+        targetTableContract.validateRelationIndexes(compiledModel);
         FormDefVersionEntity version = new FormDefVersionEntity();
         version.setFormId(id);
         version.setVersion(nextVersion);

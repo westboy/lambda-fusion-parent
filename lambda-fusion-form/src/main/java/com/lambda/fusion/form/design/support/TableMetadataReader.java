@@ -208,6 +208,48 @@ public class TableMetadataReader {
         return List.copyOf(indexes.values());
     }
 
+    /**
+     * 目标表的全部索引列组合（含非唯一索引，按 ORDINAL_POSITION 有序，列名大写）：
+     * 发布期「最左前缀索引」校验用（主从外键列、SELF 树父列）。
+     *
+     * @param datasourceId 数据源注册 id（空=平台主库）
+     * @param tableName 物理表名
+     * @return 每个元素为一个索引的有序列名列表（最左列在前）
+     */
+    public List<List<String>> listIndexColumns(String datasourceId, String tableName) {
+        if (isExcluded(tableName)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "表不可映射：" + tableName);
+        }
+        Map<String, java.util.TreeMap<Integer, String>> columnsByIndex = new java.util.LinkedHashMap<>();
+        try (Connection connection = openConnection(datasourceId)) {
+            DatabaseMetaData metaData = connection.getMetaData();
+            String catalog = connection.getCatalog();
+            String schema = connection.getSchema();
+            requireScope(catalog, schema);
+            String exactName = resolveTable(metaData, catalog, schema, tableName);
+            try (ResultSet rs = metaData.getIndexInfo(catalog, schema, exactName, false, false)) {
+                while (rs.next()) {
+                    if (!inScope(rs, catalog, schema) || !exactName.equals(rs.getString("TABLE_NAME"))) {
+                        continue;
+                    }
+                    String indexName = rs.getString("INDEX_NAME");
+                    String columnName = rs.getString("COLUMN_NAME");
+                    if (indexName == null || columnName == null) {
+                        continue;
+                    }
+                    columnsByIndex
+                            .computeIfAbsent(indexName, key -> new java.util.TreeMap<>())
+                            .put((int) rs.getShort("ORDINAL_POSITION"), columnName.toUpperCase(Locale.ROOT));
+                }
+            }
+        } catch (SQLException e) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "读取索引元数据失败：" + e.getMessage());
+        }
+        return columnsByIndex.values().stream()
+                .map(columns -> List.copyOf(columns.values()))
+                .toList();
+    }
+
     private String resolveTable(DatabaseMetaData meta, String catalog, String schema, String name) throws SQLException {
         String normalized = meta.storesUpperCaseIdentifiers()
                 ? name.toUpperCase(Locale.ROOT)

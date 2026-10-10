@@ -183,6 +183,39 @@ public class TargetTableContract {
     }
 
     /**
+     * 发布期过滤列索引校验（仅发布流程调用，不进运行时读写路径）：主从外键列与 SELF 树父列是
+     * 主子查询、级联清理与树展开/子树解析的高频过滤列，必须由某个索引的**最左列**直接覆盖。
+     * 只要求最左列而非「包含即可」的原因：平台管理模式（无租户上下文）的查询不带租户条件，
+     * (TENANT_ID, FK) 这类组合索引对 FK 单条件过滤不可用；最左列为过滤列的索引在全模式可用。
+     */
+    public void validateRelationIndexes(FormModel model) {
+        for (FormModel.FormRelation relation : model.relations()) {
+            requireLeadingIndex(
+                    model.datasourceId(),
+                    relation.subTable(),
+                    relation.foreignKey(),
+                    "子表外键列缺少索引：" + relation.subTable() + "." + relation.foreignKey() + "（请以该列为最左列建索引，主子查询与级联按它高频过滤）");
+        }
+        if (model.tree() != null && model.tree().selfRelation()) {
+            requireLeadingIndex(
+                    model.datasourceId(),
+                    model.tableName(),
+                    model.tree().parentColumn(),
+                    "SELF 树父列缺少索引：" + model.tableName() + "." + model.tree().parentColumn()
+                            + "（请以该列为最左列建索引，树展开与子树解析按它逐层过滤）");
+        }
+    }
+
+    /** 过滤列须被某个索引的最左列覆盖 */
+    private void requireLeadingIndex(String datasourceId, String tableName, String column, String message) {
+        boolean covered = metadataReader.listIndexColumns(datasourceId, tableName).stream()
+                .anyMatch(index -> !index.isEmpty() && index.getFirst().equals(column));
+        if (!covered) {
+            throw invalid(message);
+        }
+    }
+
+    /**
      * 租户契约区分两种模式。请求无租户上下文即平台管理/开发者模式（契约 §5.1 的受控平台流程，
      * 登录与权限入口仍生效）：框架策略本就全表跳过注入，引擎不代填租户列也不设防，租户列约束由
      * 数据库表态。请求带租户上下文时按业务契约校验：未豁免的表必须有可写的 TENANT_ID 列并校验
