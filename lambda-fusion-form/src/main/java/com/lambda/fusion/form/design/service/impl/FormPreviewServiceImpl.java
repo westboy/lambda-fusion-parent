@@ -39,6 +39,10 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 @SuppressFBWarnings("EI_EXPOSE_REP2")
 public class FormPreviewServiceImpl implements FormPreviewService {
+
+    /** 未保存新表单预览的占位标识（合法标识符；编译期白名单要求非空，落库路径不受影响） */
+    private static final String PREVIEW_FORM_KEY = "preview_draft";
+
     private final FormDesignService designService;
     private final FormDefVersionMapper versionMapper;
     private final FormSnapshotAssembler snapshotAssembler;
@@ -144,10 +148,16 @@ public class FormPreviewServiceImpl implements FormPreviewService {
             FormDefSaveCommand design = source.design();
             if (owner != null) {
                 checkRevision(design.getVersion(), owner.getVersion());
-            } else if (definitions.selectCount(
-                            new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, design.getFormKey()))
-                    > 0) {
+            } else if (StringUtils.hasText(design.getFormKey())
+                    && definitions.selectCount(new LambdaQueryWrapper<FormDefEntity>()
+                                    .eq(FormDefEntity::getFormKey, design.getFormKey()))
+                            > 0) {
                 throw new FormBusinessException(FormErrorCode.FORM_KEY_DUPLICATED, design.getFormKey());
+            }
+            // 设计器已免填标识：未保存新表单的预览没有 formKey，编译期标识白名单会拒绝空串——
+            // 用占位标识完成编译（仅预览内存态，不落库；数据路径权限由入口 design:add/edit 承担）
+            if (!StringUtils.hasText(design.getFormKey())) {
+                design.setFormKey(PREVIEW_FORM_KEY);
             }
             model = compiler.compile(json.write(snapshotAssembler.fromCommand(design, objectMapper)), 0);
         } else {

@@ -111,6 +111,19 @@ class FormPreviewDataIntegrationTest {
     }
 
     @Test
+    void unsavedDesignWithoutFormKeyPreviewsWithPlaceholderIdentity() {
+        // 设计器已免填标识：新增态未保存设计的 formKey 为空串，编译期白名单会拒绝空串——
+        // 预览用占位标识（preview_draft）完成编译与数据读写，不落库（la_form_def 保持为空）
+        var command = command("");
+        var source = new FormPreviewSource(null, null, null, command);
+        String id = preview.create(source, Map.of("name", "Anonymous"));
+        assertThat(preview.preview(source).getFormKey()).isEqualTo("preview_draft");
+        assertThat(preview.detail(source, id)).containsEntry("name", "Anonymous");
+        assertThat(count("la_form_def")).isZero();
+        assertThat(count("LA_TEST_BUSINESS")).isEqualTo(1);
+    }
+
+    @Test
     void historicalAndCurrentModelsUseTheirOwnMappingOnTheSameBusinessRows() {
         String formId = design.save(command("sample"));
         publish.publish(formId);
