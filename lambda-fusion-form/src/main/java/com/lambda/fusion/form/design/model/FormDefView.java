@@ -27,7 +27,7 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "表单标识（租户内唯一）")
     private String formKey;
 
-    @Schema(description = "显示名")
+    @Schema(description = "表单名称")
     private String formName;
 
     @Schema(description = "SINGLE / TREE / MASTER_SUB")

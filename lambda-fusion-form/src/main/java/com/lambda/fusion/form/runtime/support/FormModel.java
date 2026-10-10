@@ -9,7 +9,7 @@ import java.util.Map;
  * 编译后的表单模型（不可变，运行时的唯一事实来源）
  *
  * @param formKey 表单标识
- * @param formName 显示名
+ * @param formName 表单名称
  * @param version 生效快照版本号
  * @param formType SINGLE / TREE / MASTER_SUB
  * @param tableName 目标物理表（服务端私有，绝不出参）

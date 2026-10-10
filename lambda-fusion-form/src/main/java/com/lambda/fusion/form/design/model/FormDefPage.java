@@ -19,7 +19,7 @@ public class FormDefPage extends PageQuery<FormDefEntity> {
     /** 表单标识（模糊） */
     private String formKey;
 
-    /** 显示名（模糊） */
+    /** 表单名称（模糊） */
     private String formName;
 
     /** 表单类型（等值） */

@@ -316,7 +316,31 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
-    void saveRejectsTablesOutsideExplicitAllowList() {
+    void saveGeneratesFormKeyWhenOmittedAndRejectsInvalidProvidedKey() {
+        // 标识留空 = 后端自动生成（f_ + 随机段，租户内唯一）；非法手填标识保存期即拒，不拖到发布期
+        FormDefSaveCommand firstCommand = command();
+        firstCommand.setFormKey(" ");
+        String first = design.save(firstCommand);
+        FormDefSaveCommand secondCommand = command();
+        secondCommand.setFormKey(" ");
+        String second = design.save(secondCommand);
+        String firstKey = definitions.selectById(first).getFormKey();
+        assertThat(firstKey).matches("f_[a-z0-9]{8}");
+        assertThat(definitions.selectById(second).getFormKey())
+                .matches("f_[a-z0-9]{8}")
+                .isNotEqualTo(firstKey);
+
+        FormDefSaveCommand invalid = command();
+        invalid.setFormKey("Bad Key!");
+        assertThatThrownBy(() -> design.save(invalid))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                        .contains("表单标识非法"));
+        assertThat(count("la_form_def")).isEqualTo(2);
+    }
+
+    @Test
+    void saveRejectsTableMatchingExcludePattern() {
         FormDefSaveCommand command = command();
         command.setTableName("la_area");
         assertThatThrownBy(() -> design.save(command)).isInstanceOf(FormBusinessException.class);
@@ -325,7 +349,7 @@ class FormLifecycleIntegrationTest {
 
     @Test
     void saveRejectsRelationToUnopenedSubTable() {
-        // 子表直连物理表：不在动态读写允许清单即拒绝
+        // 子表直连物理表：命中平台内部表排除正则即拒绝
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
         FormRelationItem relation = relation("sub_area", "AREA_ID");
@@ -333,13 +357,13 @@ class FormLifecycleIntegrationTest {
         command.setRelations(List.of(relation));
         assertThatThrownBy(() -> design.save(command))
                 .isInstanceOf(FormBusinessException.class)
-                .satisfies(error -> assertRelationDetail(error, "子表未开放动态读写"));
+                .satisfies(error -> assertRelationDetail(error, "子表不可映射"));
         assertThat(count("la_form_def")).isZero();
     }
 
     @Test
     void saveRejectsRelationToMissingSubTable() {
-        // 在允许清单但物理表不存在（LA_GHOST_SUB 未建表）：拒绝
+        // 未命中排除正则但物理表不存在（LA_GHOST_SUB 未建表）：拒绝
         FormDefSaveCommand command = command();
         command.setFormType("MASTER_SUB");
         FormRelationItem relation = relation("sub_area", "AREA_ID");
@@ -418,8 +442,9 @@ class FormLifecycleIntegrationTest {
         assertThat(jdbc.queryForObject(
                         "SELECT COUNT(*) FROM la_form_field WHERE SUB_FORM_KEY = ?", Integer.class, "sub_area"))
                 .isEqualTo(3);
-        // 编译期同口径查重，发布不误报
+        // 编译期同口径查重，发布不误报（外键列最左前缀索引是发布前置契约）
         try (var permissions = mockStatic(AuthUtils.class)) {
+            jdbc.execute("CREATE INDEX idx_test_sub_leave ON LA_TEST_SUB(LEAVE_ID)");
             publish.publish(id);
             assertThat(definitions.selectById(id).getPublishedVersion()).isEqualTo(1L);
         }
@@ -456,27 +481,28 @@ class FormLifecycleIntegrationTest {
     }
 
     @Test
-    void saveRejectsMasterTableOutsideWhitelist() {
-        // 主表白名单收口：新建即拒，消息指明主表（与子表消息对称）
+    void saveRejectsMasterTableMatchingExcludePattern() {
+        // 主表收口：命中排除正则即拒，消息指明主表（与子表消息对称）
         FormDefSaveCommand invalid = command();
         invalid.setTableName("LA_GHOST_MAIN");
         assertThatThrownBy(() -> design.save(invalid))
                 .isInstanceOf(FormBusinessException.class)
                 .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
-                        .contains("主表未开放动态读写：LA_GHOST_MAIN"));
+                        .contains("主表不可映射")
+                        .contains("LA_GHOST_MAIN"));
         assertThat(count("la_form_def")).isZero();
     }
 
     @Test
     void listTablesOnlyReturnsWhitelistedTables() {
         FormProperties properties = context.getBean(FormProperties.class);
-        var original = properties.getAllowedTables();
+        var original = properties.getTableExcludePattern();
         try {
-            // 与新建收口配套：下拉只列白名单内表（白名单缩窄后 LAS_TEST_SUB 不再出现）
-            properties.setAllowedTables(List.of("LA_TEST_BUSINESS"));
-            assertThat(design.listTables()).contains("LA_TEST_BUSINESS").doesNotContain("LA_TEST_SUB");
+            // 与新建收口配套：下拉只列未命中排除正则的表（正则收紧后 LA_TEST_SUB 不再出现）
+            properties.setTableExcludePattern("la_(?!test_business).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*");
+            assertThat(design.listTables(null)).contains("LA_TEST_BUSINESS").doesNotContain("LA_TEST_SUB");
         } finally {
-            properties.setAllowedTables(original);
+            properties.setTableExcludePattern(original);
         }
     }
 
@@ -653,6 +679,49 @@ class FormLifecycleIntegrationTest {
         }
     }
 
+    @Test
+    void publishRequiresLeadingIndexOnRelationForeignKey() {
+        // 主子查询/级联按外键列高频过滤：子表外键列缺最左前缀索引时拒绝发布，补索引后放行
+        FormDefSaveCommand command = command();
+        command.setFormType("MASTER_SUB");
+        addSubFields(command, "sub_area");
+        command.setRelations(List.of(relation("sub_area", "LEAVE_ID")));
+        String id = design.save(command);
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            assertThatThrownBy(() -> publish.publish(id))
+                    .isInstanceOf(FormBusinessException.class)
+                    .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                            .contains("子表外键列缺少索引")
+                            .contains("LA_TEST_SUB.LEAVE_ID"));
+            assertThat(definitions.selectById(id).getPublishedVersion()).isNull();
+            assertThat(count("la_form_def_version")).isZero();
+            jdbc.execute("CREATE INDEX idx_test_sub_leave ON LA_TEST_SUB(LEAVE_ID)");
+            publish.publish(id);
+            assertThat(definitions.selectById(id).getPublishedVersion()).isEqualTo(1L);
+        }
+    }
+
+    @Test
+    void publishRequiresLeadingIndexOnSelfTreeParentColumn() {
+        // 树展开与子树解析按父列逐层过滤：SELF 树父列缺最左前缀索引时拒绝发布，补索引后放行
+        FormDefSaveCommand command = command();
+        command.setFormType("TREE");
+        command.setTreeConfig(
+                "{\"sourceType\":\"SELF\",\"parentColumn\":\"PERSON_NAME\",\"nodeColumn\":\"PERSON_NAME\"}");
+        String id = design.save(command);
+        try (var permissions = mockStatic(AuthUtils.class)) {
+            assertThatThrownBy(() -> publish.publish(id))
+                    .isInstanceOf(FormBusinessException.class)
+                    .satisfies(error -> assertThat(String.valueOf(((FormBusinessException) error).getArgs()[0]))
+                            .contains("SELF 树父列缺少索引")
+                            .contains("LA_TEST_BUSINESS.PERSON_NAME"));
+            assertThat(definitions.selectById(id).getPublishedVersion()).isNull();
+            jdbc.execute("CREATE INDEX idx_business_name ON LA_TEST_BUSINESS(PERSON_NAME)");
+            publish.publish(id);
+            assertThat(definitions.selectById(id).getPublishedVersion()).isEqualTo(1L);
+        }
+    }
+
     /** 录制钩子调用顺序的测试拦截器 */
     static class RecordingInterceptor implements FormDataInterceptor {
         final List<String> events = new ArrayList<>();
@@ -736,7 +805,7 @@ class FormLifecycleIntegrationTest {
             jdbc.execute(
                     """
                     CREATE TABLE la_form_def (ID VARCHAR(32) PRIMARY KEY, FORM_KEY VARCHAR(64), FORM_NAME VARCHAR(128),
-                    FORM_TYPE VARCHAR(16), TABLE_NAME VARCHAR(64), TREE_CONFIG CLOB, PROCESS_FORM BOOLEAN DEFAULT FALSE,
+                    FORM_TYPE VARCHAR(16), TABLE_NAME VARCHAR(64), DATASOURCE_ID VARCHAR(64), TREE_CONFIG CLOB, PROCESS_FORM BOOLEAN DEFAULT FALSE,
                     STATUS VARCHAR(16), PUBLISHED_VERSION BIGINT, TITLE_TEMPLATE VARCHAR(256), INTERCEPTOR VARCHAR(128),
                     PUBLISH_ON_SAVE BOOLEAN, LOGIC_DELETE_COLUMN VARCHAR(64),
                     LIST_CONFIG CLOB, DETAIL_CONFIG VARCHAR(512), FORM_LAYOUT CLOB, ROUTE_RESOURCE_ID VARCHAR(32), VERSION BIGINT DEFAULT 0
@@ -778,7 +847,10 @@ class FormLifecycleIntegrationTest {
         @Bean
         FormProperties properties() {
             FormProperties properties = new FormProperties();
-            properties.setAllowedTables(List.of("LA_TEST_BUSINESS", "LA_TEST_SUB", "LA_GHOST_SUB"));
+            // 默认排除正则保护 la_ 前缀：放行测试用表（test_/demo_/ghost_sub 例外），
+            // la_area、LA_NOT_ALLOWED、LA_GHOST_MAIN 仍命中保护集（排除用例依赖）
+            properties.setTableExcludePattern(
+                    "la_(?!test_|demo_|ghost_sub).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*");
             return properties;
         }
 

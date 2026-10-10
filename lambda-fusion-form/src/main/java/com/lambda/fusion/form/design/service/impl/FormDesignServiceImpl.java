@@ -33,6 +33,7 @@ import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.SubTableConfigs;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.security.SecureRandom;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -104,6 +105,10 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String save(FormDefSaveCommand command) {
+        // 标识留空 = 后端自动生成（租户内唯一，f_ + 随机段）；设计器创建态免填，编辑态仍回传既有标识
+        if (command.getFormKey() == null || command.getFormKey().isBlank()) {
+            command.setFormKey(generateFormKey());
+        }
         validate(command);
         requireKeyFree(command.getFormKey(), null);
         FormDefEntity def = new FormDefEntity();
@@ -226,6 +231,11 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
     private void validate(FormDefSaveCommand command) {
         if ("design".equalsIgnoreCase(command.getFormKey())) {
             throw new FormBusinessException(FormErrorCode.FORM_KEY_RESERVED);
+        }
+        // 保存期前置标识合法性（发布期 FormModelCompiler 同口径兜底）：生成路径已保证合法，此处拦截手填非法值
+        if (!FormConstants.isFormKey(command.getFormKey())) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "表单标识非法：须为字母开头的字母/数字/下划线（" + command.getFormKey() + "）");
         }
         if (command.getInterceptor() != null
                 && !command.getInterceptor().isBlank()
@@ -569,6 +579,31 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
         if (existing != null && !existing.getId().equals(excludeId)) {
             throw new FormBusinessException(FormErrorCode.FORM_KEY_DUPLICATED, formKey);
         }
+    }
+
+    /** 表单标识随机段的字符集（小写字母数字）与熵源（静态复用，线程安全） */
+    private static final String FORM_KEY_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+    private static final SecureRandom FORM_KEY_RANDOM = new SecureRandom();
+
+    /**
+     * 留空标识的自动生成：f_ + 8 位小写随机段（isFormKey 白名单内），查重重试保证租户内唯一；
+     * 数据库 (TENANT_ID, FORM_KEY) 唯一键是并发下的最终防线
+     */
+    private String generateFormKey() {
+        for (int attempt = 0; attempt < 8; attempt++) {
+            StringBuilder candidate = new StringBuilder("f_");
+            for (int i = 0; i < 8; i++) {
+                candidate.append(FORM_KEY_ALPHABET.charAt(FORM_KEY_RANDOM.nextInt(FORM_KEY_ALPHABET.length())));
+            }
+            String formKey = candidate.toString();
+            if (getBaseMapper()
+                            .selectCount(new LambdaQueryWrapper<FormDefEntity>().eq(FormDefEntity::getFormKey, formKey))
+                    == 0) {
+                return formKey;
+            }
+        }
+        throw new FormBusinessException(FormErrorCode.FORM_KEY_DUPLICATED, "自动生成表单标识连续冲突");
     }
 
     private void apply(FormDefEntity def, FormDefSaveCommand command) {
