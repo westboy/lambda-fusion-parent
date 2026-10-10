@@ -111,6 +111,24 @@ class ChatMessageServiceImplTest {
                 .isInstanceOf(AiBusinessException.class);
     }
 
+    @Test
+    void shouldAssignSnowflakeBeforeSavingMessages() {
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId("session-1");
+        List<Long> inserted = new ArrayList<>();
+        when(messageMapper.insert(any(ChatMessageEntity.class))).thenAnswer(call -> {
+            ChatMessageEntity message = call.getArgument(0);
+            assertThat(message.getId()).isGreaterThan(1_000_000_000_000_000_000L);
+            inserted.add(message.getId());
+            return 1;
+        });
+        ChatMessageEntity user = service.saveUserMessage(session, "question");
+        ChatMessageEntity assistant = service.saveAssistantMessage(session, "answer", "tool-result");
+        assertThat(inserted).containsExactly(user.getId(), assistant.getId()).doesNotHaveDuplicates();
+        assertThat(user.getRole()).isEqualTo("user");
+        assertThat(assistant.getToolCall()).isEqualTo("tool-result");
+    }
+
     /** 按 ID 倒序构造消息列表，模拟 orderByDesc 查询结果。 */
     private static List<ChatMessageEntity> messages(long... idsDesc) {
         List<ChatMessageEntity> list = new ArrayList<>();

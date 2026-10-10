@@ -1024,4 +1024,25 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="lambda-ai-20261010-snowflake-ai_app_config_audit" author="bianruhao" dbms="mysql,mariadb">
+        <preConditions onFail="MARK_RAN" onError="HALT">
+            <tableExists tableName="ai_app_config_audit"/>
+            <sqlCheck expectedResult="1">SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ai_app_config_audit' AND COLUMN_NAME = 'id' AND EXTRA LIKE '%auto_increment%'</sqlCheck>
+        </preConditions>
+        <sql>ALTER TABLE `ai_app_config_audit` MODIFY COLUMN `id` BIGINT NOT NULL COMMENT '主键';</sql>
+    </changeSet>
+    <changeSet id="lambda-ai-20261010-snowflake-ai_app_workspace_audit" author="bianruhao" dbms="mysql,mariadb">
+        <preConditions onFail="MARK_RAN" onError="HALT">
+            <tableExists tableName="ai_app_workspace_audit"/>
+            <sqlCheck expectedResult="1">SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ai_app_workspace_audit' AND COLUMN_NAME = 'id' AND EXTRA LIKE '%auto_increment%'</sqlCheck>
+        </preConditions>
+        <sql>ALTER TABLE `ai_app_workspace_audit` MODIFY COLUMN `id` BIGINT NOT NULL COMMENT '主键';</sql>
+    </changeSet>
+    <changeSet id="lambda-ai-20261010-snowflake-ai_chat_message" author="bianruhao" dbms="mysql,mariadb">
+        <preConditions onFail="MARK_RAN" onError="HALT">
+            <tableExists tableName="ai_chat_message"/>
+            <sqlCheck expectedResult="1">SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ai_chat_message' AND COLUMN_NAME = 'id' AND EXTRA LIKE '%auto_increment%'</sqlCheck>
+        </preConditions>
+        <sql>ALTER TABLE `ai_chat_message` MODIFY COLUMN `id` BIGINT NOT NULL COMMENT '主键';</sql>
+    </changeSet>
 </databaseChangeLog>

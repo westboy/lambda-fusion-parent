@@ -72,6 +72,7 @@ class AppServiceImplConfigAuditTest {
         ArgumentCaptor<AppConfigAuditEntity> captor = ArgumentCaptor.forClass(AppConfigAuditEntity.class);
         verify(auditMapper).insert(captor.capture());
         AppConfigAuditEntity audit = captor.getValue();
+        assertThat(audit.getId()).isGreaterThan(1_000_000_000_000_000_000L);
         assertThat(audit.getOperation()).isEqualTo("UPDATE");
         assertThat(audit.getAppId()).isEqualTo("app-1");
         assertThat(audit.getTenantId()).isEqualTo("tenant-1");
@@ -94,6 +95,7 @@ class AppServiceImplConfigAuditTest {
 
         ArgumentCaptor<AppConfigAuditEntity> captor = ArgumentCaptor.forClass(AppConfigAuditEntity.class);
         verify(auditMapper).insert(captor.capture());
+        assertThat(captor.getValue().getId()).isGreaterThan(1_000_000_000_000_000_000L);
         assertThat(captor.getValue().getOperation()).isEqualTo("DELETE");
         verify(appMapper).deleteById("app-1");
     }

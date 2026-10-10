@@ -315,6 +315,7 @@ public class AppServiceImpl implements AppService {
             audit.setConfigJson(JsonUtils.getJsonCodec().toJson(snapshotSource));
             audit.setOperator(AuthUtils.getUser().getUsername());
             audit.setCreatedAt(LocalDateTime.now());
+            audit.setId(IdUtil.getSnowflakeNextId());
             appConfigAuditMapper.insert(audit);
         } catch (RuntimeException auditFailure) {
             // 审计是回退保障而非主流程：失败只告警，不阻断配置变更本身。

@@ -13,7 +13,7 @@ import lombok.Data;
 @Schema(description = "对话消息")
 public class ChatMessageEntity {
 
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.INPUT)
     @Schema(description = "主键")
     private Long id;
 

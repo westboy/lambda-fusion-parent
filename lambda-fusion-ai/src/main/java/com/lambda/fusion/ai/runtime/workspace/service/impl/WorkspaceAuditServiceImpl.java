@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.runtime.workspace.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.runtime.workspace.entity.WorkspaceAuditEntity;
 import com.lambda.fusion.ai.runtime.workspace.mapper.WorkspaceAuditMapper;
@@ -20,6 +21,7 @@ public class WorkspaceAuditServiceImpl implements WorkspaceAuditService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void record(WorkspaceAuditEntity entity) {
+        entity.setId(IdUtil.getSnowflakeNextId());
         workspaceAuditMapper.insert(entity);
     }
 

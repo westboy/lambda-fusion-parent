@@ -1,5 +1,6 @@
 package com.lambda.fusion.ai.chat.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.chat.mapper.ChatMessageMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
@@ -131,6 +132,7 @@ public class ChatMessageServiceImpl implements ChatMessageService {
             entity.setToolCall(toolCall);
         }
         entity.setCreatedAt(LocalDateTime.now());
+        entity.setId(IdUtil.getSnowflakeNextId());
         chatMessageMapper.insert(entity);
         return entity;
     }

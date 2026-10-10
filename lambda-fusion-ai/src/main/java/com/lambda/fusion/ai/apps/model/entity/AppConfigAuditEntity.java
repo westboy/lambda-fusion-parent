@@ -19,7 +19,7 @@ import lombok.Data;
 @Schema(description = "应用配置变更审计")
 public class AppConfigAuditEntity {
 
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.INPUT)
     @Schema(description = "主键")
     private Long id;
 

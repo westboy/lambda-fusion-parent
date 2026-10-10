@@ -13,7 +13,7 @@ import lombok.Data;
 @Schema(description = "应用 workspace 自演化审计")
 public class WorkspaceAuditEntity {
 
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.INPUT)
     @Schema(description = "主键")
     private Long id;
 
