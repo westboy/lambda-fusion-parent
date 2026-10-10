@@ -68,6 +68,14 @@ public class TargetTableContract {
         if (tenantColumn != null) {
             supplied.add(tenantColumn.getColumnName());
         }
+        // 行级数据权限过滤列：发布/写入路径校验存在且可写（读路径不重复校验，列被外部删除时查询显式报错）
+        if (model.dataScopeEnabled()) {
+            TableColumnView scopeColumn = columns.get(model.dataScopeColumn());
+            if (scopeColumn == null) {
+                throw invalid("行级数据权限过滤列在目标表不存在：" + model.dataScopeColumn());
+            }
+            writable(scopeColumn);
+        }
         // 审计列按物理存在自动适配：存在则校验并由引擎填充，不存在则跳过要求
         for (String name : FormConstants.AUDIT_COLUMNS) {
             TableColumnView column = columns.get(name);

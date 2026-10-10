@@ -161,6 +161,7 @@ public class FormModelCompiler {
         fields = forceServerBoundFieldsHidden(fields, relations);
         TreeConfig tree = compileTree(snapshot, fields);
         validateLogicDeleteColumn(snapshot, fields);
+        validateDataScope(snapshot);
         return new FormModel(
                 snapshot.getFormKey(),
                 snapshot.getFormName(),
@@ -182,7 +183,33 @@ public class FormModelCompiler {
                 List.copyOf(fields),
                 List.copyOf(relations),
                 tree,
-                snapshot.getInterceptor());
+                snapshot.getInterceptor(),
+                snapshot.getDataScopeType(),
+                snapshot.getDataScopeColumn() == null
+                                || snapshot.getDataScopeColumn().isBlank()
+                        ? null
+                        : snapshot.getDataScopeColumn().toUpperCase(Locale.ROOT));
+    }
+
+    /**
+     * 行级数据权限配置校验：类型与过滤列必须成对（或同时为空），过滤列走标识符白名单。
+     * 物理列存在性在发布期对照表元数据校验（编译期无连接），见 FormPublishServiceImpl。
+     */
+    private void validateDataScope(FormDefSnapshot snapshot) {
+        Integer type = snapshot.getDataScopeType();
+        String column = snapshot.getDataScopeColumn();
+        if (type == null && (column == null || column.isBlank())) {
+            return;
+        }
+        if (type == null || column == null || column.isBlank()) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "行级数据权限的类型与过滤列必须成对配置");
+        }
+        if (type < 0) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "行级数据权限类型非法：" + type);
+        }
+        if (!FormConstants.isIdentifier(column)) {
+            throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "行级数据权限过滤列非法：" + column);
+        }
     }
 
     /**

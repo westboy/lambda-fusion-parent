@@ -70,7 +70,9 @@ public class DynamicFormBusinessProvider implements WorkflowBusinessProvider {
         }
         final Map<String, Map<String, Object>> rows;
         try {
-            rows = dynamicDataService.findRows(modelProvider.require(bizType), businessIds, referencedFields(template));
+            // 剥离行级数据权限：待办/单据标题按办理与可见资格渲染，不受数据视图过滤
+            rows = dynamicDataService.findRows(
+                    modelProvider.require(bizType).withoutDataScope(), businessIds, referencedFields(template));
         } catch (Exception e) {
             log.warn("流程表单标题解析失败，整批跳过：formKey={} - {}", bizType, e.getMessage());
             return result;

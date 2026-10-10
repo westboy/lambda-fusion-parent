@@ -384,4 +384,24 @@
                     remarks="目标数据源注册 id（空=平台主库；创建后不可修改）"/>
         </addColumn>
     </changeSet>
+
+    <!-- 行级数据权限：启用后动态表单读写按 la_datascopes 授权过滤（过滤列承载业务数据节点 id） -->
+    <changeSet id="lambda-fusion-form-202610100001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_def"/>
+            <not>
+                <columnExists tableName="la_form_def" columnName="DATA_SCOPE_TYPE"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_def">
+            <column
+                    name="DATA_SCOPE_TYPE"
+                    type="int"
+                    remarks="行级数据权限业务类型（空=不启用；0=组织架构，与 la_datascopes.DOMAIN_TYPE 同口径）"/>
+            <column
+                    name="DATA_SCOPE_COLUMN"
+                    type="varchar(64)"
+                    remarks="行级数据权限过滤列（目标表承载业务数据节点 id 的物理列，发布期校验存在）"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

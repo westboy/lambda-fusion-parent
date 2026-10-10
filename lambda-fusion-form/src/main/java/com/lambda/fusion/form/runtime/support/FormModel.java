@@ -18,6 +18,8 @@ import java.util.Map;
  * @param relations 主从关系
  * @param tree TREE 类型树配置（可空）
  * @param interceptor 数据写入拦截器 bean 名（可空，见 runtime/integration/FormDataInterceptor）
+ * @param dataScopeType 行级数据权限业务类型（空=不启用；0=组织架构，与 la_datascopes.DOMAIN_TYPE 同口径）
+ * @param dataScopeColumn 行级数据权限过滤列（目标表承载业务数据节点 id 的物理列，服务端私有）
  */
 @SuppressFBWarnings("EI_EXPOSE_REP")
 public record FormModel(
@@ -34,7 +36,37 @@ public record FormModel(
         List<FormField> fields,
         List<FormRelation> relations,
         TreeConfig tree,
-        String interceptor) {
+        String interceptor,
+        Integer dataScopeType,
+        String dataScopeColumn) {
+
+    /** 系统编排路径专用副本：剥离行级数据权限（任务随单写入/待办标题解析按办理资格放行，不受数据视图过滤） */
+    public FormModel withoutDataScope() {
+        return dataScopeType == null
+                ? this
+                : new FormModel(
+                        formKey,
+                        formName,
+                        version,
+                        formType,
+                        tableName,
+                        datasourceId,
+                        logicDeleteColumn,
+                        listConfig,
+                        detailConfig,
+                        formLayout,
+                        fields,
+                        relations,
+                        tree,
+                        interceptor,
+                        null,
+                        null);
+    }
+
+    /** 行级数据权限是否启用（类型与过滤列成对配置，编译期保证） */
+    public boolean dataScopeEnabled() {
+        return dataScopeType != null && dataScopeColumn != null;
+    }
 
     /**
      * 详情呈现配置（仅影响详情 UI，不参与数据路径）

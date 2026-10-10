@@ -7,11 +7,14 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.lambda.fusion.core.identity.UserDetails;
+import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
@@ -37,6 +40,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.support.GenericApplicationContext;
 import tools.jackson.databind.ObjectMapper;
@@ -154,6 +158,56 @@ class DynamicDataServiceImplTest {
         when(mapper.selectById(eq(TABLE), anyString(), anyString(), anyMap())).thenReturn(null);
 
         assertErrorCode(() -> service.getById(model(), "404"), FormErrorCode.FORM_DATA_NOT_FOUND);
+    }
+
+    @Test
+    void pageAppendsDataScopeMarkerWhenEnabled() {
+        when(mapper.countBy(eq(TABLE), anyString(), anyMap())).thenReturn(0L);
+
+        service.page(scopedModel(), new FormDataPageQuery());
+
+        ArgumentCaptor<String> whereSql = ArgumentCaptor.forClass(String.class);
+        verify(mapper).countBy(eq(TABLE), whereSql.capture(), anyMap());
+        assertThat(whereSql.getValue()).contains("ORG_ID IN ('permissions|0')");
+    }
+
+    @Test
+    void pageLeavesMarkerOutWhenScopeDisabled() {
+        when(mapper.countBy(eq(TABLE), anyString(), anyMap())).thenReturn(0L);
+
+        service.page(model(), new FormDataPageQuery());
+
+        verify(mapper).countBy(eq(TABLE), eq(""), anyMap());
+    }
+
+    @Test
+    void createBackfillsScopeColumnWithCurrentUserOrg() {
+        UserDetails user = new UserDetails();
+        user.setOrgId("org-1");
+        try (MockedStatic<AuthUtils> auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(user);
+            auth.when(AuthUtils::getSafeUsername).thenReturn("creator");
+
+            service.create(scopedModel(), new HashMap<>(Map.of("applicant", "张三")));
+        }
+
+        ArgumentCaptor<List<String>> columns = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
+        verify(mapper).insertDynamic(eq(TABLE), columns.capture(), any(), params.capture());
+        assertThat(columns.getValue()).contains("ORG_ID");
+        assertThat(params.getValue()).containsValue("org-1");
+    }
+
+    @Test
+    void createRejectsScopeBackfillWithoutOrg() {
+        try (MockedStatic<AuthUtils> auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUser).thenReturn(new UserDetails());
+            auth.when(AuthUtils::getSafeUsername).thenReturn("creator");
+
+            assertErrorCode(
+                    () -> service.create(scopedModel(), new HashMap<>(Map.of("applicant", "张三"))),
+                    FormErrorCode.FORM_DATA_INVALID);
+        }
     }
 
     @Test
@@ -323,7 +377,32 @@ class DynamicDataServiceImplTest {
                         field("remark", "REMARK", "TEXT", true, true, false, "like", 3)),
                 List.of(),
                 null,
+                null,
+                null,
                 null);
+    }
+
+    /** 启用行级数据权限的模型：ORG_ID 承载组织节点 id，type=0（组织架构） */
+    private static FormModel scopedModel() {
+        return new FormModel(
+                "leave_demo",
+                "请假演示",
+                1L,
+                FormConstants.FORM_TYPE_SINGLE,
+                TABLE,
+                null,
+                null,
+                new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
+                null,
+                List.of(
+                        field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
+                        field("orgId", "ORG_ID", "STRING", true, true, false, "eq", 2)),
+                List.of(),
+                null,
+                null,
+                0,
+                "ORG_ID");
     }
 
     private static FormModel masterSubModel(String cascadeStrategy) {
@@ -342,6 +421,8 @@ class DynamicDataServiceImplTest {
                 List.of(new FormModel.FormRelation(
                         "leave_item", "LA_TEST_SUB", "LEAVE_ID", cascadeStrategy, null, null)),
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -359,6 +440,8 @@ class DynamicDataServiceImplTest {
                 null,
                 List.of(field("leaveId", "LEAVE_ID", "STRING", false, false, false, "eq", 0)),
                 List.of(),
+                null,
+                null,
                 null,
                 null);
     }

@@ -41,6 +41,12 @@ public class FormDefSnapshot {
     /** 逻辑删除列名（空=物理删除） */
     private String logicDeleteColumn;
 
+    /** 行级数据权限业务类型（空=不启用；0=组织架构） */
+    private Integer dataScopeType;
+
+    /** 行级数据权限过滤列（目标表物理列，发布期校验存在） */
+    private String dataScopeColumn;
+
     /** 列表级配置：布局/分页/按钮等 */
     private ListConfig listConfig = new ListConfig();
 

@@ -100,6 +100,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 - **标记唯一字段**：发布期校验目标表存在覆盖该列（或与 `TENANT_ID` 联合）的唯一索引。
 - **过滤列索引**：发布期校验主从外键列与 SELF 树父列被某个索引的**最左列**直接覆盖（主子查询、级联与树解析的高频过滤列；平台管理模式查询不带租户条件，`(TENANT_ID, FK)` 组合索引不构成兜底）。
 - **数据写入拦截器**：实现 `FormDataInterceptor` 并注册为 bean，表单经 `INTERCEPTOR` 字段引用，写入前后生效。
+- **行级数据权限（datascope）**：`la_form_def.DATA_SCOPE_TYPE/COLUMN` 声明启用行级过滤的业务类型（0=组织架构，与 `la_datascopes.DOMAIN_TYPE` 同口径）与承载节点 id 的目标表物理列（发布期校验存在且可写）。读路径（page/export/tree/detail，含合计与计数）经 SQL 标记模式 `{列} IN ('permissions|{type}')` 由 `DataScopeInterceptor` 改写为 `la_datascopes` 授权子查询（owner 默认放行，无登录态查询为空——fail-closed）；update/delete/子表写经主行 `getById` 存在性校验隐式受控；create 未提供归属值时自动回填当前用户组织 id（无组织显式拒绝）。任务随单写入与待办标题解析走 `withoutDataScope()` 副本，按办理资格放行。
 - **流程节点填写（nodePerms）**：字段 `FORM_CONFIG.nodePerms`（`{nodeCode: {editable, show}}`）声明流程节点维度的填写权限——`editable=true` 该节点办理时可填写（随「通过」按节点白名单回写业务行并并入流程变量，与引擎办理同事务），`show=false` 该节点单据上隐藏，未配置只读可见。白名单口径：主表落库字段且画布可见；子表区块在办理端恒只读。审批在途（存在审批中的实例）时通用 update/delete/子表写端点被 `ProcessFormGuard` 拦截（`FORM_DATA_LOCKED`），节点级填写只走任务随单写入；退回/撤销/终态不锁（业务可改后重提）。
 
 ---

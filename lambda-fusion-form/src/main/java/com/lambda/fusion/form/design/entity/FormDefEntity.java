@@ -74,6 +74,14 @@ public class FormDefEntity extends BaseEntity {
     @TableField("LOGIC_DELETE_COLUMN")
     private String logicDeleteColumn;
 
+    /** 行级数据权限业务类型（空=不启用；0=组织架构，与 la_datascopes.DOMAIN_TYPE 同口径） */
+    @TableField("DATA_SCOPE_TYPE")
+    private Integer dataScopeType;
+
+    /** 行级数据权限过滤列（目标表承载业务数据节点 id 的物理列，发布期校验存在） */
+    @TableField("DATA_SCOPE_COLUMN")
+    private String dataScopeColumn;
+
     /** 列表级配置 JSON：布局/分页/按钮等 */
     @TableField("LIST_CONFIG")
     private String listConfig;

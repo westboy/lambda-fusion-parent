@@ -38,7 +38,8 @@ public class DynamicFormTaskFormHandler implements TaskFormHandler {
         if (!StringUtils.hasText(nodeCode) || formData == null || formData.isEmpty()) {
             throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "缺少节点编码或表单数据");
         }
-        FormModel model = modelProvider.require(formKey);
+        // 剥离行级数据权限：办理资格由流程引擎约束，跨部门办理不受数据视图过滤
+        FormModel model = modelProvider.require(formKey).withoutDataScope();
         Set<String> fillable = fillableFields(model, nodeCode);
         if (fillable.isEmpty()) {
             throw new FormBusinessException(FormErrorCode.FORM_TASK_FIELD_FORBIDDEN, nodeCode + "（节点未配置可填写字段）");

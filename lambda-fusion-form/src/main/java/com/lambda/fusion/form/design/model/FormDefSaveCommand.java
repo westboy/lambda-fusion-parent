@@ -61,6 +61,12 @@ public class FormDefSaveCommand {
     @Schema(description = "逻辑删除列名（空=物理删除）；目标表必须含该列")
     private String logicDeleteColumn;
 
+    /** 行级数据权限业务类型（空=不启用；0=组织架构，与 la_datascopes.DOMAIN_TYPE 同口径） */
+    private Integer dataScopeType;
+
+    /** 行级数据权限过滤列（目标表承载业务数据节点 id 的物理列，发布期校验存在） */
+    private String dataScopeColumn;
+
     @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
     private String listConfig;
 

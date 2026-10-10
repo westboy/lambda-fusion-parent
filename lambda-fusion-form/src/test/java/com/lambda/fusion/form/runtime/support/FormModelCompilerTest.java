@@ -194,6 +194,48 @@ class FormModelCompilerTest {
     }
 
     @Test
+    void rejectsPartialDataScopeConfig() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+        snapshot.setDataScopeType(0);
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void rejectsNonIdentifierDataScopeColumn() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+        snapshot.setDataScopeType(0);
+        snapshot.setDataScopeColumn("ORG ID");
+
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(snapshot), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
+    void compilesDataScopeAndStripsItForSystemPaths() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));
+        snapshot.setDataScopeType(0);
+        snapshot.setDataScopeColumn("org_id");
+
+        FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
+        assertThat(model.dataScopeEnabled()).isTrue();
+        assertThat(model.dataScopeType()).isZero();
+        assertThat(model.dataScopeColumn()).isEqualTo("ORG_ID");
+
+        // 系统编排路径副本：剥离 scope，其余模型事实保持一致
+        FormModel stripped = model.withoutDataScope();
+        assertThat(stripped.dataScopeEnabled()).isFalse();
+        assertThat(stripped.tableName()).isEqualTo(model.tableName());
+        assertThat(stripped.fields()).isEqualTo(model.fields());
+
+        // 未启用时 withoutDataScope 返回原实例（无复制开销）
+        FormModel plain = compiler.compile(snapshotJson.write(snapshot(FormConstants.FORM_TYPE_SINGLE)), 1L);
+        assertThat(plain.withoutDataScope()).isSameAs(plain);
+    }
+
+    @Test
     void rejectsNonIdentifierTableName() {
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
         snapshot.setTableName("la_demo_leave WHERE 1 = 1 --");

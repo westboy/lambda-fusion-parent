@@ -166,6 +166,8 @@ class QueryAstValidatorTest {
                         field("remark", "REMARK", "TEXT", true, false, "like", 3)),
                 List.of(),
                 null,
+                null,
+                null,
                 null);
     }
 

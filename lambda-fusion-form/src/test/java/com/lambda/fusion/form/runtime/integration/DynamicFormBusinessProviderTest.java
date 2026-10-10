@@ -39,6 +39,7 @@ class DynamicFormBusinessProviderTest {
         def.setTitleTemplate("{personName}的请假单");
         when(forms.selectOne(any())).thenReturn(def);
         FormModel model = mock(FormModel.class);
+        when(model.withoutDataScope()).thenReturn(model);
         when(modelProvider.require("leave")).thenReturn(model);
         when(dataService.findRows(eq(model), eq(List.of("1", "2", "3")), eq(Set.of("personName"))))
                 .thenReturn(Map.of(
@@ -63,6 +64,7 @@ class DynamicFormBusinessProviderTest {
         def.setFormName("请假");
         when(forms.selectOne(any())).thenReturn(def);
         FormModel model = mock(FormModel.class);
+        when(model.withoutDataScope()).thenReturn(model);
         when(modelProvider.require("leave")).thenReturn(model);
         when(dataService.findRows(eq(model), eq(List.of("1")), eq(Set.of())))
                 .thenReturn(Map.of("1", Map.of("id", "1")));

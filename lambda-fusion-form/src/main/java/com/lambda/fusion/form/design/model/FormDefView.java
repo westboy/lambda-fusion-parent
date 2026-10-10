@@ -63,6 +63,12 @@ public class FormDefView extends BaseVO<FormDefEntity> {
     @Schema(description = "逻辑删除列名（空=物理删除）")
     private String logicDeleteColumn;
 
+    /** 行级数据权限业务类型（空=不启用） */
+    private Integer dataScopeType;
+
+    /** 行级数据权限过滤列（物理列名，仅设计端可见，运行时不出服务端） */
+    private String dataScopeColumn;
+
     @Schema(description = "列表级配置 JSON：布局/分页/按钮等")
     private String listConfig;
 

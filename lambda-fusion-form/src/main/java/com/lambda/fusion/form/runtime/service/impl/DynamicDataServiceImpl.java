@@ -95,7 +95,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> params = new HashMap<>();
         String whereSql = activeRows(model)
                 + buildWhere(astValidator.resolve(model, query.getConditions()), params)
-                + buildTreeFilter(model, query.getTreeNode(), params);
+                + buildTreeFilter(model, query.getTreeNode(), params)
+                + dataScopeFilter(model);
         String orderSql = buildOrder(model, astValidator.resolveSorts(model, query.getSorts()), tableColumns);
         Map<String, Object> summaries = summaries(model, whereSql, params);
 
@@ -146,7 +147,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> params = new HashMap<>();
         String whereSql = activeRows(model)
                 + buildWhere(astValidator.resolve(model, query.getConditions()), params)
-                + buildTreeFilter(model, query.getTreeNode(), params);
+                + buildTreeFilter(model, query.getTreeNode(), params)
+                + dataScopeFilter(model);
         long total = dynamicTableMapper.countBy(model.tableName(), whereSql, params);
         if (total > formProperties.getMaxExportRows()) {
             throw new FormBusinessException(
@@ -287,7 +289,10 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         Map<String, Object> row = dynamicTableMapper.selectById(
-                model.tableName(), String.join(", ", selectColumns(model)), activeRows(model), params);
+                model.tableName(),
+                String.join(", ", selectColumns(model)),
+                activeRows(model) + dataScopeFilter(model),
+                params);
         if (row == null) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
@@ -307,6 +312,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         String id = IdWorker.getIdStr();
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
+        backfillDataScope(model, row, tableColumns);
         requireUniqueValues(model, row, null);
         // SELF 自关联树：上级引用须存在（空=根节点）；新增不可能成环（新 id 尚无人引用）
         requireValidTreeParent(model, null, row);
@@ -493,7 +499,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         Map<String, Object> params = new HashMap<>();
         // parentValue 为 null 或空串都表示根节点（parent IS NULL），供前端懒加载首层
         String condition = StringUtils.hasText(parentValue) ? " = " + bind("p0", parentValue, params) : " IS NULL";
-        String whereSql = activeRows(model) + " AND " + model.tree().parentColumn() + condition;
+        String whereSql =
+                activeRows(model) + " AND " + model.tree().parentColumn() + condition + dataScopeFilter(model);
         List<Map<String, Object>> rows = dynamicTableMapper
                 .selectList(
                         model.tableName(),
@@ -519,7 +526,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     .selectList(
                             model.tableName(),
                             parentColumn + ", COUNT(*) AS __CNT",
-                            activeRows(model) + " AND " + parentColumn + " IN (" + countIn + ")",
+                            activeRows(model) + " AND " + parentColumn + " IN (" + countIn + ")"
+                                    + dataScopeFilter(model),
                             " GROUP BY " + parentColumn,
                             countParams)
                     .forEach(row -> {
@@ -602,6 +610,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 subFields,
                 List.of(),
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -632,7 +642,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 fields,
                 subModel.relations(),
                 subModel.tree(),
-                subModel.interceptor());
+                subModel.interceptor(),
+                subModel.dataScopeType(),
+                subModel.dataScopeColumn());
     }
 
     /** 单列覆盖落位：校验键并进 rules，required 收窄可空，defaultValue/readonly 覆盖 */
@@ -1349,6 +1361,32 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             return items;
         }
         return value;
+    }
+
+    /** 行级数据权限过滤（SQL 标记模式）：由 DataScopeInterceptor 把 'permissions|{type}' 替换为授权子查询 */
+    private String dataScopeFilter(FormModel model) {
+        if (!model.dataScopeEnabled()) {
+            return "";
+        }
+        return " AND " + model.dataScopeColumn() + " IN ('permissions|" + model.dataScopeType() + "')";
+    }
+
+    /**
+     * 行级数据权限启用时回填归属列：客户端未提供值则取当前用户组织 id（行默认归属创建人所在组织），
+     * 无法确定归属（无组织）显式拒绝——否则行不可被任何非 owner 用户看到，成为幽灵数据。
+     */
+    private void backfillDataScope(
+            FormModel model, Map<String, Object> row, Map<String, TableColumnView> tableColumns) {
+        if (!model.dataScopeEnabled() || row.containsKey(model.dataScopeColumn())) {
+            return;
+        }
+        String orgId = AuthUtils.getUser() == null ? null : AuthUtils.getUser().getOrgId();
+        if (orgId == null || orgId.isBlank()) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "行级数据权限已启用且无法确定数据归属组织");
+        }
+        TargetTableContract.validateValue(
+                tableColumns.get(model.dataScopeColumn()), orgId, FormErrorCode.FORM_DATA_INVALID);
+        row.put(model.dataScopeColumn(), orgId);
     }
 
     /** 逻辑删除统一约定：0 有效、1 已删除，由引擎维护。 */
