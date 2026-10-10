@@ -44,7 +44,7 @@ mvn clean install                       # 须先 install lambda-cloud-parent（p
 mvn -pl <module> -am clean install      # 单模块 + 依赖
 mvn compile                             # 已绑定 Spotless(Palantir) + SpotBugs
 mvn spotless:apply                      # 格式修复
-mvn -pl lambda-fusion-ai test           # 目前仅 ai 有测试
+mvn -pl lambda-fusion-form test         # 按模块执行测试（ai 完整套件，core/form/logger 有针对性测试）
 ```
 
 提交格式（Conventional Commits）：`<type>(<scope>): <描述>`，type ∈ feat/fix/refactor/style/docs/chore/test/perf，scope 优先完整模块名（如 `lambda-fusion-authority`），描述中英文均可、祈使语气。原子提交，规则文件独立提交，禁止裸 `fix`/`refactor`。提交前 `mvn compile` 通过。

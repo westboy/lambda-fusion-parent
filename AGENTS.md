@@ -50,7 +50,7 @@
 - 构建：`mvn clean install`（须先把 `lambda-cloud-parent` 安装到本地仓库，因 parent/BOM 为 SNAPSHOT）。
 - 单模块：`mvn -pl <module> -am clean install`。
 - 静态检查：`mvn compile` 已绑定 Spotless（Palantir）+ SpotBugs；修复用 `mvn spotless:apply`（见工程契约 §13）。
-- 测试：`mvn -pl lambda-fusion-ai test`（目前仅 ai 模块有测试，见工程契约 §15）。
+- 测试：`mvn -pl <module> test` 按模块执行（ai 为完整测试套件，core / form / logger 有针对性测试，见工程契约 §15）。
 - 运行演示：`lambda-fusion-startup`（端口 20005，环境变量驱动，见 README）。
 
 ## 6. 规则维护
