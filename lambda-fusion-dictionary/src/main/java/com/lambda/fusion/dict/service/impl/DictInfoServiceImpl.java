@@ -95,6 +95,8 @@ public class DictInfoServiceImpl extends AbstractCrudService<DictInfo, InputDict
         Assert.hasText(fieldName, MSG_DICT_FIELD_NAME_NOT_EMPTY);
         Assert.notNull(source.getSort(), MSG_DICT_SORT_NUMBER_NOT_EMPTY);
         Assert.notNull(source.getEnableState(), MSG_DICT_ENABLED_NOT_EMPTY);
+        // 字典值在同级字典类型内必须唯一：选项 value 重复会让前端翻译与单选语义失真（历史事故：四项同值 0）
+        Assert.isFalse(dictInfoExists(source), MSG_DICT_FIELD_VALUE_EXISTED);
         source.setExtra(
                 CollectionUtils.isNotEmpty(source.getParameters()) ? convertJson(source.getParameters()) : null);
         if (StringUtils.isNotBlank(source.getParentId())) {
@@ -130,9 +132,8 @@ public class DictInfoServiceImpl extends AbstractCrudService<DictInfo, InputDict
         Assert.notNull(dictInfoMapper.selectById(id), MSG_DICT_UPDATE_DATA_NOT_EXISTED);
         dictInfo.setExtra(
                 CollectionUtils.isNotEmpty(dictInfo.getParameters()) ? convertJson(dictInfo.getParameters()) : null);
-        if (dictInfoExists(dictInfo)) {
-            dictInfo.setFieldType(null);
-        }
+        // 重复值显式拒绝，不再静默丢弃提交值（静默行为曾掩盖字典值重复的配置错误）
+        Assert.isFalse(dictInfoExists(dictInfo), MSG_DICT_FIELD_VALUE_EXISTED);
         dictInfoMapper.updateById(dictInfo);
         dictInfoMapper.selectById(id);
     }

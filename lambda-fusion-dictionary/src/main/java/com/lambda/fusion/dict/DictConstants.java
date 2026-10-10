@@ -129,6 +129,8 @@ public interface DictConstants {
     /** 字典字段类型不能为空 */
     String MSG_DICT_FIELD_TYPE_NOT_EMPTY = "字典字段类型不能为空";
 
+    String MSG_DICT_FIELD_VALUE_EXISTED = "字典值在该字典类型下已存在";
+
     /** 字典字段名不能为空 */
     String MSG_DICT_FIELD_NAME_NOT_EMPTY = "字典字段名不能为空";
 
