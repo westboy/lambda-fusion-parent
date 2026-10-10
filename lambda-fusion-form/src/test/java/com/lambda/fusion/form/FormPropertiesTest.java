@@ -2,26 +2,39 @@ package com.lambda.fusion.form;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class FormPropertiesTest {
 
     @Test
-    void allowsTableIsCaseInsensitiveAgainstWhitelist() {
+    void mappableTableUsesCaseInsensitiveExcludePatternOverIdentifiers() {
         FormProperties properties = new FormProperties();
-        properties.setAllowedTables(List.of("la_demo_area", "LA_DEMO_LEAVE", " "));
-        // yml 小写配置命中库里大写表名，反之亦然
-        assertThat(properties.allowsTable("LA_DEMO_LEAVE")).isTrue();
-        assertThat(properties.allowsTable("la_demo_leave")).isTrue();
-        assertThat(properties.allowsTable("La_Demo_Area")).isTrue();
-        // 未开放/非法/被排除正则命中（大小写不敏感）仍拒
-        assertThat(properties.allowsTable("la_demo_other")).isFalse();
-        assertThat(properties.allowsTable("1bad")).isFalse();
-        properties.setAllowedTables(List.of("la_form_def"));
-        assertThat(properties.allowsTable("LA_FORM_DEF")).isFalse();
-        // 未配置白名单=不开放任何表
-        new FormProperties().setAllowedTables(null);
-        assertThat(new FormProperties().allowsTable("la_demo_area")).isFalse();
+        // 默认排除平台内部表（la_ 前缀除 la_demo_ 演示表、ai_/flow_/系统表），大小写不敏感
+        assertThat(properties.isMappableTable("la_demo_area")).isTrue();
+        assertThat(properties.isMappableTable("LA_DEMO_LEAVE")).isTrue();
+        assertThat(properties.isMappableTable("crm_order")).isTrue();
+        assertThat(properties.isMappableTable("la_form_def")).isFalse();
+        assertThat(properties.isMappableTable("LA_FORM_DEF")).isFalse();
+        assertThat(properties.isMappableTable("ai_chat")).isFalse();
+        assertThat(properties.isMappableTable("flow_definition")).isFalse();
+        assertThat(properties.isMappableTable("qrtz_locks")).isFalse();
+        assertThat(properties.isMappableTable("databasechangelog")).isFalse();
+        // 非标识符整体拒绝
+        assertThat(properties.isMappableTable("1bad")).isFalse();
+        assertThat(properties.isMappableTable(null)).isFalse();
+    }
+
+    @Test
+    void customExcludePatternReplacesDefaultAndRecompiles() {
+        FormProperties properties = new FormProperties();
+        properties.setTableExcludePattern("crm_.*");
+        // 自定义正则整体替换默认集：crm_ 被拒，la_form_def 不再被保护（由调用方自行收口）
+        assertThat(properties.isMappableTable("crm_order")).isFalse();
+        assertThat(properties.isMappableTable("CRM_ORDER")).isFalse();
+        assertThat(properties.isMappableTable("la_form_def")).isTrue();
+        // 再次修改立即生效（编译产物随 setter 重算）
+        properties.setTableExcludePattern("flow_.*");
+        assertThat(properties.isMappableTable("crm_order")).isTrue();
+        assertThat(properties.isMappableTable("flow_definition")).isFalse();
     }
 }

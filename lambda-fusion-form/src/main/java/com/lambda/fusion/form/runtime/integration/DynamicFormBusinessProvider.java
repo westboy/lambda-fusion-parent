@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class DynamicFormBusinessProvider implements WorkflowBusinessProvider {
 
     /** 模板占位符：行字段标识（如 {applicant}） */
-    private static final String PLACEHOLDER = "\\{(\\w+)}";
+    private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{(\\w+)}");
 
     private final FormDefMapper forms;
     private final FormModelProvider modelProvider;
@@ -50,6 +50,10 @@ public class DynamicFormBusinessProvider implements WorkflowBusinessProvider {
                 .toList());
     }
 
+    /**
+     * 批量标题解析：模型一次核对、行一次 IN 批量取回（只读模板引用字段），
+     * 不逐行走全量读装配（子表/标签/指纹与标题无关）。模型或数据不可用时整批跳过。
+     */
     @Override
     public Map<String, BizInfo> resolve(String bizType, Collection<String> businessIds) {
         Map<String, BizInfo> result = new HashMap<>();
@@ -61,24 +65,39 @@ public class DynamicFormBusinessProvider implements WorkflowBusinessProvider {
                         || def.getTitleTemplate().isBlank()
                 ? def == null ? null : def.getFormName()
                 : def.getTitleTemplate();
-        if (template == null) {
+        if (template == null || businessIds == null || businessIds.isEmpty()) {
+            return result;
+        }
+        final Map<String, Map<String, Object>> rows;
+        try {
+            rows = dynamicDataService.findRows(modelProvider.require(bizType), businessIds, referencedFields(template));
+        } catch (Exception e) {
+            log.warn("流程表单标题解析失败，整批跳过：formKey={} - {}", bizType, e.getMessage());
             return result;
         }
         for (String businessId : businessIds) {
-            try {
-                Map<String, Object> row = dynamicDataService.getById(modelProvider.require(bizType), businessId);
+            // 行在列表生成后被删等缺席场景：静默跳过（标题空，列表照常返回）
+            Map<String, Object> row = rows.get(businessId);
+            if (row != null) {
                 result.put(businessId, new BizInfo(render(template, row), null));
-            } catch (Exception e) {
-                log.warn("流程表单标题解析失败，跳过：formKey={} businessId={} - {}", bizType, businessId, e.getMessage());
             }
         }
         return result;
     }
 
-    /** 模板渲染：{字段标识} 替换为行值，未命中字段原样保留 */
+    /** 模板引用的字段标识集（批量读取的列裁剪口径） */
+    private static Set<String> referencedFields(String template) {
+        Set<String> fields = new LinkedHashSet<>();
+        java.util.regex.Matcher matcher = PLACEHOLDER.matcher(template);
+        while (matcher.find()) {
+            fields.add(matcher.group(1));
+        }
+        return fields;
+    }
+
+    /** 模板渲染：{字段标识} 替换为行值，未取到值的占位替换为空串 */
     private String render(String template, Map<String, Object> row) {
-        java.util.regex.Matcher matcher =
-                java.util.regex.Pattern.compile(PLACEHOLDER).matcher(template);
+        java.util.regex.Matcher matcher = PLACEHOLDER.matcher(template);
         StringBuilder rendered = new StringBuilder();
         while (matcher.find()) {
             Object value = row.get(matcher.group(1));

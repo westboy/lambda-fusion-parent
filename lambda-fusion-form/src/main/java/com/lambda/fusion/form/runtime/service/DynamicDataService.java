@@ -4,8 +4,10 @@ import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.support.FormModel;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 动态表单数据读写服务（通用引擎出口）
@@ -28,6 +30,18 @@ public interface DynamicDataService {
      * 详情
      */
     Map<String, Object> getById(FormModel model, String id);
+
+    /**
+     * 轻量批量行读取：按主键集一条 IN 查询取回，只投影指定字段标识（主键 id 恒在），
+     * 不挂子表/树标签/biz 标签、不计算行指纹。供标题渲染等只需少数主表字段的内部场景
+     * （如流程待办标题）替代逐行 {@link #getById} 的全量装配。
+     *
+     * @param model 表单模型
+     * @param ids 主键集（空集直接返回空）
+     * @param fieldNames 需要的字段标识（未映射/从表字段静默忽略，渲染侧按空值处理）
+     * @return key=行 id（字符串），value=按字段标识投影的行；不存在的行不出现在结果中
+     */
+    Map<String, Map<String, Object>> findRows(FormModel model, Collection<String> ids, Set<String> fieldNames);
 
     /**
      * 新增，返回主键

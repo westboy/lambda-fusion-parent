@@ -15,6 +15,7 @@ import com.lambda.cloud.mybatis.tenant.MissingTenantStrategy;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
+import com.lambda.fusion.form.design.support.RuntimeDataSourceResolver;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
@@ -108,17 +109,21 @@ class DynamicDataServiceJdbcTest {
         var factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
         session = factory.openSession(true);
         FormProperties properties = new FormProperties();
-        properties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY", "LA_TEST_SUB"));
+        // 默认排除正则保护 la_ 前缀：测试表 LA_TEST_* 需显式放行（demo_/test_ 例外）
+        properties.setTableExcludePattern("la_(?!demo_|test_).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*");
         var mybatisProperties = new MybatisPlusExtendProperties();
         this.mybatisProperties = mybatisProperties;
         mybatisProperties.getTenant().setEnabled(true);
         mybatisProperties.getTenant().setIgnoreTables(Set.of("la_test_tiny"));
         formProperties = new FormProperties();
-        formProperties.setAllowedTables(List.of("LA_TEST_FORM", "LA_TEST_TINY", "LA_TEST_SUB"));
+        formProperties.setTableExcludePattern("la_(?!demo_|test_).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*");
         formProperties.setMaxTreeDescendants(3);
         contract = new TargetTableContract(
                 new TableMetadataReader(
-                        dataSource, properties, new StaticListableBeanFactory().getBeanProvider(CacheManager.class)),
+                        dataSource,
+                        properties,
+                        new StaticListableBeanFactory().getBeanProvider(CacheManager.class),
+                        new StaticListableBeanFactory().getBeanProvider(RuntimeDataSourceResolver.class)),
                 mybatisProperties);
         service = new DynamicDataServiceImpl(
                 session.getMapper(DynamicTableMapper.class),
@@ -389,6 +394,59 @@ class DynamicDataServiceJdbcTest {
     }
 
     @Test
+    void findRowsBatchFetchesOnlyReferencedFieldsWithoutAssembly() {
+        // 轻量批量读：一条 IN 查询、投影仅含引用字段，无 etag/子表/标签装配（标题渲染场景）
+        FormModel model = model(false, false, false);
+        String alice = service.create(model, Map.of("personName", "Alice", "note", "n1"));
+        String bob = service.create(model, Map.of("personName", "Bob"));
+
+        Map<String, Map<String, Object>> rows =
+                service.findRows(model, List.of(alice, bob, "missing"), Set.of("personName"));
+
+        assertThat(rows).containsOnlyKeys(alice, bob);
+        assertThat(rows.get(alice)).containsEntry("id", alice).containsEntry("personName", "Alice");
+        assertThat(rows.get(alice)).doesNotContainKeys("__etag", "__treeParentLabel");
+        assertThat(rows.get(bob)).containsEntry("personName", "Bob");
+        // 空集短路不触库
+        assertThat(service.findRows(model, List.of(), Set.of("personName"))).isEmpty();
+    }
+
+    @Test
+    void pageSkipsInlineSubRowsAndEtagWhileDetailKeepsBothAndFlatStillMerges() {
+        // 列表页卸载详情级装配（M1/M2）：行无 __etag、INLINE 关系仅空占位；FLAT 一对一从字段照常并入；
+        // 详情保留完整装配（子行 + 行指纹），编辑乐观锁协议改由详情下发
+        when(modelProvider.require("leave_item")).thenReturn(subModel());
+        FormModel flatMaster = masterFlatModel();
+        String flatId = service.create(flatMaster, Map.of("personName", "Alice", "itemName", "S1"));
+        var flatPage = service.page(flatMaster, query(null, null, null));
+        assertThat(flatPage.getRecords().getFirst())
+                .containsEntry("itemName", "S1") // FLAT 从字段并入主行顶层
+                .doesNotContainKey("__etag");
+        assertThat(service.getById(flatMaster, flatId)).containsKey("__etag");
+
+        FormModel inlineMaster = masterSubModel("CASCADE_DELETE");
+        String id = service.create(
+                inlineMaster,
+                Map.of("personName", "Bob", "leave_item", List.of(Map.of("itemName", "A1"), Map.of("itemName", "A2"))));
+        var page = service.page(inlineMaster, query(null, null, null));
+        Map<String, Object> row = page.getRecords().getFirst();
+        assertThat(row).doesNotContainKey("__etag");
+        assertThat((List<?>) row.get("leave_item")).isEmpty();
+        Map<String, Object> detail = service.getById(inlineMaster, id);
+        assertThat(detail).containsKey("__etag");
+        assertThat((List<?>) detail.get("leave_item")).hasSize(2);
+        // 详情指纹仍然覆盖 INLINE 子行：改子行后旧指纹失效（乐观锁口径不受列表卸载影响）
+        String etag = (String) detail.get("__etag");
+        service.update(inlineMaster, id, Map.of("personName", "Bob2", "leave_item", List.of(Map.of("itemName", "B1"))));
+        Map<String, Object> stale = new HashMap<>(Map.of("personName", "Bob3"));
+        stale.put("__etag", etag);
+        assertThatThrownBy(() -> service.update(inlineMaster, id, stale))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_DATA_CONFLICT.getCode()));
+    }
+
+    @Test
     void projectsPhysicalColumnsToFieldNamesAndKeepsNullValues() {
         FormModel model = model(false, false, false);
         String id = service.create(model, Map.of("personName", "Alice"));
@@ -643,11 +701,12 @@ class DynamicDataServiceJdbcTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(CREATED_BY) FROM LA_TEST_SUB WHERE LEAVE_ID=?", Integer.class, id))
                 .isEqualTo(2);
 
-        // 两段式读组装：详情与分页均挂嵌套子行
+        // 两段式读组装：详情挂嵌套子行；列表页不再整页装配 INLINE 子行（编辑按 id 取详情），
+        // 关系键置空占位与台账式同形
         assertThat((List<?>) service.getById(master, id).get("leave_item")).hasSize(2);
         var page = service.page(master, query(null, null, null));
         assertThat(page.getTotal()).isEqualTo(1);
-        assertThat((List<?>) page.getRecords().getFirst().get("leave_item")).hasSize(2);
+        assertThat((List<?>) page.getRecords().getFirst().get("leave_item")).isEmpty();
 
         // 差量更新：显式携带键才比对子行集合（无 id 的提交行按新增处理，未提交的既有行删除）
         service.update(master, id, Map.of("personName", "Alice2", "leave_item", List.of(Map.of("itemName", "B1"))));
@@ -1023,7 +1082,7 @@ class DynamicDataServiceJdbcTest {
 
     @Test
     void masterSubCreateRejectsWhenSubTableNotAllowed() {
-        // 子表直连物理表：目标子表不在动态读写允许清单时拒绝（发布快照篡改的兜底）
+        // 子表直连物理表：目标子表命中平台内部表排除正则时拒绝（发布快照篡改的兜底）
         FormDefSnapshot snapshot = new FormDefSnapshot();
         snapshot.setFormKey("test_master");
         snapshot.setFormName("主从演示");

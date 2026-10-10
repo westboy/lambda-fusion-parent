@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -47,7 +48,7 @@ class DynamicFormFlowStatusListenerTest {
 
     @Test
     void missingStatusColumnSkipsSilentlyInsteadOfBreakingApproval() {
-        when(metadataReader.listColumns("LA_LEAVE")).thenReturn(List.of(column("ID"), column("DAYS")));
+        when(metadataReader.listColumns(isNull(), eq("LA_LEAVE"))).thenReturn(List.of(column("ID"), column("DAYS")));
 
         listener.on(event(WorkflowConstants.Type.FINISH, "8"));
 
@@ -56,7 +57,7 @@ class DynamicFormFlowStatusListenerTest {
 
     @Test
     void writeFailureIsDowngradedToWarningAndNeverRethrown() {
-        when(metadataReader.listColumns("LA_LEAVE")).thenReturn(List.of(column("ID"), column("STATUS")));
+        when(metadataReader.listColumns(isNull(), eq("LA_LEAVE"))).thenReturn(List.of(column("ID"), column("STATUS")));
         when(dynamicTableMapper.updateDynamic(anyString(), anyString(), anyString(), any()))
                 .thenThrow(new RuntimeException("simulated sql failure"));
 
@@ -66,7 +67,7 @@ class DynamicFormFlowStatusListenerTest {
 
     @Test
     void finishWithStatusColumnWritesMappedStatus() {
-        when(metadataReader.listColumns("LA_LEAVE")).thenReturn(List.of(column("ID"), column("STATUS")));
+        when(metadataReader.listColumns(isNull(), eq("LA_LEAVE"))).thenReturn(List.of(column("ID"), column("STATUS")));
         when(dynamicTableMapper.updateDynamic(anyString(), anyString(), anyString(), any()))
                 .thenReturn(1);
 
@@ -82,7 +83,7 @@ class DynamicFormFlowStatusListenerTest {
 
     @Test
     void intermediateFlowStatusIsIgnored() {
-        when(metadataReader.listColumns("LA_LEAVE")).thenReturn(List.of(column("ID"), column("STATUS")));
+        when(metadataReader.listColumns(isNull(), eq("LA_LEAVE"))).thenReturn(List.of(column("ID"), column("STATUS")));
 
         listener.on(event(WorkflowConstants.Type.FINISH, "1"));
 

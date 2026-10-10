@@ -1,6 +1,8 @@
 package com.lambda.fusion.form;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
@@ -63,12 +65,19 @@ public class FormProperties {
     private String tableExcludePattern = "la_(?!demo_).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*";
 
     /**
+     * 排除正则的编译缓存（key=正则文本）：isMappableTable 在每请求热路径上，不得逐次编译正则；
+     * 按文本缓存保证「判定用的正则」与「当前配置值」始终是同一份，配置类本身不引入并发字段。
+     */
+    private static final Map<String, Pattern> EXCLUDE_PATTERNS = new ConcurrentHashMap<>();
+
+    /**
      * 目标表是否可被动态表单映射（设计、发布与运行共同使用的边界）：
      * 标识合法且未命中排除正则。平台内部表一律保护，其余物理表开放。
      */
     public boolean isMappableTable(String tableName) {
         return FormConstants.isIdentifier(tableName)
-                && !Pattern.compile(tableExcludePattern, Pattern.CASE_INSENSITIVE)
+                && !EXCLUDE_PATTERNS
+                        .computeIfAbsent(tableExcludePattern, regex -> Pattern.compile(regex, Pattern.CASE_INSENSITIVE))
                         .matcher(tableName)
                         .matches();
     }

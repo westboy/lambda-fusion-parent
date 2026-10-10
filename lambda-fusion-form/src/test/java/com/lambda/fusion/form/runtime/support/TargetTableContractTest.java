@@ -7,6 +7,7 @@ import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.cloud.mybatis.tenant.TenantContextHolder;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.model.TableColumnView;
+import com.lambda.fusion.form.design.support.RuntimeDataSourceResolver;
 import com.lambda.fusion.form.design.support.TableMetadataReader;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
@@ -40,10 +41,12 @@ class TargetTableContractTest {
         var source = new DriverManagerDataSource(
                 "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(source);
-        FormProperties properties = new FormProperties();
-        properties.setAllowedTables(List.of("TARGET_TABLE"));
+        // TARGET_TABLE 不在默认排除正则内，默认 FormProperties 即可映射
         reader = new TableMetadataReader(
-                source, properties, new StaticListableBeanFactory().getBeanProvider(CacheManager.class));
+                source,
+                new FormProperties(),
+                new StaticListableBeanFactory().getBeanProvider(CacheManager.class),
+                new StaticListableBeanFactory().getBeanProvider(RuntimeDataSourceResolver.class));
         mybatisProperties = new MybatisPlusExtendProperties();
         contract = new TargetTableContract(reader, mybatisProperties);
     }
@@ -53,17 +56,18 @@ class TargetTableContractTest {
         var factory = new StaticListableBeanFactory();
         var manager = new ConcurrentMapCacheManager(TableMetadataReader.CACHE_NAME);
         factory.addBean("cacheManager", manager);
-        FormProperties cachedProperties = new FormProperties();
-        cachedProperties.setAllowedTables(List.of("CACHED_TABLE"));
-        var cachingReader =
-                new TableMetadataReader(dataSource(), cachedProperties, factory.getBeanProvider(CacheManager.class));
+        var cachingReader = new TableMetadataReader(
+                dataSource(),
+                new FormProperties(),
+                factory.getBeanProvider(CacheManager.class),
+                factory.getBeanProvider(RuntimeDataSourceResolver.class));
         jdbc.execute("CREATE TABLE CACHED_TABLE (ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(64))");
-        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(2);
-        // 缓存期内 DDL 变更不可见；失效后立即读到新结构
+        assertThat(cachingReader.listColumns(null, "CACHED_TABLE")).hasSize(2);
+        // 缓存期内 DDL 变更不可见；失效后立即读到新结构（缓存键为 数据源id:表名，主库为空前缀）
         jdbc.execute("ALTER TABLE CACHED_TABLE ADD EXTRA VARCHAR(64)");
-        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(2);
-        manager.getCache(TableMetadataReader.CACHE_NAME).evict("CACHED_TABLE");
-        assertThat(cachingReader.listColumns("CACHED_TABLE")).hasSize(3);
+        assertThat(cachingReader.listColumns(null, "CACHED_TABLE")).hasSize(2);
+        manager.getCache(TableMetadataReader.CACHE_NAME).evict(":CACHED_TABLE");
+        assertThat(cachingReader.listColumns(null, "CACHED_TABLE")).hasSize(3);
     }
 
     private javax.sql.DataSource dataSource() {
@@ -81,14 +85,16 @@ class TargetTableContractTest {
         table("ID VARCHAR(32) PRIMARY KEY, NAME VARCHAR(10)");
         jdbc.execute("CREATE SCHEMA OTHER");
         jdbc.execute("CREATE TABLE OTHER.TARGET_TABLE (WRONG_COLUMN INT PRIMARY KEY)");
+        // 黑名单口径下 TARGETXTABLE 同为可映射表会列出；关键是模式字符 "_" 被转义，
+        // 按 TARGET_TABLE 精确名读列时不会串到 TARGETXTABLE 的结构
         jdbc.execute("CREATE TABLE TARGETXTABLE (WRONG_COLUMN INT PRIMARY KEY)");
-        assertThat(reader.listTables()).containsExactly("TARGET_TABLE");
-        assertThat(reader.listColumns("TARGET_TABLE"))
+        assertThat(reader.listTables(null)).containsExactly("TARGETXTABLE", "TARGET_TABLE");
+        assertThat(reader.listColumns(null, "TARGET_TABLE"))
                 .extracting(TableColumnView::getColumnName)
                 .containsExactly("ID", "NAME");
         jdbc.execute("DROP TABLE TARGET_TABLE");
-        assertThat(reader.listTables()).isEmpty();
-        assertThatThrownBy(() -> reader.listColumns("TARGET_TABLE")).isInstanceOf(FormBusinessException.class);
+        assertThat(reader.listTables(null)).containsExactly("TARGETXTABLE");
+        assertThatThrownBy(() -> reader.listColumns(null, "TARGET_TABLE")).isInstanceOf(FormBusinessException.class);
     }
 
     @ParameterizedTest

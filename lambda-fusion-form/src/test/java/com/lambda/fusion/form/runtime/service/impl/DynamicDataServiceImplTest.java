@@ -69,7 +69,8 @@ class DynamicDataServiceImplTest {
         when(contract.validateAccess(any()))
                 .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
         FormProperties formProperties = new FormProperties();
-        formProperties.setAllowedTables(List.of(TABLE, "LA_TEST_SUB"));
+        // 默认排除正则保护 la_ 前缀：测试子表 LA_TEST_SUB 需显式放行（demo_/test_ 例外）
+        formProperties.setTableExcludePattern("la_(?!demo_|test_).*|ai_.*|flow_.*|databasechangelog.*|qrtz_.*");
         service = new DynamicDataServiceImpl(
                 mapper,
                 new QueryAstValidator(new FormProperties()),
@@ -312,6 +313,7 @@ class DynamicDataServiceImplTest {
                 FormConstants.FORM_TYPE_SINGLE,
                 TABLE,
                 null,
+                null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
                 FormModel.DetailConfig.DEFAULT,
                 null,
@@ -332,6 +334,7 @@ class DynamicDataServiceImplTest {
                 FormConstants.FORM_TYPE_MASTER_SUB,
                 TABLE,
                 null,
+                null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
                 FormModel.DetailConfig.DEFAULT,
                 null,
@@ -349,6 +352,7 @@ class DynamicDataServiceImplTest {
                 1L,
                 FormConstants.FORM_TYPE_SINGLE,
                 "LA_TEST_SUB",
+                null,
                 null,
                 new FormModel.ListConfig(List.of(), true, List.of()),
                 FormModel.DetailConfig.DEFAULT,

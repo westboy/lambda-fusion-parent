@@ -12,7 +12,6 @@ import com.lambda.fusion.form.design.entity.FormDefVersionEntity;
 import com.lambda.fusion.form.design.mapper.FormDefMapper;
 import com.lambda.fusion.form.design.mapper.FormDefVersionMapper;
 import com.lambda.fusion.form.exception.FormBusinessException;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -32,7 +31,7 @@ class FormModelProviderTest {
     @BeforeEach
     void setUp() {
         properties = new FormProperties();
-        properties.setAllowedTables(List.of("la_demo_leave"));
+        // 默认排除正则放行 la_demo_ 演示表（la_demo_leave 不在保护集内）
         cache = new FormModelCache();
         json = new SnapshotJson(new ObjectMapper());
         compiler = new FormModelCompiler(json);
@@ -76,7 +75,8 @@ class FormModelProviderTest {
         definition.setStatus("DISABLED");
         assertThatThrownBy(() -> provider.require("leave_demo")).isInstanceOf(FormBusinessException.class);
         definition.setStatus("PUBLISHED");
-        properties.setAllowedTables(List.of());
+        // 排除正则收紧为全部命中：la_demo_leave 不再可映射（表边界随配置即时生效）
+        properties.setTableExcludePattern(".*");
         assertThatThrownBy(() -> provider.require("leave_demo")).isInstanceOf(FormBusinessException.class);
     }
 

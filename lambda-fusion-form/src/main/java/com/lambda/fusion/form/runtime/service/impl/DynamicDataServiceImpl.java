@@ -117,10 +117,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 dynamicTableMapper.selectList(model.tableName(), selectColumns, whereSql, pageSql, params);
         List<Map<String, Object>> projected =
                 records.stream().map(row -> project(model, row)).toList();
-        attachSubRows(model, projected);
+        // 列表只挂 FLAT 一对一从字段（每主行至多一条，载荷有界）；INLINE 子行与行指纹不做整页装配——
+        // 「页大小 × maxInlineSubRows」乘积放大与逐行规范化序列化的成本只服务于编辑，而编辑协议
+        // 是打开弹窗时按 id 取详情，列表行不参与指纹回传
+        attachSubRows(model, projected, false);
         attachTreeParentLabels(model, projected);
         attachBizLabels(model, projected);
-        projected.forEach(row -> row.put(ETAG_KEY, etagOf(row)));
         return FormDataPageView.builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
@@ -260,6 +262,26 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     @Override
+    public Map<String, Map<String, Object>> findRows(FormModel model, Collection<String> ids, Set<String> fieldNames) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        targetTableContract.validateAccess(model);
+        Set<String> columns = new LinkedHashSet<>();
+        columns.add(FormConstants.COLUMN_ID);
+        model.fields().stream()
+                .filter(field -> field.subFormKey() == null && fieldNames.contains(field.name()))
+                .forEach(field -> columns.add(field.column()));
+        Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        for (Map<String, Object> row : dynamicTableMapper.selectByFk(
+                model.tableName(), String.join(", ", columns), FormConstants.COLUMN_ID, ids, activeRows(model), null)) {
+            Map<String, Object> projected = project(model, row);
+            byId.put(String.valueOf(projected.get("id")), projected);
+        }
+        return byId;
+    }
+
+    @Override
     public Map<String, Object> getById(FormModel model, String id) {
         targetTableContract.validateAccess(model);
         Map<String, Object> params = new HashMap<>();
@@ -270,7 +292,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
         Map<String, Object> result = project(model, row);
-        attachSubRows(model, List.of(result));
+        attachSubRows(model, List.of(result), true);
         attachTreeParentLabels(model, List.of(result));
         attachBizLabels(model, List.of(result));
         result.put(ETAG_KEY, etagOf(result));
@@ -332,7 +354,18 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 .toList();
         if (!defaulted.isEmpty()) {
             // SQL 默认值表达式只由数据库求值，实际结果仍遵守字段规则；失败随新增事务回滚。
-            Map<String, Object> inserted = getById(model, id);
+            // 仅回读缺省列：完整读组装（子表挂载/树标签/biz 标签/行指纹）的产物在这里全部用不到
+            Map<String, Object> probeParams = new HashMap<>();
+            probeParams.put("id", id);
+            List<String> probeColumns = new ArrayList<>();
+            probeColumns.add(FormConstants.COLUMN_ID);
+            defaulted.forEach(field -> probeColumns.add(field.column()));
+            Map<String, Object> raw = dynamicTableMapper.selectById(
+                    model.tableName(), String.join(", ", probeColumns), activeRows(model), probeParams);
+            if (raw == null) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
+            }
+            Map<String, Object> inserted = project(model, raw);
             defaulted.forEach(field -> {
                 Object value = FormFieldValidator.normalize(
                         field, inserted.get(field.name()), FormErrorCode.FORM_DATA_INVALID);
@@ -1064,13 +1097,21 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 两段式读组装：主行 id 集合按外键 in 查回子行，投影后挂到主行（key=subFormKey）。
      * 台账式关系不分页不嵌套（载荷有界），仅置空占位；子表单不可用（未发布/未映射）时跳过该关系并置空，
      * 均不阻断主表读取。
+     *
+     * <p>{@code withInlineRows=false}（列表页）跳过 INLINE 子行查询：整页内联挂载受
+     * 「页大小 × maxInlineSubRows」乘积放大，且内联子行只在编辑/详情按 id 单行加载；INLINE 关系
+     * 与台账式同形仅置空占位。FLAT 一对一从字段并入主表呈现（列表/详情/编辑融合），始终挂载。
      */
-    private void attachSubRows(FormModel model, List<Map<String, Object>> rows) {
+    private void attachSubRows(FormModel model, List<Map<String, Object>> rows, boolean withInlineRows) {
         if (model.relations().isEmpty() || rows.isEmpty()) {
             return;
         }
         for (FormRelation relation : model.relations()) {
             if (relation.listMode()) {
+                rows.forEach(row -> row.put(relation.subFormKey(), List.of()));
+                continue;
+            }
+            if (!relation.flatMode() && !withInlineRows) {
                 rows.forEach(row -> row.put(relation.subFormKey(), List.of()));
                 continue;
             }
@@ -1258,7 +1299,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     }
 
     /**
-     * 乐观锁：行锁预读后比对行指纹（投影口径与读取路径一致，覆盖主行与 INLINE 子行），
+     * 乐观锁：行锁预读后比对行指纹（口径与详情读取一致，覆盖主行与 INLINE 子行），
      * 不一致说明读取后已被他人改过。行锁仅持有到本事务提交，串行化同一行的并发更新。
      */
     private void requireUnchanged(FormModel model, String id, String expectedEtag) {
@@ -1270,7 +1311,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_NOT_FOUND);
         }
         Map<String, Object> projected = project(model, raw);
-        attachSubRows(model, new ArrayList<>(List.of(projected)));
+        attachSubRows(model, new ArrayList<>(List.of(projected)), true);
         if (!etagOf(projected).equals(expectedEtag)) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_CONFLICT);
         }

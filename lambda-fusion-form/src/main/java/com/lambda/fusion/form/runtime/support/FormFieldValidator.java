@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import org.springframework.util.StringUtils;
@@ -17,6 +18,12 @@ import org.springframework.util.StringUtils;
 public final class FormFieldValidator {
 
     private static final Set<String> RULE_KEYS = Set.of("required", "min", "max", "pattern", "message", "unique");
+
+    /**
+     * pattern 规则的编译缓存：表达式来自表单定义（服务端配置，发布快照编译期已验证可编译），
+     * 数量以字段定义为界；写入路径逐值校验不得重复编译正则。
+     */
+    private static final ConcurrentHashMap<String, Pattern> PATTERNS = new ConcurrentHashMap<>();
 
     private FormFieldValidator() {}
 
@@ -51,7 +58,7 @@ public final class FormFieldValidator {
                 throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "pattern 仅支持文本字段和字符串表达式");
             }
             try {
-                Pattern.compile(pattern);
+                compilePattern(pattern);
             } catch (PatternSyntaxException e) {
                 throw invalid(field, FormErrorCode.FORM_TABLE_INVALID, "正则表达式无效");
             }
@@ -108,10 +115,15 @@ public final class FormFieldValidator {
         Object pattern = field.form().rules().get("pattern");
         if (pattern instanceof String expression
                 && normalized instanceof String text
-                && !Pattern.compile(expression).matcher(text).find()) {
+                && !compilePattern(expression).matcher(text).find()) {
             throw invalid(field, error, "不符合正则规则");
         }
         return normalized;
+    }
+
+    /** 编译并缓存 pattern 表达式（PatternSyntaxException 原样外抛，由调用方映射错误码） */
+    private static Pattern compilePattern(String expression) {
+        return PATTERNS.computeIfAbsent(expression, Pattern::compile);
     }
 
     private static BigDecimal bound(FormField field, String key) {
