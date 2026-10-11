@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 public final class SubTableConfigs {
 
-    public static final Set<String> ROOT_KEYS = Set.of("columns", "rowButtons", "title");
+    public static final Set<String> ROOT_KEYS = Set.of("columns", "rowButtons", "title", "lookup");
 
     public static final Set<String> COLUMN_KEYS = Set.of(
             "field", "width", "label", "required", "readonly", "defaultValue", "pattern", "min", "max", "message");
@@ -33,6 +33,10 @@ public final class SubTableConfigs {
     public static final Set<String> ROW_BUTTON_ACTIONS = Set.of("add", "edit", "delete");
 
     public static final Set<String> ROW_BUTTON_KEYS = Set.of("action", "label", "show");
+
+    public static final Set<String> LOOKUP_KEYS = Set.of("formKey", "formName", "refColumn", "searchField", "mapping");
+
+    public static final Set<String> MAPPING_KEYS = Set.of("source", "target");
 
     private SubTableConfigs() {}
 
@@ -58,6 +62,7 @@ public final class SubTableConfigs {
                         FormErrorCode.INVALID_PARAMETER, "subTableConfig 存在非法键：" + entry.getKey());
             }
         }
+        validateLookup(root);
         JsonNode title = root.get("title");
         if (title != null
                 && !title.isNull()
@@ -137,6 +142,87 @@ public final class SubTableConfigs {
             fields.add(field);
         }
         return fields;
+    }
+
+    /**
+     * 校验子表带入源配置 lookup：{formKey, formName, refColumn, searchField, mapping}。
+     * formKey 为合法表单标识（禁 design 保留字）；formName 不超过 64 字符；
+     * refColumn/searchField 为字段标识；mapping 非空且 {source 源表单字段, target 子表字段} 均为
+     * 字段标识、target 不重复。跨表单存在性（目标表单已发布、字段已映射）由发布期/保存期其他校验承担。
+     */
+    private static void validateLookup(JsonNode root) {
+        JsonNode lookup = root.get("lookup");
+        if (lookup == null || lookup.isNull()) {
+            return;
+        }
+        if (!lookup.isObject()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup 必须是 JSON 对象");
+        }
+        for (Map.Entry<String, JsonNode> entry : lookup.properties()) {
+            if (!LOOKUP_KEYS.contains(entry.getKey())) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup 存在非法键：" + entry.getKey());
+            }
+        }
+        String formKey = textValue(lookup.get("formKey"));
+        if (formKey == null || !FormConstants.isFormKey(formKey)) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.formKey 非法");
+        }
+        JsonNode formName = lookup.get("formName");
+        if (formName != null
+                && !formName.isNull()
+                && (!formName.isTextual()
+                        || formName.textValue().isBlank()
+                        || formName.textValue().length() > 64)) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.formName 必须是 1-64 字符的文本");
+        }
+        requireIdentifier(lookup, "refColumn");
+        JsonNode searchField = lookup.get("searchField");
+        if (searchField != null && !searchField.isNull()) {
+            requireIdentifier(lookup, "searchField");
+        }
+        JsonNode mapping = lookup.get("mapping");
+        if (mapping == null || mapping.isNull()) {
+            return;
+        }
+        if (!mapping.isArray() || mapping.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping 必须是非空数组");
+        }
+        Set<String> targets = new HashSet<>();
+        for (JsonNode item : mapping) {
+            if (!item.isObject()) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping 项必须是对象");
+            }
+            for (Map.Entry<String, JsonNode> entry : item.properties()) {
+                if (!MAPPING_KEYS.contains(entry.getKey())) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping 存在非法键：" + entry.getKey());
+                }
+            }
+            String source = textValue(item.get("source"));
+            String target = textValue(item.get("target"));
+            if (source == null || !FormConstants.isIdentifier(source)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping.source 非法：" + source);
+            }
+            if (target == null || !FormConstants.isIdentifier(target)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping.target 非法：" + target);
+            }
+            if (!targets.add(target)) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup.mapping.target 重复：" + target);
+            }
+        }
+    }
+
+    private static void requireIdentifier(JsonNode lookup, String key) {
+        JsonNode node = lookup.get(key);
+        if (node == null || node.isNull() || !node.isTextual() || !FormConstants.isIdentifier(node.textValue())) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "subTableConfig.lookup." + key + " 非法");
+        }
     }
 
     /**
