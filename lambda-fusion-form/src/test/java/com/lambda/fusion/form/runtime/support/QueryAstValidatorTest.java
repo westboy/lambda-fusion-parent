@@ -187,6 +187,7 @@ class QueryAstValidatorTest {
                 new FormModel.QueryConf(queryShow, queryOp, null),
                 new FormModel.ListConf(listShow, null, null, null, null, false, null, 0),
                 new FormModel.FormConf(true, "Input", Map.of(), Map.of(), false, null),
+                null,
                 null);
     }
 }

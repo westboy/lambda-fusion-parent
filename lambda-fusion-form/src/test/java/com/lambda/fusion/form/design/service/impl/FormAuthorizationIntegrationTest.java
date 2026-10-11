@@ -114,6 +114,10 @@ class FormAuthorizationIntegrationTest {
         operator.setUsername("designer");
         mvc = MockMvcBuilders.standaloneSetup(
                         new FormDesignController(
+                                new com.lambda.fusion.form.design.codegen.FormCodegenService(
+                                        context.getBean(com.lambda.fusion.form.runtime.support.FormModelProvider.class),
+                                        context.getBean(
+                                                com.lambda.fusion.form.design.support.TableMetadataReader.class)),
                                 design,
                                 publishing,
                                 context.getBean(FormPreviewService.class),

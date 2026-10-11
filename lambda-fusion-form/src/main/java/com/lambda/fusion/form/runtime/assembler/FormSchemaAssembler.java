@@ -1,11 +1,14 @@
 package com.lambda.fusion.form.runtime.assembler;
 
+import com.lambda.fusion.core.identity.UserDetails;
+import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.runtime.model.FormSchemaView;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /** 已编译模型的唯一渲染协议出口，供运行页和设计预览共用。 */
@@ -92,6 +95,17 @@ public class FormSchemaAssembler {
         return view;
     }
 
+    /** 当前用户角色集（无登录上下文返回空集——rolePerms 为空语义即全量，不受影响） */
+    private static Set<String> currentRoles() {
+        try {
+            UserDetails user = AuthUtils.getUser();
+            return user == null ? null : user.getRoles();
+        } catch (Exception error) {
+            // 无 Sa-Token 上下文（系统任务/测试）：不施加角色限制
+            return null;
+        }
+    }
+
     /** 按物理列反查字段标识；未映射返回 null */
     private String fieldNameOfColumn(FormModel model, String column) {
         return model.fields().stream()
@@ -155,6 +169,11 @@ public class FormSchemaAssembler {
         if (field.lookup() != null) {
             schema.setLookupTarget(field.lookup().targetFormKey());
             schema.setLookupDisplayField(field.lookup().displayField());
+        }
+        if (field.rolePerms() != null) {
+            Set<String> roles = currentRoles();
+            schema.setRoleEditable(roles == null || field.rolePerms().editableBy(roles));
+            schema.setRoleVisible(roles == null || field.rolePerms().visibleBy(roles));
         }
         schema.setSort(field.sort());
         if (nodeCode != null) {

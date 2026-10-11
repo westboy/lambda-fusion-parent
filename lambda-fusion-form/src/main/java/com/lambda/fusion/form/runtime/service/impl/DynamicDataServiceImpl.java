@@ -2,6 +2,7 @@ package com.lambda.fusion.form.runtime.service.impl;
 
 import cn.hutool.poi.excel.ExcelUtil;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
 import com.lambda.fusion.form.FormConstants;
@@ -130,6 +131,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         attachTreeParentLabels(model, projected);
         attachBizLabels(model, projected);
         attachLookupLabels(model, projected);
+        stripRoleHidden(model, projected);
         return FormDataPageView.builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
@@ -228,6 +230,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             attachTreeParentLabels(model, rows);
             attachBizLabels(model, rows);
             attachLookupLabels(model, rows);
+            stripRoleHidden(model, rows);
             consumer.accept(rows);
             offset += records.size();
             if (records.size() < 500) {
@@ -271,6 +274,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     FormErrorCode.FORM_IMPORT_LIMIT, String.valueOf(formProperties.getMaxImportRows()));
         }
         int imported = 0;
+        Map<String, Map<String, String>> lookupCache = new HashMap<>();
         for (int row = 1; row < rows.size(); row++) {
             List<String> cells = rows.get(row);
             if (cells.stream().allMatch(cell -> cell == null || cell.isBlank())) {
@@ -285,6 +289,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 data.put(columns.get(column).name(), importCellValue(columns.get(column), cell));
             }
             try {
+                resolveLookupImportValues(model, data, lookupCache);
                 create(model, data);
             } catch (FormBusinessException error) {
                 throw new FormBusinessException(
@@ -293,6 +298,61 @@ public class DynamicDataServiceImpl implements DynamicDataService {
             imported++;
         }
         return imported;
+    }
+
+    /**
+     * 导入时关联字段取值解析：值能命中目标行 id 则原样使用；否则按回显字段精确反查——
+     * 唯一命中转为其行 id，多条命中报歧义（要求填行 id），无命中保留原值（由写入校验报不存在）。
+     * 反查结果按字段+文本缓存（同值整批只查一次）。
+     */
+    private void resolveLookupImportValues(
+            FormModel model, Map<String, Object> data, Map<String, Map<String, String>> lookupCache) {
+        for (FormField field : model.fields()) {
+            if (field.lookup() == null || !data.containsKey(field.name())) {
+                continue;
+            }
+            Object raw = data.get(field.name());
+            if (raw == null || raw.toString().isBlank()) {
+                continue;
+            }
+            String text = raw.toString();
+            Map<String, String> cache = lookupCache.computeIfAbsent(field.name(), key -> new LinkedHashMap<>());
+            String resolved = cache.get(text);
+            if (resolved == null) {
+                resolved = resolveLookupReference(model, field, text);
+                cache.put(text, resolved);
+            }
+            data.put(field.name(), resolved);
+        }
+    }
+
+    /** 关联引用解析：值即行 id 原样返回；否则按回显字段精确匹配——唯一命中转 id，多条命中报歧义 */
+    private String resolveLookupReference(FormModel model, FormField field, String text) {
+        FormModel targetModel = modelProvider.require(field.lookup().targetFormKey());
+        Map<String, Map<String, Object>> byId =
+                findRows(targetModel, List.of(text), Set.of(field.lookup().displayField()));
+        if (byId.containsKey(text)) {
+            return text;
+        }
+        FormField displayField = targetModel.fields().stream()
+                .filter(candidate -> candidate.name().equals(field.lookup().displayField()))
+                .findFirst()
+                .orElseThrow(() -> new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "关联回显字段不可用"));
+        Map<String, Object> params = new HashMap<>();
+        params.put("v", text);
+        String where = activeRows(targetModel) + " AND " + displayField.column() + " = " + bind("v", text, params);
+        List<Map<String, Object>> hits = dynamicTableMapper.selectList(
+                targetModel.tableName(),
+                FormConstants.COLUMN_ID + ", " + displayField.column(),
+                where,
+                " LIMIT 2",
+                params);
+        if (hits.size() > 1) {
+            throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, text + " 对应多条记录，请填写记录 id");
+        }
+        return hits.isEmpty()
+                ? text
+                : String.valueOf(project(targetModel, hits.get(0)).get("id"));
     }
 
     /** 表头映射：先按字段标识精确匹配，再按列标签（唯一时）；未知列与歧义标签直接拒绝 */
@@ -516,6 +576,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         attachTreeParentLabels(model, List.of(result));
         attachBizLabels(model, List.of(result));
         attachLookupLabels(model, List.of(result));
+        stripRoleHidden(model, List.of(result));
         result.put(ETAG_KEY, etagOf(result));
         return result;
     }
@@ -527,12 +588,14 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeCreate(model, data));
         String id = IdWorker.getIdStr();
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
+        stripRoleRestricted(model, data);
         Map<String, Object> row = normalize(model, data, true, tableColumns);
         backfillDataScope(model, row, tableColumns);
         requireUniqueValues(model, row, null);
         // SELF 自关联树：上级引用须存在（空=根节点）；新增不可能成环（新 id 尚无人引用）
         requireValidTreeParent(model, null, row);
         requireValidLookupValues(model, row);
+        stripRoleRestricted(model, row);
         List<String> columns = new ArrayList<>();
         List<String> values = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
@@ -613,6 +676,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         }
         interceptors.resolve(model.interceptor()).ifPresent(i -> i.beforeUpdate(model, id, data));
         Map<String, TableColumnView> tableColumns = targetTableContract.validate(model);
+        stripRoleRestricted(model, data);
         Map<String, Object> row = normalize(model, data, false, tableColumns);
         if (row.isEmpty()) {
             throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, "没有可更新的字段");
@@ -621,6 +685,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         // SELF 自关联树：提交了上级字段时校验存在性，且不得指向自身或子孙（防环）
         requireValidTreeParent(model, id, row);
         requireValidLookupValues(model, row);
+        stripRoleRestricted(model, row);
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
@@ -795,6 +860,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         field.query(),
                         field.list(),
                         field.form(),
+                        null,
                         null))
                 .forEach(subFields::add);
         // 目标表契约要求主键映射：清单未显式导入主键列时，注入不落库的主键展示字段
@@ -814,6 +880,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     new FormModel.QueryConf(false, null, null),
                     new FormModel.ListConf(true, null, null, null, null, false, null, 0),
                     new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null),
+                    null,
                     null));
         }
         return new FormModel(
@@ -904,6 +971,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         readonly,
                         // 子表区块不参与节点填写：从字段不带节点权限（渲染端子表恒只读）
                         null),
+                null,
                 null);
     }
 
@@ -1811,6 +1879,53 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 非空时上级须存在；更新时（selfId 非空）上级不得是自身或自身子孙（子孙集解析沿用既有上限，
      * 超限按 FORM_TREE_DESCENDANT_LIMIT 拒绝）。create 传 selfId=null：新 id 尚无人引用，只校验存在性。
      */
+    /**
+     * 当前用户角色集；无 Sa-Token 上下文（系统任务/测试）返回 null，调用方据此不施加角色限制
+     */
+    private Set<String> currentRoles() {
+        try {
+            UserDetails user = AuthUtils.getUser();
+            return user == null ? null : user.getRoles();
+        } catch (Exception error) {
+            return null;
+        }
+    }
+
+    /** 字段级角色权限：剔除当前用户不可编辑字段的提交值（保留原值/缺省；无登录上下文的系统路径不处理） */
+    private void stripRoleRestricted(FormModel model, Map<String, Object> data) {
+        Set<String> roles = currentRoles();
+        if (roles == null) {
+            return;
+        }
+        for (FormField field : model.fields()) {
+            if (field.rolePerms() != null && !field.rolePerms().editableBy(roles)) {
+                data.remove(field.name());
+            }
+        }
+    }
+
+    /** 字段级角色权限：剔除当前用户不可见字段的下发值与回显名（无登录上下文的系统路径不处理） */
+    private void stripRoleHidden(FormModel model, List<Map<String, Object>> rows) {
+        Set<String> roles = currentRoles();
+        if (roles == null || rows.isEmpty()) {
+            return;
+        }
+        List<String> hidden = model.fields().stream()
+                .filter(field -> field.rolePerms() != null && !field.rolePerms().visibleBy(roles))
+                .map(FormField::name)
+                .toList();
+        if (hidden.isEmpty()) {
+            return;
+        }
+        for (Map<String, Object> row : rows) {
+            for (String name : hidden) {
+                row.remove(name);
+                row.remove(BIZ_LABEL_PREFIX + name);
+                row.remove(LOOKUP_LABEL_PREFIX + name);
+            }
+        }
+    }
+
     /** 关联字段（LOOKUP）写入校验：提交了引用值的，目标表单中必须存在该行 */
     private void requireValidLookupValues(FormModel model, Map<String, Object> row) {
         for (FormField field : model.fields()) {

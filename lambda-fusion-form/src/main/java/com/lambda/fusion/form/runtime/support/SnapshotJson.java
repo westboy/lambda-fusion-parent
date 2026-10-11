@@ -38,6 +38,11 @@ public class SnapshotJson {
         }
     }
 
+    /** 字段级角色权限解析（null/blank → null；数组与唯一性校验在 FieldConfigs） */
+    public FormDefSnapshot.RolePerms readRolePerms(String json) {
+        return FieldConfigs.toRolePerms(objectMapper, json);
+    }
+
     /** 关联字段配置解析（null/blank → null；成对与格式校验在 FieldConfigs） */
     public FormDefSnapshot.LookupConf readLookupConfig(String json) {
         return FieldConfigs.toLookupConf(objectMapper, json);

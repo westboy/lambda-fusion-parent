@@ -4,6 +4,7 @@ import com.lambda.fusion.form.FormConstants;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 编译后的表单模型（不可变，运行时的唯一事实来源）
@@ -96,6 +97,7 @@ public record FormModel(
      * @param list 列表列配置
      * @param form 表单与详情配置
      * @param lookup 关联字段配置（仅 LOOKUP 类型；目标表单 + 回显字段，均字段标识）
+     * @param rolePerms 字段级角色权限（可编辑/可见角色，空=不限制）
      * @param subFormKey 一对一扁平模式的从表归属（null=主表字段；从表字段不支持查询条件与排序）
      */
     public record FormField(
@@ -112,7 +114,8 @@ public record FormModel(
             QueryConf query,
             ListConf list,
             FormConf form,
-            LookupConf lookup) {
+            LookupConf lookup,
+            RolePerms rolePerms) {
 
         /** 是否允许出现在查询白名单（从表字段不参与：查询 SQL 只在主表上执行） */
         public boolean queryable() {
@@ -215,6 +218,25 @@ public record FormModel(
      * @param show 该节点单据上是否展示（false=对该节点隐藏）
      */
     public record NodeConf(boolean editable, boolean show) {}
+
+    /**
+     * 字段级角色权限（角色编码数组；空=不限制）
+     *
+     * @param editableRoles 可编辑角色（空=全部可编辑）
+     * @param visibleRoles 可见角色（空=全部可见）
+     */
+    public record RolePerms(List<String> editableRoles, List<String> visibleRoles) {
+
+        /** 当前用户角色集是否可编辑该字段 */
+        public boolean editableBy(Set<String> roles) {
+            return editableRoles.isEmpty() || roles.stream().anyMatch(editableRoles::contains);
+        }
+
+        /** 当前用户角色集是否可见该字段 */
+        public boolean visibleBy(Set<String> roles) {
+            return visibleRoles.isEmpty() || roles.stream().anyMatch(visibleRoles::contains);
+        }
+    }
 
     /**
      * 关联字段配置：值存目标表单行 id，展示回显字段

@@ -3,6 +3,7 @@ package com.lambda.fusion.form.design.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.core.pagination.PageView;
+import com.lambda.fusion.form.design.codegen.FormCodegenService;
 import com.lambda.fusion.form.design.model.FormDefPage;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
 import com.lambda.fusion.form.design.model.FormDefTransfer;
@@ -48,6 +49,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class FormDesignController {
 
+    private final FormCodegenService formCodegenService;
     private final FormDesignService formDesignService;
     private final FormPublishService formPublishService;
     private final FormPreviewService formPreviewService;
@@ -187,6 +189,26 @@ public class FormDesignController {
     @OperationLog(module = "动态表单", value = "导出表单定义")
     public FormDefTransfer exportDef(@PathVariable String id) {
         return formDesignService.exportDef(id);
+    }
+
+    @SaCheckPermission("form:design:detail")
+    @GetMapping("{id}/codegen")
+    @Operation(summary = "生成代码脚手架（zip 下载：Entity/Mapper/DTO/Service/Controller + README）")
+    @OperationLog(module = "动态表单", value = "生成表单代码")
+    public void codegen(
+            @PathVariable String id,
+            @RequestParam String packageName,
+            jakarta.servlet.http.HttpServletResponse response)
+            throws java.io.IOException {
+        response.setContentType("application/zip");
+        String filename = java.net.URLEncoder.encode(
+                        formDesignService.detail(id).getFormKey() + "-codegen.zip",
+                        java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + filename);
+        formCodegenService.zip(
+                formCodegenService.generate(formDesignService.detail(id).getFormKey(), packageName),
+                response.getOutputStream());
     }
 
     @SaCheckPermission("form:design:add")

@@ -4,7 +4,10 @@ import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import tools.jackson.core.JacksonException;
@@ -163,6 +166,53 @@ public final class FieldConfigs {
         conf.setTargetFormKey(targetFormKey);
         conf.setDisplayField(displayField);
         return conf;
+    }
+
+    public static final Set<String> ROLE_PERMS_KEYS = Set.of("editableRoles", "visibleRoles");
+
+    /**
+     * 字段级角色权限：{editableRoles 可编辑角色, visibleRoles 可见角色}（角色编码数组，空/缺省=不限制）。
+     * 角色编码为非空字符串（1-64 字符，数组内唯一）。
+     */
+    public static FormDefSnapshot.RolePerms toRolePerms(ObjectMapper mapper, String json) {
+        JsonNode node = readObject(mapper, json, ROLE_PERMS_KEYS, "rolePerms");
+        if (node == null) {
+            return null;
+        }
+        FormDefSnapshot.RolePerms conf = new FormDefSnapshot.RolePerms();
+        conf.setEditableRoles(rolesOf(node, "editableRoles"));
+        conf.setVisibleRoles(rolesOf(node, "visibleRoles"));
+        return conf;
+    }
+
+    private static List<String> rolesOf(JsonNode node, String key) {
+        JsonNode roles = node.get(key);
+        if (roles == null || roles.isNull()) {
+            return List.of();
+        }
+        if (!roles.isArray()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "rolePerms." + key + " 必须是字符串数组");
+        }
+        List<String> values = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (JsonNode role : roles) {
+            if (role == null
+                    || role.isNull()
+                    || !role.isTextual()
+                    || role.textValue().isBlank()) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "rolePerms." + key + " 项必须是非空字符串");
+            }
+            String value = role.textValue();
+            if (value.length() > 64) {
+                throw new FormBusinessException(
+                        FormErrorCode.INVALID_PARAMETER, "rolePerms." + key + " 项不能超过 64 字符：" + value);
+            }
+            if (!seen.add(value)) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "rolePerms." + key + " 角色重复：" + value);
+            }
+            values.add(value);
+        }
+        return List.copyOf(values);
     }
 
     /** 表单与详情配置：{show, component, props, rules, readonly, nodePerms} */

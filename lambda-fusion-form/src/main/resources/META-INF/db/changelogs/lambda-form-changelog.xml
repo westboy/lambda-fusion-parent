@@ -419,4 +419,19 @@
                     remarks="关联字段配置 JSON：{targetFormKey 目标表单, displayField 回显字段}（仅 LOOKUP 类型字段使用）"/>
         </addColumn>
     </changeSet>
+    <!-- 字段级角色权限：可编辑角色/可见角色（空=不限制） -->
+    <changeSet id="lambda-fusion-form-202610110002" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_field"/>
+            <not>
+                <columnExists tableName="la_form_field" columnName="ROLE_PERMS"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_field">
+            <column
+                    name="ROLE_PERMS"
+                    type="varchar(512)"
+                    remarks="字段级角色权限 JSON：{editableRoles 可编辑角色, visibleRoles 可见角色}（角色编码数组，空=不限制）"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

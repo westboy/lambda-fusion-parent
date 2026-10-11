@@ -81,6 +81,9 @@ public class FormDefSnapshot {
         /** 关联字段配置 JSON：{targetFormKey, displayField}（仅 LOOKUP 类型） */
         private String lookupConfig;
 
+        /** 字段级角色权限 JSON：{editableRoles, visibleRoles} */
+        private String rolePerms;
+
         private QueryConf query = new QueryConf();
         private ListConf list = new ListConf();
         private FormConf form = new FormConf();
@@ -141,6 +144,14 @@ public class FormDefSnapshot {
 
         /** 流程节点填写权限：nodeCode → {editable 可填写, show 是否展示}（仅流程表单消费） */
         private Map<String, NodePerm> nodePerms;
+    }
+
+    /** 字段级角色权限（角色编码数组；空/缺省=不限制） */
+    @Data
+    public static class RolePerms {
+        private List<String> editableRoles = List.of();
+
+        private List<String> visibleRoles = List.of();
     }
 
     /** 关联字段配置（编译期再校验目标表单与回显字段） */

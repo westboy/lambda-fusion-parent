@@ -111,7 +111,8 @@ public class FormModelCompiler {
                             query.getDefaultValue()),
                     compileListConf(list),
                     compileFormConf(formConf),
-                    compileLookupConf(type, field)));
+                    compileLookupConf(type, field),
+                    compileRolePerms(field)));
         }
         fields.forEach(FormFieldValidator::validateDefinition);
         fields.sort(Comparator.comparingInt(FormField::sort));
@@ -256,6 +257,7 @@ public class FormModelCompiler {
                                 field.form().rules(),
                                 field.form().readonly(),
                                 field.form().nodePerms()),
+                        null,
                         null);
                 if (result == fields) {
                     result = new ArrayList<>(fields);
@@ -461,6 +463,12 @@ public class FormModelCompiler {
                 new FormModel.NodeConf(
                         Boolean.TRUE.equals(perm.getEditable()), !Boolean.FALSE.equals(perm.getShow()))));
         return Collections.unmodifiableMap(compiled);
+    }
+
+    /** 字段级角色权限编译：角色清单解析与唯一性在保存期校验，此处仅透传 */
+    private FormModel.RolePerms compileRolePerms(FormDefSnapshot.Field field) {
+        FormDefSnapshot.RolePerms conf = snapshotJson.readRolePerms(field.getRolePerms());
+        return conf == null ? null : new FormModel.RolePerms(conf.getEditableRoles(), conf.getVisibleRoles());
     }
 
     /** LOOKUP 字段编译：lookupConfig 必须存在（目标表单/回显字段的跨表单校验在发布期，见 FormPublishServiceImpl） */

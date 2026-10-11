@@ -193,6 +193,12 @@ public class FormSchemaView {
         @Schema(description = "从表归属（主从关系标识；null=主表字段）")
         private String subFormKey;
 
+        @Schema(description = "字段级角色权限：当前用户是否可编辑该字段（未配置=可编辑）")
+        private Boolean roleEditable;
+
+        @Schema(description = "字段级角色权限：当前用户是否可见该字段（未配置=可见）")
+        private Boolean roleVisible;
+
         @Schema(description = "关联字段（LOOKUP）：目标表单标识")
         private String lookupTarget;
 
