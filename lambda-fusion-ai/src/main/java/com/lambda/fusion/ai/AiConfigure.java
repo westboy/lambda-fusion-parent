@@ -17,6 +17,7 @@ import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.runtime.ChatRunInstanceFactory;
 import com.lambda.fusion.ai.chat.runtime.ChatRunReconciler;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
+import com.lambda.fusion.ai.console.MetadataQueryTools;
 import com.lambda.fusion.ai.rag.mapper.KnowledgeDocumentMapper;
 import com.lambda.fusion.ai.rag.runtime.SimpleKnowledgeAdapter;
 import com.lambda.fusion.ai.rag.service.DocumentIngestionService;
@@ -48,6 +49,8 @@ import com.lambda.fusion.ai.storage.AiFileStorageResolver;
 import com.lambda.fusion.ai.storage.LocalAiFileStorage;
 import com.lambda.fusion.ai.storage.OssAiFileStorage;
 import com.lambda.fusion.authority.api.RemoteUserService;
+import com.lambda.fusion.form.design.service.FormDesignService;
+import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.message.api.RemoteMessageService;
 import io.agentscope.core.nacos.skill.NacosSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
@@ -136,6 +139,18 @@ public class AiConfigure {
             reference.setInterface(RemoteMessageService.class);
             reference.setCheck(false);
             return reference.get();
+        }
+    }
+
+    /** 控制台助手元数据只读工具；form 模块在 classpath 时装配（可选依赖优雅降级，契约 §4.1）。 */
+    @Configuration
+    @ConditionalOnClass(name = "com.lambda.fusion.form.design.service.FormDesignService")
+    public static class ConsoleConfiguration {
+
+        @Bean
+        public MetadataQueryTools metadataQueryTools(
+                FormDesignService formDesignService, FormModelProvider formModelProvider) {
+            return new MetadataQueryTools(formDesignService, formModelProvider);
         }
     }
 

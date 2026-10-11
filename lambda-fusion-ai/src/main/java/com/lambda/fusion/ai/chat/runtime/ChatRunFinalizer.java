@@ -10,6 +10,7 @@ import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.runtime.operator.ToolOperatorContext;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -108,6 +109,8 @@ public final class ChatRunFinalizer {
     }
 
     private void applyResultAndPublish(ChatRunEntity run, ChatRunFinalizationResult result) {
+        // 运行到达终态（含并发落败回读路径），释放该 Run 的操作人 token 登记
+        ToolOperatorContext.release(run.getId());
         run.setStatus(result.status());
         run.setFinishReason(result.finishReason());
         run.setErrorCode(result.errorCode());

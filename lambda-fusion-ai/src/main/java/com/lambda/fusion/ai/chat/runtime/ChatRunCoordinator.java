@@ -25,6 +25,7 @@ import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
+import com.lambda.fusion.ai.runtime.operator.ToolOperatorContext;
 import com.lambda.fusion.core.utils.TenantUtils;
 import io.agentscope.core.message.Msg;
 import jakarta.annotation.PreDestroy;
@@ -106,6 +107,7 @@ public class ChatRunCoordinator {
 
     /** 启动本次请求刚创建的运行；方法只预占容量并安排后台构造，不在 HTTP 线程创建 Agent。 */
     public void start(ChatRunEntity run, ChatSessionEntity session) {
+        ToolOperatorContext.captureFromCurrentRequest(run.getId());
         TenantUtils.withTenant(session.getTenantId(), () -> {
             startInTenantContext(run, session);
             return null;
@@ -179,6 +181,7 @@ public class ChatRunCoordinator {
      * @return 迁移结果；{@code resumed=false} 表示来源阶段已经被处理
      */
     public ConfirmTransition confirm(ChatRunEntity run, ChatSessionEntity session, ConfirmToolCall command) {
+        ToolOperatorContext.captureFromCurrentRequest(run.getId());
         return TenantUtils.withTenant(session.getTenantId(), () -> {
             int sourcePhaseNo = requireSourcePhase(command == null ? null : command.getPhaseNo());
             if (run.getPhaseNo() > sourcePhaseNo) {
@@ -204,6 +207,7 @@ public class ChatRunCoordinator {
      * @return 迁移结果；{@code resumed=false} 表示来源阶段已经被处理
      */
     public ConfirmTransition submitInput(ChatRunEntity run, ChatSessionEntity session, SubmitToolInput command) {
+        ToolOperatorContext.captureFromCurrentRequest(run.getId());
         return TenantUtils.withTenant(session.getTenantId(), () -> {
             int sourcePhaseNo = requireSourcePhase(command == null ? null : command.getPhaseNo());
             if (run.getPhaseNo() > sourcePhaseNo) {
@@ -305,6 +309,7 @@ public class ChatRunCoordinator {
      * @return 引导事件批次
      */
     public AguiBootstrapModel bootstrap(ChatRunEntity run, ChatSessionEntity session) {
+        ToolOperatorContext.captureFromCurrentRequest(run.getId());
         LocalPhaseHandle handle = activeLocalPhases.get(run.getId());
         if (handle != null) {
             return handle.execution().bootstrap();

@@ -184,7 +184,9 @@ public enum AiErrorCode implements ErrorCode {
 
     ATTACHMENT_FILE_UPLOAD_DISABLED(30220, "当前应用未开启附件上传"),
 
-    ATTACHMENT_EMPTY(30221, "附件内容为空");
+    ATTACHMENT_EMPTY(30221, "附件内容为空"),
+
+    TOOL_OPERATOR_CONTEXT_UNAVAILABLE(30222, "工具操作人上下文不可用，已拒绝执行");
 
     private final Integer code;
 
