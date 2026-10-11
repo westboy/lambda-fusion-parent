@@ -101,8 +101,19 @@ public class FormRuntimeServiceImpl implements FormRuntimeService {
     }
 
     @Override
-    public void export(String formKey, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException {
-        dynamicDataService.export(modelProvider.require(formKey), query, writer);
+    public void export(String formKey, FormDataPageQuery query, String format, java.io.OutputStream out)
+            throws java.io.IOException {
+        dynamicDataService.export(modelProvider.require(formKey), query, format, out);
+    }
+
+    @Override
+    public int importCsv(String formKey, java.io.Reader reader) {
+        return dynamicDataService.importCsv(modelProvider.require(formKey), reader);
+    }
+
+    @Override
+    public int importExcel(String formKey, java.io.InputStream inputStream) {
+        return dynamicDataService.importExcel(modelProvider.require(formKey), inputStream);
     }
 
     @Override

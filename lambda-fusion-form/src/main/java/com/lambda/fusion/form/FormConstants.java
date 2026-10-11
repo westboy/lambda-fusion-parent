@@ -25,6 +25,11 @@ public final class FormConstants {
         return value != null && IDENTIFIER_PATTERN.matcher(value).matches();
     }
 
+    /** 数据导出格式 */
+    public static final String EXPORT_FORMAT_CSV = "csv";
+
+    public static final String EXPORT_FORMAT_XLSX = "xlsx";
+
     /** 运行时权限码模板：form:{formKey}:{action} */
     public static final String RUNTIME_PERMISSION_TEMPLATE = "form:%s:%s";
 

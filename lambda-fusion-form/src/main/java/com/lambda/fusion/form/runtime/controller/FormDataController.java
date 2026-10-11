@@ -2,6 +2,7 @@ package com.lambda.fusion.form.runtime.controller;
 
 import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.core.pagination.PageView;
+import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
 import com.lambda.fusion.form.runtime.interceptor.FormPermission;
@@ -174,24 +175,58 @@ public class FormDataController {
         formRuntimeService.delete(formKey, id);
     }
 
+    @PostMapping("{formKey}/import")
+    @FormPermission(FormAction.IMPORT)
+    @Operation(summary = "数据导入（.csv/.xlsx/.xls；表头=字段标识或唯一标签；事务内整批成功或整体回滚，返回导入行数）")
+    @OperationLog(module = "动态表单", value = "导入表单数据")
+    public int importData(
+            @PathVariable String formKey, @RequestParam("file") org.springframework.web.multipart.MultipartFile file)
+            throws java.io.IOException {
+        if (file == null || file.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入文件为空");
+        }
+        String name = file.getOriginalFilename() == null
+                ? ""
+                : file.getOriginalFilename().toLowerCase();
+        if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+            try (var inputStream = file.getInputStream()) {
+                return formRuntimeService.importExcel(formKey, inputStream);
+            }
+        }
+        if (name.endsWith(".csv")) {
+            try (var reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(file.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                return formRuntimeService.importCsv(formKey, reader);
+            }
+        }
+        throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "仅支持 .csv / .xlsx / .xls 文件");
+    }
+
     @PostMapping("{formKey}/export")
     @FormPermission(FormAction.EXPORT)
-    @Operation(summary = "导出当前筛选全集为 CSV（UTF-8 BOM；行数上限由 max-export-rows 控制）")
+    @Operation(summary = "数据导出（format=csv/xlsx，缺省 csv；列=列表可见主表字段，label 表头）")
     @OperationLog(module = "动态表单", value = "导出表单数据")
     public void export(
             @PathVariable String formKey,
             @RequestBody FormDataPageQuery query,
+            @RequestParam(defaultValue = FormConstants.EXPORT_FORMAT_CSV) String format,
             jakarta.servlet.http.HttpServletResponse response)
             throws java.io.IOException {
-        response.setContentType("text/csv; charset=UTF-8");
+        boolean xlsx = FormConstants.EXPORT_FORMAT_XLSX.equals(format);
+        if (!xlsx && !FormConstants.EXPORT_FORMAT_CSV.equals(format)) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导出格式仅支持 csv / xlsx");
+        }
+        response.setContentType(
+                xlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv; charset=UTF-8");
+        String suffix = xlsx ? ".xlsx" : ".csv";
         String filename = java.net.URLEncoder.encode(
                         formKey + "-"
                                 + java.time.LocalDateTime.now()
                                         .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                                + ".csv",
+                                + suffix,
                         java.nio.charset.StandardCharsets.UTF_8)
                 .replace("+", "%20");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + filename);
-        formRuntimeService.export(formKey, query, response.getWriter());
+        formRuntimeService.export(formKey, query, format, response.getOutputStream());
     }
 }

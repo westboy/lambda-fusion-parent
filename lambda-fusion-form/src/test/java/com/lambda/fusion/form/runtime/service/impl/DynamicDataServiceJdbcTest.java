@@ -24,6 +24,7 @@ import com.lambda.fusion.form.runtime.integration.FormDataInterceptors;
 import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.AstCondition;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
+import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.support.FormDefSnapshot;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModelCompiler;
@@ -255,19 +256,73 @@ class DynamicDataServiceJdbcTest {
         FormModel model = model(false, true, false);
         service.create(model, Map.of("personName", "张,三"));
         service.create(model, Map.of("personName", "李\"四\""));
-        java.io.StringWriter writer = new java.io.StringWriter();
-        service.export(model, query(null, null, null), writer);
-        String csv = writer.toString();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        service.export(model, query(null, null, null), FormConstants.EXPORT_FORMAT_CSV, out);
+        String csv = out.toString(java.nio.charset.StandardCharsets.UTF_8);
         // BOM + 表头 + RFC4180 转义（逗号/引号单元格加引号并双写引号）
         assertThat(csv).startsWith("﻿");
         assertThat(csv).contains("\"张,三\"").contains("\"李\"\"四\"\"\"");
         assertThat(csv.trim().lines()).hasSize(3);
         // 行数上限：超出先拒绝，不写半个文件
         formProperties.setMaxExportRows(1);
-        assertThatThrownBy(() -> service.export(model, query(null, null, null), new java.io.StringWriter()))
+        assertThatThrownBy(() -> service.export(
+                        model,
+                        query(null, null, null),
+                        FormConstants.EXPORT_FORMAT_CSV,
+                        new java.io.ByteArrayOutputStream()))
                 .isInstanceOf(FormBusinessException.class)
                 .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
                         .isEqualTo(FormErrorCode.FORM_EXPORT_LIMIT.getCode()));
+    }
+
+    @Test
+    void importExcelParsesNumbersAsTextAndDecimalsAsIs() throws Exception {
+        FormModel model = model(false, false, false);
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (cn.hutool.poi.excel.ExcelWriter writer = cn.hutool.poi.excel.ExcelUtil.getBigWriter()) {
+            writer.writeHeadRow(List.of("personName", "note", "amount"));
+            writer.writeRow(List.of("张三", 13303820660L, 1.5));
+            writer.writeRow(List.of("李四", "备注", 2));
+            writer.flush(bytes);
+        }
+
+        int count = service.importExcel(model, new java.io.ByteArrayInputStream(bytes.toByteArray()));
+
+        assertThat(count).isEqualTo(2);
+        // 数值单元格防科学计数：电话号码按整数文本落库；小数保持 1.5
+        Map<String, Object> zhangsan = rowOf(model, "personName", "张三");
+        assertThat(String.valueOf(zhangsan.get("note"))).isEqualTo("13303820660");
+        assertThat(String.valueOf(zhangsan.get("amount"))).isEqualTo("1.50");
+        Map<String, Object> lisi = rowOf(model, "personName", "李四");
+        assertThat(String.valueOf(lisi.get("note"))).isEqualTo("备注");
+        assertThat(String.valueOf(lisi.get("amount"))).isEqualTo("2.00");
+    }
+
+    @Test
+    void exportXlsxWritesHeaderAndRows() throws Exception {
+        FormModel model = model(false, false, false);
+        service.create(model, Map.of("personName", "张,三"));
+        service.create(model, Map.of("personName", "李四"));
+
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        service.export(model, query(null, null, null), FormConstants.EXPORT_FORMAT_XLSX, out);
+
+        try (cn.hutool.poi.excel.ExcelReader reader =
+                cn.hutool.poi.excel.ExcelUtil.getReader(new java.io.ByteArrayInputStream(out.toByteArray()))) {
+            List<List<Object>> rows = reader.read();
+            assertThat(rows).hasSize(3);
+            assertThat(rows.get(0).get(0)).isEqualTo("personName");
+            // 分页缺省按创建时间倒序：两行不假定先后
+            assertThat(rows.subList(1, 3).stream().map(row -> row.get(0)).toList())
+                    .containsExactlyInAnyOrder("张,三", "李四");
+        }
+    }
+
+    /** 按唯一字段值定位行 id（分页默认按创建时间倒序，不宜按顺序取） */
+    private Map<String, Object> rowOf(FormModel model, String field, String value) {
+        FormDataPageView view = service.page(model, query(field, "eq", value));
+        assertThat(view.getRecords()).hasSize(1);
+        return service.getById(model, view.getRecords().get(0).get("id").toString());
     }
 
     @Test

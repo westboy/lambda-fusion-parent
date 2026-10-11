@@ -1,5 +1,6 @@
 package com.lambda.fusion.form.runtime.service.impl;
 
+import cn.hutool.poi.excel.ExcelUtil;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.core.utils.AuthUtils;
@@ -14,6 +15,7 @@ import com.lambda.fusion.form.runtime.mapper.DynamicTableMapper;
 import com.lambda.fusion.form.runtime.model.FormDataPageQuery;
 import com.lambda.fusion.form.runtime.model.FormDataPageView;
 import com.lambda.fusion.form.runtime.service.DynamicDataService;
+import com.lambda.fusion.form.runtime.support.Csv;
 import com.lambda.fusion.form.runtime.support.FormFieldValidator;
 import com.lambda.fusion.form.runtime.support.FormModel;
 import com.lambda.fusion.form.runtime.support.FormModel.FormField;
@@ -140,7 +142,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * BOOL 转是否、日期时间友好格式、其余原值；总行数超 max-export-rows 先拒绝（不写半个文件）。
      */
     @Override
-    public void export(FormModel model, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException {
+    public void export(FormModel model, FormDataPageQuery query, String format, java.io.OutputStream out)
+            throws java.io.IOException {
         Map<String, TableColumnView> tableColumns = targetTableContract.validateAccess(model);
         astValidator.validate(model, query);
         String selectColumns = String.join(", ", selectColumns(model));
@@ -159,9 +162,55 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 .filter(field -> field.subFormKey() == null && field.list().show())
                 .toList();
         String parentFieldName = treeParentFieldName(model);
-        writer.write('﻿');
-        writer.write(columns.stream().map(field -> csvCell(field.label())).collect(Collectors.joining(",")));
-        writer.write("\n");
+        java.util.function.Function<Map<String, Object>, List<Object>> toRowValues = row -> columns.stream()
+                .map(field -> formatExportValue(field, exportCellValue(parentFieldName, field, row)))
+                .toList();
+        try {
+            if (FormConstants.EXPORT_FORMAT_XLSX.equals(format)) {
+                try (cn.hutool.poi.excel.ExcelWriter writer = ExcelUtil.getBigWriter()) {
+                    writer.writeHeadRow(columns.stream().map(FormField::label).toList());
+                    forEachExportPage(
+                            model,
+                            selectColumns,
+                            whereSql,
+                            orderSql,
+                            params,
+                            rows -> rows.forEach(row -> writer.writeRow(toRowValues.apply(row))));
+                    writer.flush(out);
+                }
+            } else {
+                java.io.Writer writer = new java.io.OutputStreamWriter(out, java.nio.charset.StandardCharsets.UTF_8);
+                writer.write((char) 0xFEFF);
+                writer.write(
+                        columns.stream().map(field -> csvCell(field.label())).collect(Collectors.joining(",")));
+                writer.write("\n");
+                forEachExportPage(model, selectColumns, whereSql, orderSql, params, rows -> {
+                    for (Map<String, Object> row : rows) {
+                        try {
+                            writer.write(toRowValues.apply(row).stream()
+                                    .map(this::csvCell)
+                                    .collect(Collectors.joining(",")));
+                            writer.write("\n");
+                        } catch (java.io.IOException error) {
+                            throw new java.io.UncheckedIOException(error);
+                        }
+                    }
+                });
+                writer.flush();
+            }
+        } catch (java.io.UncheckedIOException error) {
+            throw error.getCause();
+        }
+    }
+
+    /** 导出分页拉取（每页 500，短页终止）：行投影 + 树父/业务标签装配后交消费方 */
+    private void forEachExportPage(
+            FormModel model,
+            String selectColumns,
+            String whereSql,
+            String orderSql,
+            Map<String, Object> params,
+            java.util.function.Consumer<List<Map<String, Object>>> consumer) {
         long offset = 0;
         while (true) {
             String pageSql = orderSql + " LIMIT 500 OFFSET " + offset;
@@ -174,18 +223,173 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     records.stream().map(row -> project(model, row)).toList();
             attachTreeParentLabels(model, rows);
             attachBizLabels(model, rows);
-            for (Map<String, Object> row : rows) {
-                writer.write(columns.stream()
-                        .map(field -> csvCell(formatExportValue(field, exportCellValue(parentFieldName, field, row))))
-                        .collect(Collectors.joining(",")));
-                writer.write("\n");
-            }
+            consumer.accept(rows);
             offset += records.size();
             if (records.size() < 500) {
                 break;
             }
         }
-        writer.flush();
+    }
+
+    /**
+     * CSV 导入（事务内整批成功或整体回滚）：表头 = 字段标识或唯一列标签（重复标签歧义即拒绝），
+     * 数据行复用 {@link #create} 的全套校验（类型/必填/唯一/树父/拦截器），BOOL 兼容「是/否」，
+     * 其余值按存储原值写入（字典/机构/用户给存储值而非展示名）。行级失败以「第 N 行」包装回传。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int importCsv(FormModel model, java.io.Reader reader) {
+        targetTableContract.validate(model);
+        return importRows(model, Csv.parse(reader));
+    }
+
+    /** Excel 导入：单元格数值/日期按展示口径转文本原值后，走与 CSV 完全一致的行导入管线 */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int importExcel(FormModel model, java.io.InputStream inputStream) {
+        return importRows(model, parseExcel(inputStream));
+    }
+
+    /** 行导入管线：表头映射、行数上限、逐行 create（失败包「第 N 行」），事务由公共入口开启 */
+    private int importRows(FormModel model, List<List<String>> rows) {
+        if (rows.isEmpty()) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入文件为空");
+        }
+        List<String> headers = rows.get(0).stream().map(String::trim).toList();
+        List<FormField> columns = mapImportHeaders(model, headers);
+        int dataRows = rows.size() - 1;
+        if (dataRows == 0) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入文件没有数据行");
+        }
+        if (dataRows > formProperties.getMaxImportRows()) {
+            throw new FormBusinessException(
+                    FormErrorCode.FORM_IMPORT_LIMIT, String.valueOf(formProperties.getMaxImportRows()));
+        }
+        int imported = 0;
+        for (int row = 1; row < rows.size(); row++) {
+            List<String> cells = rows.get(row);
+            if (cells.stream().allMatch(cell -> cell == null || cell.isBlank())) {
+                continue;
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            for (int column = 0; column < columns.size(); column++) {
+                String cell = column < cells.size() ? cells.get(column) : null;
+                if (cell == null || cell.isBlank()) {
+                    continue;
+                }
+                data.put(columns.get(column).name(), importCellValue(columns.get(column), cell));
+            }
+            try {
+                create(model, data);
+            } catch (FormBusinessException error) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_ROW_INVALID, String.valueOf(row + 1), formatFormMessage(error));
+            }
+            imported++;
+        }
+        return imported;
+    }
+
+    /** 表头映射：先按字段标识精确匹配，再按列标签（唯一时）；未知列与歧义标签直接拒绝 */
+    private List<FormField> mapImportHeaders(FormModel model, List<String> headers) {
+        Map<String, FormField> byName = new HashMap<>();
+        Map<String, List<FormField>> byLabel = new LinkedHashMap<>();
+        for (FormField field : model.fields()) {
+            if (field.subFormKey() != null
+                    || !field.persisted()
+                    || field.column().equals(model.logicDeleteColumn())) {
+                continue;
+            }
+            byName.put(field.name(), field);
+            byLabel.computeIfAbsent(field.label(), key -> new ArrayList<>()).add(field);
+        }
+        List<FormField> mapped = new ArrayList<>();
+        for (String header : headers) {
+            if (header == null || header.isBlank()) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入表头存在空列");
+            }
+            FormField field = byName.get(header);
+            if (field == null) {
+                List<FormField> byLabelFields = byLabel.get(header);
+                if (byLabelFields == null) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入表头存在未知列：" + header);
+                }
+                if (byLabelFields.size() > 1) {
+                    throw new FormBusinessException(
+                            FormErrorCode.INVALID_PARAMETER, "导入表头存在歧义列标签：" + header + "，请使用字段标识");
+                }
+                field = byLabelFields.get(0);
+            }
+            if (mapped.contains(field)) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "导入表头存在重复列：" + header);
+            }
+            mapped.add(field);
+        }
+        return mapped;
+    }
+
+    /** 导入取值：BOOL 兼容「是/否」，其余按原值交由 create 的类型校验 */
+    private String importCellValue(FormField field, String cell) {
+        if ("BOOL".equals(field.type())) {
+            if ("是".equals(cell.trim())) {
+                return "true";
+            }
+            if ("否".equals(cell.trim())) {
+                return "false";
+            }
+        }
+        return cell;
+    }
+
+    /** 行错误包装：把内层错误模板按其参数格式化为可读原因（无参数原样返回） */
+    private String formatFormMessage(FormBusinessException error) {
+        Object[] args = error.getArgs();
+        if (args == null || args.length == 0) {
+            return error.getMessage();
+        }
+        try {
+            return java.text.MessageFormat.format(error.getMessage(), args);
+        } catch (IllegalArgumentException formatError) {
+            return error.getMessage();
+        }
+    }
+
+    private List<List<String>> parseExcel(java.io.InputStream inputStream) {
+        try (cn.hutool.poi.excel.ExcelReader reader = ExcelUtil.getReader(inputStream)) {
+            List<List<Object>> raw = reader.read();
+            List<List<String>> rows = new ArrayList<>(raw.size());
+            for (List<Object> cells : raw) {
+                List<String> row = new ArrayList<>(cells.size());
+                for (Object cell : cells) {
+                    row.add(excelCellText(cell));
+                }
+                rows.add(row);
+            }
+            return rows;
+        }
+    }
+
+    /** Excel 单元格 → 导入文本：日期（零点即日期）、数值去无效零（防电话号码科学计数）、布尔转 true/false */
+    private String excelCellText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.time.LocalDateTime dateTime) {
+            boolean midnight = dateTime.toLocalTime().equals(java.time.LocalTime.MIDNIGHT);
+            return dateTime.format(
+                    java.time.format.DateTimeFormatter.ofPattern(midnight ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss"));
+        }
+        if (value instanceof java.util.Date date) {
+            return excelCellText(java.time.LocalDateTime.ofInstant(date.toInstant(), java.time.ZoneId.systemDefault()));
+        }
+        if (value instanceof Boolean bool) {
+            return bool ? "true" : "false";
+        }
+        if (value instanceof Number number) {
+            java.math.BigDecimal decimal = new java.math.BigDecimal(number.toString()).stripTrailingZeros();
+            return decimal.scale() <= 0 ? decimal.toBigInteger().toString() : decimal.toPlainString();
+        }
+        return value.toString();
     }
 
     /** 导出取值：树父字段/ORG/USER 优先用随行解析的名称（未命中回退原值），其余字段取原值 */

@@ -33,6 +33,9 @@ public class FormProperties {
     /** INLINE 子表随主行加载的每主行子行上限（超出截断，完整数据走台账式端点） */
     private long maxInlineSubRows = 200;
 
+    /** 导出行数上限（超出直接拒绝，事务内整批回滚的上界） */
+    private long maxImportRows = 10000;
+
     /** 导出行数上限（超出直接拒绝，防全表拖出） */
     private long maxExportRows = 10000;
 

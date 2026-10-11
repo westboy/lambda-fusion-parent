@@ -14,7 +14,8 @@ public enum FormAction {
     ADD("add", "新增"),
     EDIT("edit", "编辑"),
     DELETE("delete", "删除"),
-    EXPORT("export", "导出");
+    EXPORT("export", "导出"),
+    IMPORT("import", "导入");
 
     private final String code;
     private final String label;

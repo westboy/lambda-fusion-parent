@@ -146,6 +146,16 @@ public enum FormErrorCode implements ErrorCode {
      */
     FORM_TASK_FIELD_FORBIDDEN(18140, "字段不在该节点的可填写范围：{0}"),
 
+    /**
+     * 导入数据量超过上限：{0}
+     */
+    FORM_IMPORT_LIMIT(18141, "导入数据量超过上限（{0} 行）"),
+
+    /**
+     * 导入行失败：{0}
+     */
+    FORM_ROW_INVALID(18142, "第 {0} 行导入失败：{1}"),
+
     FORM_ROUTE_UNAVAILABLE(18150, "当前服务未提供菜单管理能力"),
     FORM_ROUTE_CONFLICT(18151, "路由资源冲突：{0}"),
     FORM_ROUTE_EXISTS(18152, "请先撤销路由，再删除表单");

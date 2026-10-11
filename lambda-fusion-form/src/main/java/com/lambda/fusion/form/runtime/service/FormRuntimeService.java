@@ -39,9 +39,20 @@ public interface FormRuntimeService {
     FormDataPageView page(String formKey, FormDataPageQuery query);
 
     /**
-     * 导出当前筛选全集为 CSV（权限由 Controller 层校验）
+     * 数据导出（format=csv/xlsx，权限由 Controller 层校验）
      */
-    void export(String formKey, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException;
+    void export(String formKey, FormDataPageQuery query, String format, java.io.OutputStream out)
+            throws java.io.IOException;
+
+    /**
+     * CSV 导入（权限由 Controller 层校验）：事务内整批成功或整体回滚，返回导入行数
+     */
+    int importCsv(String formKey, java.io.Reader reader) throws java.io.IOException;
+
+    /**
+     * Excel 导入（.xlsx/.xls，口径与 CSV 一致）
+     */
+    int importExcel(String formKey, java.io.InputStream inputStream) throws java.io.IOException;
 
     List<Map<String, Object>> tree(String formKey, String parentValue);
 

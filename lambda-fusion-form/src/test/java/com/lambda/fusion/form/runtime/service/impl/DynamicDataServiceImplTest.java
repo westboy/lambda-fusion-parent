@@ -3,12 +3,14 @@ package com.lambda.fusion.form.runtime.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -211,6 +213,83 @@ class DynamicDataServiceImplTest {
     }
 
     @Test
+    void importCsvCreatesRowsAndConvertsBoolLabels() throws Exception {
+        when(mapper.insertDynamic(anyString(), anyList(), anyList(), anyMap())).thenReturn(1);
+        FormModel boolModel = boolModel();
+
+        int count = service.importCsv(boolModel, new java.io.StringReader("applicant,remote\n张三,是\n李四,否\n"));
+
+        assertThat(count).isEqualTo(2);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> columns = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Map<String, Object>> params = ArgumentCaptor.forClass(Map.class);
+        verify(mapper, times(2)).insertDynamic(eq(TABLE), columns.capture(), anyList(), params.capture());
+        assertThat(columns.getAllValues().get(0)).contains("REMOTE");
+        assertThat(params.getAllValues().get(0)).containsValue(1L);
+        assertThat(params.getAllValues().get(1)).containsValue(0L);
+    }
+
+    @Test
+    void importCsvRejectsUnknownHeaderAndWrapsRowErrors() {
+        assertThatThrownBy(() -> service.importCsv(model(), new java.io.StringReader("nope\nx\n")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> {
+                    assertThat(((FormBusinessException) error).getCode())
+                            .isEqualTo(FormErrorCode.INVALID_PARAMETER.getCode());
+                    assertThat(((FormBusinessException) error).getArgs()[0].toString())
+                            .contains("未知列：nope");
+                });
+
+        // 第二数据行（文件第 3 行）必填校验失败：错误携带文件行号
+        assertThatThrownBy(() -> service.importCsv(model(), new java.io.StringReader("applicant,days\n张三,1\n,5\n")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> {
+                    assertThat(((FormBusinessException) error).getCode())
+                            .isEqualTo(FormErrorCode.FORM_ROW_INVALID.getCode());
+                    assertThat(((FormBusinessException) error).getArgs()).contains("3");
+                    assertThat(((FormBusinessException) error).getArgs()[1].toString())
+                            .contains("applicant 不能为空");
+                });
+    }
+
+    @Test
+    void importCsvRejectsAmbiguousLabelAndLimitOverflow() {
+        // 两个字段同标签：表头用标签即歧义拒绝
+        assertThatThrownBy(() -> service.importCsv(model(), new java.io.StringReader("标签,\n1,2\n")))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> {
+                    assertThat(((FormBusinessException) error).getCode())
+                            .isEqualTo(FormErrorCode.INVALID_PARAMETER.getCode());
+                    assertThat(((FormBusinessException) error).getArgs()[0].toString())
+                            .contains("标签");
+                });
+
+        // 行数超上限：独立装配一个小上限服务
+        TargetTableContract limitedContract = mock(TargetTableContract.class);
+        when(limitedContract.validate(any()))
+                .thenAnswer(invocation -> columnsFor((FormModel) invocation.getArgument(0)));
+        FormProperties properties = new FormProperties();
+        properties.setMaxImportRows(2);
+        DynamicDataServiceImpl limited = new DynamicDataServiceImpl(
+                mapper,
+                new QueryAstValidator(new FormProperties()),
+                modelProvider,
+                limitedContract,
+                properties,
+                new FormDataInterceptors(new GenericApplicationContext()),
+                new ObjectMapper(),
+                new StaticListableBeanFactory().getBeanProvider(BizDataProvider.class));
+        StringBuilder csv = new StringBuilder("applicant\n");
+        for (int i = 0; i < 3; i++) {
+            csv.append('u').append(i).append('\n');
+        }
+        assertThatThrownBy(() -> limited.importCsv(model(), new java.io.StringReader(csv.toString())))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_IMPORT_LIMIT.getCode()));
+    }
+
+    @Test
     void createKeepsMappedFieldsOnlyAndFillsAudit() {
         Map<String, Object> payload = new HashMap<>();
         payload.put("applicant", "张三");
@@ -315,12 +394,20 @@ class DynamicDataServiceImplTest {
                         field -> new TableColumnView(
                                 field.column(),
                                 null,
-                                "DECIMAL".equals(field.type()) ? "DECIMAL" : "VARCHAR",
+                                switch (field.type()) {
+                                    case "DECIMAL" -> "DECIMAL";
+                                    case "BOOL" -> "TINYINT";
+                                    default -> "VARCHAR";
+                                },
                                 field.type(),
                                 false,
                                 field.nullable(),
                                 128,
-                                "DECIMAL".equals(field.type()) ? Types.DECIMAL : Types.VARCHAR,
+                                switch (field.type()) {
+                                    case "DECIMAL" -> Types.DECIMAL;
+                                    case "BOOL" -> Types.TINYINT;
+                                    default -> Types.VARCHAR;
+                                },
                                 2,
                                 null,
                                 false,
@@ -403,6 +490,29 @@ class DynamicDataServiceImplTest {
                 null,
                 0,
                 "ORG_ID");
+    }
+
+    /** 含 BOOL 字段的模型：导入的 是/否 标签转换用 */
+    private static FormModel boolModel() {
+        return new FormModel(
+                "leave_demo",
+                "请假演示",
+                1L,
+                FormConstants.FORM_TYPE_SINGLE,
+                TABLE,
+                null,
+                null,
+                new FormModel.ListConfig(List.of(), true, List.of()),
+                FormModel.DetailConfig.DEFAULT,
+                null,
+                List.of(
+                        field("applicant", "APPLICANT", "STRING", false, true, true, "like", 1),
+                        field("remote", "REMOTE", "BOOL", true, true, false, "eq", 2)),
+                List.of(),
+                null,
+                null,
+                null,
+                null);
     }
 
     private static FormModel masterSubModel(String cascadeStrategy) {

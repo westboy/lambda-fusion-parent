@@ -24,7 +24,24 @@ public interface DynamicDataService {
     /**
      * 导出当前筛选全集为 CSV（UTF-8 BOM；行数超 max-export-rows 先拒绝）
      */
-    void export(FormModel model, FormDataPageQuery query, java.io.Writer writer) throws java.io.IOException;
+    /**
+     * 数据导出（format=csv/xlsx）：csv 为 UTF-8 BOM 文本（Writer 语义），xlsx 经 hutool-poi
+     * 二进制写出；两者同一套列（列表可见主表字段，label 表头）与展示格式化口径。
+     */
+    void export(FormModel model, FormDataPageQuery query, String format, java.io.OutputStream out)
+            throws java.io.IOException;
+
+    /**
+     * 数据导入（.csv/.xlsx，事务内整批成功或整体回滚）：表头为字段标识或唯一列标签，值按原值写入
+     * （BOOL 兼容 是/否/true/false，日期 yyyy-MM-dd[ HH:mm:ss]，字典/机构/用户等直接给存储值）；
+     * 行级错误以「第 N 行」回传，行数受 max-import-rows 钳制。
+     */
+    int importCsv(FormModel model, java.io.Reader reader);
+
+    /**
+     * Excel 导入（.xlsx/.xls，口径与 importCsv 完全一致；单元格数值/日期自动转为文本原值）
+     */
+    int importExcel(FormModel model, java.io.InputStream inputStream);
 
     /**
      * 详情
