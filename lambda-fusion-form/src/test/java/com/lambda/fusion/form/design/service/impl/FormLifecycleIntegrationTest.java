@@ -13,6 +13,7 @@ import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import com.lambda.autoconfig.MybatisPlusExtendProperties;
 import com.lambda.fusion.core.utils.AuthUtils;
+import com.lambda.fusion.form.FormConstants;
 import com.lambda.fusion.form.FormProperties;
 import com.lambda.fusion.form.design.assembler.FormSnapshotAssemblerImpl;
 import com.lambda.fusion.form.design.entity.FormDefEntity;
@@ -21,6 +22,8 @@ import com.lambda.fusion.form.design.mapper.FormDefVersionMapper;
 import com.lambda.fusion.form.design.mapper.FormFieldMapper;
 import com.lambda.fusion.form.design.mapper.FormRelationMapper;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
+import com.lambda.fusion.form.design.model.FormDefTransfer;
+import com.lambda.fusion.form.design.model.FormDefView;
 import com.lambda.fusion.form.design.model.FormDefViewConverterImpl;
 import com.lambda.fusion.form.design.model.FormFieldItem;
 import com.lambda.fusion.form.design.model.FormFieldItemConverterImpl;
@@ -643,6 +646,48 @@ class FormLifecycleIntegrationTest {
         field.setFieldType("STRING");
         command.setFields(List.of(field));
         return command;
+    }
+
+    @Test
+    void exportDefStripsEnvironmentBindingsAndImportCreatesNewDraft() {
+        String id = design.save(command());
+        FormDefTransfer transfer = design.exportDef(id);
+
+        assertThat(transfer.getFormatVersion()).isEqualTo(FormDefTransfer.FORMAT_VERSION);
+        // 环境绑定字段脱敏：目标环境需重新绑定数据源与拦截器
+        assertThat(transfer.getDef().getDatasourceId()).isNull();
+        assertThat(transfer.getDef().getInterceptor()).isNull();
+        assertThat(transfer.getDef().getFields()).isNotEmpty();
+
+        transfer.getDef().setFormKey("imported_form");
+        transfer.getDef().setFormName("导入副本");
+        String importedId = design.importDef(transfer);
+
+        FormDefView imported = design.detail(importedId);
+        assertThat(imported.getFormKey()).isEqualTo("imported_form");
+        assertThat(imported.getStatus()).isEqualTo(FormConstants.STATUS_DRAFT);
+        assertThat(imported.getFields()).hasSameSizeAs(transfer.getDef().getFields());
+        assertThat(count("la_form_def")).isEqualTo(2);
+    }
+
+    @Test
+    void importDefRejectsFormKeyConflictAndUnsupportedFormat() {
+        String id = design.save(command());
+        FormDefTransfer transfer = design.exportDef(id);
+
+        // formKey 冲突：走保存期校验拒绝
+        assertThatThrownBy(() -> design.importDef(transfer))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.FORM_KEY_DUPLICATED.getCode()));
+
+        // 载体格式版本不符：导入前即拒绝
+        transfer.setFormatVersion(99);
+        transfer.getDef().setFormKey("another_form");
+        assertThatThrownBy(() -> design.importDef(transfer))
+                .isInstanceOf(FormBusinessException.class)
+                .satisfies(error -> assertThat(((FormBusinessException) error).getCode())
+                        .isEqualTo(FormErrorCode.INVALID_PARAMETER.getCode()));
     }
 
     @Test

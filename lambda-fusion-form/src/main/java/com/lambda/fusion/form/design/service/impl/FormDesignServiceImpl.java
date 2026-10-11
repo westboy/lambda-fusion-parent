@@ -16,6 +16,7 @@ import com.lambda.fusion.form.design.mapper.FormFieldMapper;
 import com.lambda.fusion.form.design.mapper.FormRelationMapper;
 import com.lambda.fusion.form.design.model.FormDefPage;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
+import com.lambda.fusion.form.design.model.FormDefTransfer;
 import com.lambda.fusion.form.design.model.FormDefView;
 import com.lambda.fusion.form.design.model.FormFieldItem;
 import com.lambda.fusion.form.design.model.FormRelationItem;
@@ -120,6 +121,46 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
             formPublishService.publish(def.getId());
         }
         return def.getId();
+    }
+
+    @Override
+    public FormDefTransfer exportDef(String id) {
+        FormDefView view = detail(id);
+        FormDefSaveCommand def = new FormDefSaveCommand();
+        def.setFormKey(view.getFormKey());
+        def.setFormName(view.getFormName());
+        def.setFormType(view.getFormType());
+        def.setTableName(view.getTableName());
+        def.setLogicDeleteColumn(view.getLogicDeleteColumn());
+        def.setTreeConfig(view.getTreeConfig());
+        def.setTitleTemplate(view.getTitleTemplate());
+        def.setProcessForm(view.getProcessForm());
+        def.setDataScopeType(view.getDataScopeType());
+        def.setDataScopeColumn(view.getDataScopeColumn());
+        def.setListConfig(view.getListConfig());
+        def.setDetailConfig(view.getDetailConfig());
+        def.setFormLayout(view.getFormLayout());
+        def.setFields(view.getFields());
+        def.setRelations(view.getRelations());
+        // 环境绑定字段刻意不导出：datasourceId/interceptor 由目标环境重新绑定后才能发布
+        return new FormDefTransfer(FormDefTransfer.FORMAT_VERSION, def);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String importDef(FormDefTransfer transfer) {
+        if (transfer == null
+                || transfer.getFormatVersion() != FormDefTransfer.FORMAT_VERSION
+                || transfer.getDef() == null) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "表单定义载体格式不受支持");
+        }
+        FormDefSaveCommand def = transfer.getDef();
+        // 环境绑定与运行时状态强制剥离（不信任载体内容），导入一律创建为新草稿
+        def.setDatasourceId(null);
+        def.setInterceptor(null);
+        def.setPublishOnSave(Boolean.FALSE);
+        def.setVersion(null);
+        return save(def);
     }
 
     @Override

@@ -5,6 +5,7 @@ import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.design.model.FormDefPage;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
+import com.lambda.fusion.form.design.model.FormDefTransfer;
 import com.lambda.fusion.form.design.model.FormDefView;
 import com.lambda.fusion.form.design.model.FormPreviewDataCommand;
 import com.lambda.fusion.form.design.model.FormPreviewSource;
@@ -178,6 +179,22 @@ public class FormDesignController {
     @OperationLog(module = "动态表单", value = "新建表单草稿")
     public String save(@Valid @RequestBody FormDefSaveCommand command) {
         return formDesignService.save(command);
+    }
+
+    @SaCheckPermission("form:design:detail")
+    @GetMapping("{id}/export")
+    @Operation(summary = "导出表单定义（脱敏：不含数据源/拦截器等环境绑定，导入后需重新绑定再发布）")
+    @OperationLog(module = "动态表单", value = "导出表单定义")
+    public FormDefTransfer exportDef(@PathVariable String id) {
+        return formDesignService.exportDef(id);
+    }
+
+    @SaCheckPermission("form:design:add")
+    @PostMapping("import")
+    @Operation(summary = "导入表单定义（创建为新草稿，formKey 冲突按保存期校验拒绝）")
+    @OperationLog(module = "动态表单", value = "导入表单定义")
+    public String importDef(@Valid @RequestBody FormDefTransfer transfer) {
+        return formDesignService.importDef(transfer);
     }
 
     @SaCheckPermission("form:design:edit")

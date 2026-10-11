@@ -3,6 +3,7 @@ package com.lambda.fusion.form.design.service;
 import com.lambda.fusion.core.pagination.PageView;
 import com.lambda.fusion.form.design.model.FormDefPage;
 import com.lambda.fusion.form.design.model.FormDefSaveCommand;
+import com.lambda.fusion.form.design.model.FormDefTransfer;
 import com.lambda.fusion.form.design.model.FormDefView;
 import com.lambda.fusion.form.design.model.TableColumnView;
 import com.lambda.fusion.form.design.support.DataSourceCatalog;
@@ -20,6 +21,16 @@ public interface FormDesignService {
     FormDefView detail(String id);
 
     String save(FormDefSaveCommand command);
+
+    /**
+     * 导出表单定义（脱敏：不含数据源/拦截器等环境绑定字段，导入后需重新绑定）
+     */
+    FormDefTransfer exportDef(String id);
+
+    /**
+     * 导入表单定义：强制创建为新草稿（剥离载体中的环境绑定与乐观锁版本），冲突走保存期校验
+     */
+    String importDef(FormDefTransfer transfer);
 
     void update(String id, FormDefSaveCommand command);
 

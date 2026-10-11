@@ -100,6 +100,7 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 - **标记唯一字段**：发布期校验目标表存在覆盖该列（或与 `TENANT_ID` 联合）的唯一索引。
 - **过滤列索引**：发布期校验主从外键列与 SELF 树父列被某个索引的**最左列**直接覆盖（主子查询、级联与树解析的高频过滤列；平台管理模式查询不带租户条件，`(TENANT_ID, FK)` 组合索引不构成兜底）。
 - **数据写入拦截器**：实现 `FormDataInterceptor` 并注册为 bean，表单经 `INTERCEPTOR` 字段引用，写入前后生效。
+- **数据导入与定义迁移**：CSV 导入复用 create 全套校验（类型/必填/唯一/树父/拦截器），表头接受字段标识或唯一列标签，BOOL 兼容「是/否」；跨环境迁移用定义导出/导入——导出脱敏环境绑定字段，导入创建新草稿，重新绑定数据源/拦截器并发布即可。
 - **行级数据权限（datascope）**：`la_form_def.DATA_SCOPE_TYPE/COLUMN` 声明启用行级过滤的业务类型（0=组织架构，与 `la_datascopes.DOMAIN_TYPE` 同口径）与承载节点 id 的目标表物理列（发布期校验存在且可写）。读路径（page/export/tree/detail，含合计与计数）经 SQL 标记模式 `{列} IN ('permissions|{type}')` 由 `DataScopeInterceptor` 改写为 `la_datascopes` 授权子查询（owner 默认放行，无登录态查询为空——fail-closed）；update/delete/子表写经主行 `getById` 存在性校验隐式受控；create 未提供归属值时自动回填当前用户组织 id（无组织显式拒绝）。任务随单写入与待办标题解析走 `withoutDataScope()` 副本，按办理资格放行。
 - **流程节点填写（nodePerms）**：字段 `FORM_CONFIG.nodePerms`（`{nodeCode: {editable, show}}`）声明流程节点维度的填写权限——`editable=true` 该节点办理时可填写（随「通过」按节点白名单回写业务行并并入流程变量，与引擎办理同事务），`show=false` 该节点单据上隐藏，未配置只读可见。白名单口径：主表落库字段且画布可见；子表区块在办理端恒只读。审批在途（存在审批中的实例）时通用 update/delete/子表写端点被 `ProcessFormGuard` 拦截（`FORM_DATA_LOCKED`），节点级填写只走任务随单写入；退回/撤销/终态不锁（业务可改后重提）。
 
@@ -121,6 +122,8 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 | POST | `/{id}/publish`、`/{id}/enable`、`/{id}/disable` | 发布 / 启用 / 停用 |
 | POST | `/{id}/rollback/{version}` | 回滚到历史快照 |
 | PUT | `/{id}/route` 等 | 菜单挂载（经 authority 资源，独立于版本发布） |
+| GET | `/{id}/export` | 导出表单定义（脱敏 JSON：不含 datasourceId/interceptor 等环境绑定） |
+| POST | `/import` | 导入表单定义（强制创建为新草稿，环境绑定置空待重绑；formKey 冲突按保存期校验拒绝） |
 
 设计端权限码：`form:design:page/detail/add/edit/delete/table/preview/preview:write/publish/route`。
 
@@ -133,7 +136,8 @@ DynamicDataService → DynamicTableMapper（MyBatis 脚本，表名/列名白名
 | GET / POST / PUT / DELETE | `/{formKey}/...` | 详情 / 新增 / 编辑 / 删除（按级联策略） |
 | POST | `/{formKey}/submit` | 流程表单提交 |
 | GET/POST/PUT/DELETE | `/{formKey}/{id}/subs/{subFormKey}/**` | 台账式子表分页与增删改 |
-| POST | `/{formKey}/export` | CSV 导出 |
+| POST | `/{formKey}/export?format=csv\|xlsx` | 数据导出（缺省 csv；列=列表可见主表字段，label 表头；xlsx 经 hutool-poi 二进制写出） |
+| POST | `/{formKey}/import` | 数据导入（.csv/.xlsx/.xls；表头=字段标识或唯一标签，值按存储原值、BOOL 兼容是/否/true/false，Excel 数值/日期单元格自动转文本；事务内整批成功或整体回滚，行级错误报「第 N 行」；上限 `max-import-rows`） |
 | POST | `/upload` | FILE 字段上传（oss 在场时装配） |
 
 运行时按钮权限由路由资源（authority）统一授予，`FormApiPermissionProvider` 负责注册。
