@@ -25,6 +25,11 @@ public final class FormConstants {
         return value != null && IDENTIFIER_PATTERN.matcher(value).matches();
     }
 
+    /** 关联字段（lookup）配置 JSON 键 */
+    public static final String LOOKUP_KEY_TARGET = "targetFormKey";
+
+    public static final String LOOKUP_KEY_DISPLAY = "displayField";
+
     /** 数据导出格式 */
     public static final String EXPORT_FORMAT_CSV = "csv";
 
@@ -56,7 +61,19 @@ public final class FormConstants {
 
     /** 字段类型白名单 */
     public static final Set<String> FIELD_TYPES = Set.of(
-            "STRING", "TEXT", "INT", "DECIMAL", "DATE", "DATETIME", "DICT", "BOOL", "FILE", "ORG", "USER", "ROLE");
+            "STRING",
+            "TEXT",
+            "INT",
+            "DECIMAL",
+            "DATE",
+            "DATETIME",
+            "DICT",
+            "BOOL",
+            "FILE",
+            "ORG",
+            "USER",
+            "ROLE",
+            "LOOKUP");
 
     /** 查询操作符白名单 */
     public static final Set<String> QUERY_OPERATORS =

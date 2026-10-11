@@ -62,6 +62,10 @@ public class FormFieldEntity extends BaseEntity {
     @TableField("FORM_CONFIG")
     private String formConfig;
 
+    /** 关联字段配置 JSON：{targetFormKey, displayField}（仅 LOOKUP 类型） */
+    @TableField("LOOKUP_CONFIG")
+    private String lookupConfig;
+
     /** 是否落库（0=不入库/纯展示或计算字段；写入时剔除，展示时保留） */
     @TableField("PERSISTED")
     private Boolean persisted;

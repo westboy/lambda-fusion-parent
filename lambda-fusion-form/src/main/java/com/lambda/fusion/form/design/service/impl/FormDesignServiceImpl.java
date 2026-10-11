@@ -343,6 +343,14 @@ public class FormDesignServiceImpl extends AbstractCrudService<FormDefEntity, Fo
                         FormErrorCode.INVALID_PARAMETER, "列 " + item.getColumnName() + " 由引擎写入，仅可作为不落库的展示字段（落库=否）");
             }
             FieldConfigs.validate(objectMapper, item.getQueryConfig(), item.getListConfig(), item.getFormConfig());
+            // 关联字段：LOOKUP 必须携带成对配置；非 LOOKUP 字段不得携带（与编译期同口径）
+            if ("LOOKUP".equalsIgnoreCase(item.getFieldType())) {
+                if (FieldConfigs.toLookupConf(objectMapper, item.getLookupConfig()) == null) {
+                    throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "LOOKUP 字段缺少关联配置");
+                }
+            } else if (item.getLookupConfig() != null && !item.getLookupConfig().isBlank()) {
+                throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "非 LOOKUP 字段不应配置关联字段");
+            }
         }
         validateColumnsExist(command);
         if (command.getLogicDeleteColumn() != null

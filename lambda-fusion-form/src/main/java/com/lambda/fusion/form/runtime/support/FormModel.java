@@ -95,6 +95,7 @@ public record FormModel(
      * @param query 查询区配置
      * @param list 列表列配置
      * @param form 表单与详情配置
+     * @param lookup 关联字段配置（仅 LOOKUP 类型；目标表单 + 回显字段，均字段标识）
      * @param subFormKey 一对一扁平模式的从表归属（null=主表字段；从表字段不支持查询条件与排序）
      */
     public record FormField(
@@ -110,7 +111,8 @@ public record FormModel(
             String subFormKey,
             QueryConf query,
             ListConf list,
-            FormConf form) {
+            FormConf form,
+            LookupConf lookup) {
 
         /** 是否允许出现在查询白名单（从表字段不参与：查询 SQL 只在主表上执行） */
         public boolean queryable() {
@@ -213,6 +215,14 @@ public record FormModel(
      * @param show 该节点单据上是否展示（false=对该节点隐藏）
      */
     public record NodeConf(boolean editable, boolean show) {}
+
+    /**
+     * 关联字段配置：值存目标表单行 id，展示回显字段
+     *
+     * @param targetFormKey 目标表单标识
+     * @param displayField 目标表单回显字段标识
+     */
+    public record LookupConf(String targetFormKey, String displayField) {}
 
     /**
      * 主从关系（子表直连物理表，字段内嵌主表单）

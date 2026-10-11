@@ -81,7 +81,7 @@ public final class FormFieldValidator {
         Object normalized;
         try {
             normalized = switch (field.type()) {
-                case "STRING", "TEXT", "FILE", "ORG", "USER", "ROLE" -> requireString(value);
+                case "STRING", "TEXT", "FILE", "ORG", "USER", "ROLE", "LOOKUP" -> requireString(value);
                 case "DICT" -> value instanceof Number ? decimal(value).toPlainString() : requireString(value);
                 case "INT" -> decimal(value).longValueExact();
                 case "DECIMAL" -> decimal(value);

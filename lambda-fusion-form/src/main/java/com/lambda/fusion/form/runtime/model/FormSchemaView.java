@@ -193,6 +193,12 @@ public class FormSchemaView {
         @Schema(description = "从表归属（主从关系标识；null=主表字段）")
         private String subFormKey;
 
+        @Schema(description = "关联字段（LOOKUP）：目标表单标识")
+        private String lookupTarget;
+
+        @Schema(description = "关联字段（LOOKUP）：目标表单回显字段标识")
+        private String lookupDisplayField;
+
         @Schema(description = "顺序")
         private Integer sort;
     }

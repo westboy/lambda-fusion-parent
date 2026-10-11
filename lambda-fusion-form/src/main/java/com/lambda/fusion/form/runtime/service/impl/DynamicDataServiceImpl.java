@@ -80,6 +80,9 @@ public class DynamicDataServiceImpl implements DynamicDataService {
     /** 系统主数据（ORG/USER）字段的名称随行下发前缀：__bizLabel_{字段标识} */
     private static final String BIZ_LABEL_PREFIX = "__bizLabel_";
 
+    /** 关联字段（LOOKUP）回显名随行下发前缀 */
+    private static final String LOOKUP_LABEL_PREFIX = "__lookupLabel_";
+
     private final DynamicTableMapper dynamicTableMapper;
     private final QueryAstValidator astValidator;
     private final FormModelProvider modelProvider;
@@ -126,6 +129,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         attachSubRows(model, projected, false);
         attachTreeParentLabels(model, projected);
         attachBizLabels(model, projected);
+        attachLookupLabels(model, projected);
         return FormDataPageView.builder()
                 .pageNum(pageNum)
                 .pageSize(pageSize)
@@ -223,6 +227,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     records.stream().map(row -> project(model, row)).toList();
             attachTreeParentLabels(model, rows);
             attachBizLabels(model, rows);
+            attachLookupLabels(model, rows);
             consumer.accept(rows);
             offset += records.size();
             if (records.size() < 500) {
@@ -400,6 +405,12 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                 return label;
             }
         }
+        if (field.lookup() != null) {
+            Object label = row.get(LOOKUP_LABEL_PREFIX + field.name());
+            if (label != null) {
+                return label;
+            }
+        }
         if (isBizField(field)) {
             Object label = row.get(BIZ_LABEL_PREFIX + field.name());
             if (label instanceof List<?> list) {
@@ -504,6 +515,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         attachSubRows(model, List.of(result), true);
         attachTreeParentLabels(model, List.of(result));
         attachBizLabels(model, List.of(result));
+        attachLookupLabels(model, List.of(result));
         result.put(ETAG_KEY, etagOf(result));
         return result;
     }
@@ -520,6 +532,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         requireUniqueValues(model, row, null);
         // SELF 自关联树：上级引用须存在（空=根节点）；新增不可能成环（新 id 尚无人引用）
         requireValidTreeParent(model, null, row);
+        requireValidLookupValues(model, row);
         List<String> columns = new ArrayList<>();
         List<String> values = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
@@ -607,6 +620,7 @@ public class DynamicDataServiceImpl implements DynamicDataService {
         requireUniqueValues(model, row, id);
         // SELF 自关联树：提交了上级字段时校验存在性，且不得指向自身或子孙（防环）
         requireValidTreeParent(model, id, row);
+        requireValidLookupValues(model, row);
         Map<String, Object> params = new HashMap<>();
         params.put("id", id);
         List<String> assignments = new ArrayList<>();
@@ -780,7 +794,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         null,
                         field.query(),
                         field.list(),
-                        field.form()))
+                        field.form(),
+                        null))
                 .forEach(subFields::add);
         // 目标表契约要求主键映射：清单未显式导入主键列时，注入不落库的主键展示字段
         // （与主表清单的主键契约同口径）。设计时已按主键列导入的关系不重复注入，保证单一事实来源。
@@ -798,7 +813,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                     null,
                     new FormModel.QueryConf(false, null, null),
                     new FormModel.ListConf(true, null, null, null, null, false, null, 0),
-                    new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null)));
+                    new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null),
+                    null));
         }
         return new FormModel(
                 relation.subFormKey(),
@@ -887,7 +903,8 @@ public class DynamicDataServiceImpl implements DynamicDataService {
                         rules,
                         readonly,
                         // 子表区块不参与节点填写：从字段不带节点权限（渲染端子表恒只读）
-                        null));
+                        null),
+                null);
     }
 
     /** 按子表单标识定位主从关系；不存在即非法参数 */
@@ -1794,6 +1811,73 @@ public class DynamicDataServiceImpl implements DynamicDataService {
      * 非空时上级须存在；更新时（selfId 非空）上级不得是自身或自身子孙（子孙集解析沿用既有上限，
      * 超限按 FORM_TREE_DESCENDANT_LIMIT 拒绝）。create 传 selfId=null：新 id 尚无人引用，只校验存在性。
      */
+    /** 关联字段（LOOKUP）写入校验：提交了引用值的，目标表单中必须存在该行 */
+    private void requireValidLookupValues(FormModel model, Map<String, Object> row) {
+        for (FormField field : model.fields()) {
+            if (field.lookup() == null || !row.containsKey(field.column())) {
+                continue;
+            }
+            Object value = row.get(field.column());
+            if (value == null || value.toString().isBlank()) {
+                continue;
+            }
+            String id = value.toString();
+            FormModel targetModel = modelProvider.require(field.lookup().targetFormKey());
+            Map<String, Map<String, Object>> targetRows =
+                    findRows(targetModel, List.of(id), Set.of(field.lookup().displayField()));
+            if (!targetRows.containsKey(id)) {
+                throw new FormBusinessException(FormErrorCode.FORM_DATA_INVALID, field.name() + " 关联的记录不存在：" + id);
+            }
+        }
+    }
+
+    /**
+     * 关联字段回显：按引用 id 批量取目标表单行，随行下发 __lookupLabel_{字段}（未命中保留原 id）。
+     * 目标表单不可用（未发布/停用/已删）时跳过该字段回显，不阻断主表读取。
+     */
+    private void attachLookupLabels(FormModel model, List<Map<String, Object>> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        for (FormField field : model.fields()) {
+            if (field.lookup() == null || field.subFormKey() != null) {
+                continue;
+            }
+            Set<String> ids = rows.stream()
+                    .map(row -> row.get(field.name()))
+                    .filter(java.util.Objects::nonNull)
+                    .map(Object::toString)
+                    .filter(id -> !id.isBlank())
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            if (ids.isEmpty()) {
+                continue;
+            }
+            String key = LOOKUP_LABEL_PREFIX + field.name();
+            try {
+                FormModel targetModel =
+                        modelProvider.require(field.lookup().targetFormKey()).withoutDataScope();
+                Map<String, Map<String, Object>> targetRows =
+                        findRows(targetModel, ids, Set.of(field.lookup().displayField()));
+                rows.forEach(row -> {
+                    Object raw = row.get(field.name());
+                    if (raw == null) {
+                        return;
+                    }
+                    Map<String, Object> target = targetRows.get(raw.toString());
+                    Object display =
+                            target == null ? null : target.get(field.lookup().displayField());
+                    row.put(key, display == null ? raw.toString() : display);
+                });
+            } catch (FormBusinessException error) {
+                log.warn(
+                        "关联字段回显跳过：目标表单不可用 field={} target={} - {}",
+                        field.name(),
+                        field.lookup().targetFormKey(),
+                        error.getMessage());
+            }
+        }
+    }
+
     private void requireValidTreeParent(FormModel model, String selfId, Map<String, Object> row) {
         TreeConfig tree = model.tree();
         if (tree == null || !tree.selfRelation() || !row.containsKey(tree.parentColumn())) {

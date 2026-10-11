@@ -110,7 +110,8 @@ public class FormModelCompiler {
                             resolveQueryOp(type, query.getOp()),
                             query.getDefaultValue()),
                     compileListConf(list),
-                    compileFormConf(formConf)));
+                    compileFormConf(formConf),
+                    compileLookupConf(type, field)));
         }
         fields.forEach(FormFieldValidator::validateDefinition);
         fields.sort(Comparator.comparingInt(FormField::sort));
@@ -254,7 +255,8 @@ public class FormModelCompiler {
                                 field.form().props(),
                                 field.form().rules(),
                                 field.form().readonly(),
-                                field.form().nodePerms()));
+                                field.form().nodePerms()),
+                        null);
                 if (result == fields) {
                     result = new ArrayList<>(fields);
                 }
@@ -459,6 +461,23 @@ public class FormModelCompiler {
                 new FormModel.NodeConf(
                         Boolean.TRUE.equals(perm.getEditable()), !Boolean.FALSE.equals(perm.getShow()))));
         return Collections.unmodifiableMap(compiled);
+    }
+
+    /** LOOKUP 字段编译：lookupConfig 必须存在（目标表单/回显字段的跨表单校验在发布期，见 FormPublishServiceImpl） */
+    private FormModel.LookupConf compileLookupConf(String type, FormDefSnapshot.Field field) {
+        if (!"LOOKUP".equals(type)) {
+            if (field.getLookupConfig() != null && !field.getLookupConfig().isBlank()) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID, "非 LOOKUP 字段不应配置关联字段：" + field.getFieldName());
+            }
+            return null;
+        }
+        FormDefSnapshot.LookupConf conf = snapshotJson.readLookupConfig(field.getLookupConfig());
+        if (conf == null) {
+            throw new FormBusinessException(
+                    FormErrorCode.FORM_TABLE_INVALID, "LOOKUP 字段缺少关联配置：" + field.getFieldName());
+        }
+        return new FormModel.LookupConf(conf.getTargetFormKey(), conf.getDisplayField());
     }
 
     /** 查询操作符归一：显式值走白名单，缺省按字段类型取 like/eq */

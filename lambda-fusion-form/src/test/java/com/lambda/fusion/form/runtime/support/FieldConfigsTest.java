@@ -128,6 +128,28 @@ class FieldConfigsTest {
                 () -> FieldConfigs.toFormConf(objectMapper, "{\"nodePerms\":{\"node_b\":{\"editable\":\"yes\"}}}"));
     }
 
+    @Test
+    void parsesLookupConfig() {
+        FormDefSnapshot.LookupConf conf = FieldConfigs.toLookupConf(
+                objectMapper, "{\"targetFormKey\":\"customer\",\"displayField\":\"customerName\"}");
+
+        assertThat(conf.getTargetFormKey()).isEqualTo("customer");
+        assertThat(conf.getDisplayField()).isEqualTo("customerName");
+        assertThat(FieldConfigs.toLookupConf(objectMapper, null)).isNull();
+        assertThat(FieldConfigs.toLookupConf(objectMapper, " ")).isNull();
+    }
+
+    @Test
+    void rejectsIllegalLookupConfig() {
+        assertInvalid(() -> FieldConfigs.toLookupConf(objectMapper, "{\"targetFormKey\":\"customer\"}"));
+        assertInvalid(() -> FieldConfigs.toLookupConf(
+                objectMapper, "{\"targetFormKey\":\"customer\",\"displayField\":\"customer name\"}"));
+        assertInvalid(() ->
+                FieldConfigs.toLookupConf(objectMapper, "{\"targetFormKey\":\"design\",\"displayField\":\"name\"}"));
+        assertInvalid(() -> FieldConfigs.toLookupConf(
+                objectMapper, "{\"targetFormKey\":\"customer\",\"displayField\":\"name\",\"extra\":1}"));
+    }
+
     private static void assertInvalid(ThrowingCallable callable) {
         assertThatThrownBy(callable).isInstanceOf(FormBusinessException.class);
     }

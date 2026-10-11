@@ -78,6 +78,9 @@ public class FormDefSnapshot {
         /** 一对一扁平模式的从表归属（null=主表字段；FLAT 关系时为子表单 formKey） */
         private String subFormKey;
 
+        /** 关联字段配置 JSON：{targetFormKey, displayField}（仅 LOOKUP 类型） */
+        private String lookupConfig;
+
         private QueryConf query = new QueryConf();
         private ListConf list = new ListConf();
         private FormConf form = new FormConf();
@@ -138,6 +141,14 @@ public class FormDefSnapshot {
 
         /** 流程节点填写权限：nodeCode → {editable 可填写, show 是否展示}（仅流程表单消费） */
         private Map<String, NodePerm> nodePerms;
+    }
+
+    /** 关联字段配置（编译期再校验目标表单与回显字段） */
+    @Data
+    public static class LookupConf {
+        private String targetFormKey;
+
+        private String displayField;
     }
 
     /** 节点填写权限项（null 属性=该维度未配置） */

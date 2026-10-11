@@ -17,6 +17,8 @@ import com.lambda.fusion.form.design.model.FormVersionView;
 import com.lambda.fusion.form.design.service.FormPublishService;
 import com.lambda.fusion.form.exception.FormBusinessException;
 import com.lambda.fusion.form.exception.FormErrorCode;
+import com.lambda.fusion.form.runtime.support.FormModel;
+import com.lambda.fusion.form.runtime.support.FormModel.FormField;
 import com.lambda.fusion.form.runtime.support.FormModelCompiler;
 import com.lambda.fusion.form.runtime.support.FormModelProvider;
 import com.lambda.fusion.form.runtime.support.SnapshotJson;
@@ -79,6 +81,8 @@ public class FormPublishServiceImpl implements FormPublishService {
         targetTableContract.validateUniqueIndexes(compiledModel);
         // 外键/树父列是运行时高频过滤列：最左前缀索引缺失时拒绝发布（防读路径全表扫描）
         targetTableContract.validateRelationIndexes(compiledModel);
+        // 关联字段：目标表单必须已发布且回显字段可用（禁自引用；未发布目标先发布它再回来）
+        validateLookupFields(compiledModel);
         FormDefVersionEntity version = new FormDefVersionEntity();
         version.setFormId(id);
         version.setVersion(nextVersion);
@@ -114,6 +118,37 @@ public class FormPublishServiceImpl implements FormPublishService {
         }
         modelProvider.evictAfterCommit(def.getId());
         log.info("表单已停用：formKey={}", def.getFormKey());
+    }
+
+    /** 关联字段发布校验：禁自引用；目标表单已发布（require 兜底未发布/停用/缺失）；回显字段为主表落库且画布可见 */
+    private void validateLookupFields(FormModel model) {
+        for (FormField field : model.fields()) {
+            if (field.lookup() == null) {
+                continue;
+            }
+            String target = field.lookup().targetFormKey();
+            if (target.equals(model.formKey())) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联字段不能引用自身表单：" + field.name());
+            }
+            FormModel targetModel;
+            try {
+                targetModel = modelProvider.require(target);
+            } catch (FormBusinessException error) {
+                throw new FormBusinessException(FormErrorCode.FORM_TABLE_INVALID, "关联字段的目标表单不可用：" + target);
+            }
+            FormField display = targetModel.fields().stream()
+                    .filter(candidate -> candidate.name().equals(field.lookup().displayField()))
+                    .findFirst()
+                    .orElse(null);
+            if (display == null
+                    || !display.persisted()
+                    || display.subFormKey() != null
+                    || !display.form().show()) {
+                throw new FormBusinessException(
+                        FormErrorCode.FORM_TABLE_INVALID,
+                        "关联回显字段在目标表单不可用（须为主表落库且画布可见字段）：" + field.lookup().displayField());
+            }
+        }
     }
 
     @Override

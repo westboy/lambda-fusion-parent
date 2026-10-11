@@ -152,6 +152,10 @@ public class FormSchemaAssembler {
         schema.setReadonly(field.form().readonly());
         schema.setPersisted(field.persisted());
         schema.setSubFormKey(field.subFormKey());
+        if (field.lookup() != null) {
+            schema.setLookupTarget(field.lookup().targetFormKey());
+            schema.setLookupDisplayField(field.lookup().displayField());
+        }
         schema.setSort(field.sort());
         if (nodeCode != null) {
             resolveNodePerms(field, nodeCode, schema);

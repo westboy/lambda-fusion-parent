@@ -404,4 +404,19 @@
                     remarks="行级数据权限过滤列（目标表承载业务数据节点 id 的物理列，发布期校验存在）"/>
         </addColumn>
     </changeSet>
+    <!-- 关联字段（lookup）配置：目标表单 + 回显字段 -->
+    <changeSet id="lambda-fusion-form-202610110001" author="Zx">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="la_form_field"/>
+            <not>
+                <columnExists tableName="la_form_field" columnName="LOOKUP_CONFIG"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="la_form_field">
+            <column
+                    name="LOOKUP_CONFIG"
+                    type="varchar(512)"
+                    remarks="关联字段配置 JSON：{targetFormKey 目标表单, displayField 回显字段}（仅 LOOKUP 类型字段使用）"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

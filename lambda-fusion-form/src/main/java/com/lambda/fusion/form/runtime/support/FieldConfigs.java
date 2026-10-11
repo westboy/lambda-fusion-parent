@@ -137,6 +137,34 @@ public final class FieldConfigs {
         }
     }
 
+    public static final Set<String> LOOKUP_KEYS =
+            Set.of(FormConstants.LOOKUP_KEY_TARGET, FormConstants.LOOKUP_KEY_DISPLAY);
+
+    /** 关联字段配置：{targetFormKey, displayField}（null/blank 视为未配置） */
+    public static FormDefSnapshot.LookupConf toLookupConf(ObjectMapper mapper, String json) {
+        JsonNode node = readObject(mapper, json, LOOKUP_KEYS, "lookupConfig");
+        if (node == null) {
+            return null;
+        }
+        String targetFormKey = textValue(node.get(FormConstants.LOOKUP_KEY_TARGET), "lookupConfig.targetFormKey");
+        String displayField = textValue(node.get(FormConstants.LOOKUP_KEY_DISPLAY), "lookupConfig.displayField");
+        if (targetFormKey == null || displayField == null) {
+            throw new FormBusinessException(FormErrorCode.INVALID_PARAMETER, "lookupConfig 的目标表单与回显字段必须成对配置");
+        }
+        if (!FormConstants.isFormKey(targetFormKey)) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "lookupConfig.targetFormKey 非法：" + targetFormKey);
+        }
+        if (!FormConstants.isIdentifier(displayField)) {
+            throw new FormBusinessException(
+                    FormErrorCode.INVALID_PARAMETER, "lookupConfig.displayField 非法：" + displayField);
+        }
+        FormDefSnapshot.LookupConf conf = new FormDefSnapshot.LookupConf();
+        conf.setTargetFormKey(targetFormKey);
+        conf.setDisplayField(displayField);
+        return conf;
+    }
+
     /** 表单与详情配置：{show, component, props, rules, readonly, nodePerms} */
     public static FormDefSnapshot.FormConf toFormConf(ObjectMapper mapper, String json) {
         JsonNode node = readObject(mapper, json, FORM_KEYS, "formConfig");

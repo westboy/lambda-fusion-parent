@@ -38,6 +38,11 @@ public class SnapshotJson {
         }
     }
 
+    /** 关联字段配置解析（null/blank → null；成对与格式校验在 FieldConfigs） */
+    public FormDefSnapshot.LookupConf readLookupConfig(String json) {
+        return FieldConfigs.toLookupConf(objectMapper, json);
+    }
+
     public TreeConfig readTreeConfig(String json) {
         try {
             return objectMapper.readValue(json, new TypeReference<TreeConfig>() {});

@@ -194,6 +194,32 @@ class FormModelCompilerTest {
     }
 
     @Test
+    void compilesLookupFieldWithConfig() {
+        FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field field = field("customer", "CUSTOMER_ID", "LOOKUP", 1);
+        field.setLookupConfig("{\"targetFormKey\":\"customer\",\"displayField\":\"customerName\"}");
+        snapshot.setFields(List.of(field));
+
+        FormModel model = compiler.compile(snapshotJson.write(snapshot), 1L);
+
+        assertThat(model.fields().get(0).lookup().targetFormKey()).isEqualTo("customer");
+        assertThat(model.fields().get(0).lookup().displayField()).isEqualTo("customerName");
+    }
+
+    @Test
+    void rejectsLookupWithoutConfigAndNonLookupWithConfig() {
+        FormDefSnapshot missing = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        missing.setFields(List.of(field("customer", "CUSTOMER_ID", "LOOKUP", 1)));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(missing), 1L), FormErrorCode.FORM_TABLE_INVALID);
+
+        FormDefSnapshot extra = snapshot(FormConstants.FORM_TYPE_SINGLE);
+        FormDefSnapshot.Field field = field("personName", "PERSON_NAME", "STRING", 1);
+        field.setLookupConfig("{\"targetFormKey\":\"customer\",\"displayField\":\"customerName\"}");
+        extra.setFields(List.of(field));
+        assertErrorCode(() -> compiler.compile(snapshotJson.write(extra), 1L), FormErrorCode.FORM_TABLE_INVALID);
+    }
+
+    @Test
     void rejectsPartialDataScopeConfig() {
         FormDefSnapshot snapshot = snapshot(FormConstants.FORM_TYPE_SINGLE);
         snapshot.setFields(List.of(field("applicant", "applicant", "STRING", 1)));

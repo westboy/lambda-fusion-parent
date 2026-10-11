@@ -126,7 +126,8 @@ class FormUploadControllerTest {
                         null,
                         new FormModel.QueryConf(false, "eq", null),
                         new FormModel.ListConf(true, null, null, null, null, false, null, 0),
-                        new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null)))
+                        new FormModel.FormConf(true, null, Map.of(), Map.of(), false, null),
+                        null))
                 : List.of();
         return new FormModel(
                 "leave_demo",

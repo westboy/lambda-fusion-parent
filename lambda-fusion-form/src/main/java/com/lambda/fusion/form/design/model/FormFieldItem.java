@@ -59,6 +59,9 @@ public class FormFieldItem extends BaseVO<FormFieldEntity> {
     @Schema(description = "表单与详情配置 JSON：{show, component, props, rules, readonly}")
     private String formConfig;
 
+    /** 关联字段配置 JSON：{targetFormKey, displayField}（仅 LOOKUP 类型） */
+    private String lookupConfig;
+
     @Schema(description = "是否落库（默认 true；false=不入库/纯展示或计算字段）")
     private Boolean persisted = Boolean.TRUE;
 
