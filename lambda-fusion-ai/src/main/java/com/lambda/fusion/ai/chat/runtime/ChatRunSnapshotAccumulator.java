@@ -1,15 +1,20 @@
 package com.lambda.fusion.ai.chat.runtime;
 
+import com.lambda.fusion.ai.AiConstants.ChatRunStepKind;
 import com.lambda.fusion.ai.AiConstants.ChatRunToolStatus;
+import com.lambda.fusion.ai.chat.model.ChatRunStep;
 import com.lambda.fusion.ai.chat.runtime.agui.InterruptFactory;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotSanitizer;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.util.JsonUtils;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 运行中快照投影器：消费已经标准化的 AG-UI 事件，生成浏览器恢复所需的最小投影。
@@ -30,6 +35,25 @@ public final class ChatRunSnapshotAccumulator {
     /** 工具调用的可变中间状态；{@code args} 用 {@link StringBuilder} 原地累积。 */
     private final Map<String, ToolCallState> tools = new LinkedHashMap<>();
 
+    /** 下一个步骤序号（从 1 开始）：重建实例时从持久化水位续接。 */
+    private int nextStepNo = 1;
+
+    /** 已闭合、待持久化的步骤，按闭合顺序排列。 */
+    private final List<ChatRunStep> closedSteps = new ArrayList<>();
+
+    /** 当前文本步骤段的起始偏移；{@code -1} 表示无未闭合文本段。 */
+    private int textStepStart = -1;
+
+    private LocalDateTime textStepStartedAt;
+
+    /** 当前推理步骤段的起始偏移；{@code -1} 表示无未闭合推理段。 */
+    private int reasoningStepStart = -1;
+
+    private LocalDateTime reasoningStepStartedAt;
+
+    /** 已产出步骤的工具调用 ID，防止同一调用重复落步骤。 */
+    private final Set<String> steppedToolCallIds = new HashSet<>();
+
     private List<ChatRunSnapshot.ToolCall> pendingTools;
     private List<ChatRunSnapshot.PendingInput> pendingInputs;
     private final java.util.LinkedHashSet<String> generatedAttachmentIds = new java.util.LinkedHashSet<>();
@@ -40,6 +64,16 @@ public final class ChatRunSnapshotAccumulator {
      * @param snapshot 已持久化的执行快照
      */
     public ChatRunSnapshotAccumulator(ChatRunSnapshot snapshot) {
+        this(snapshot, 0);
+    }
+
+    /**
+     * 根据已有快照创建累加器，并从持久化水位续接步骤序号。
+     *
+     * @param snapshot      已持久化的执行快照
+     * @param stepWatermark 已持久化的最大步骤序号；新运行为 {@code 0}
+     */
+    public ChatRunSnapshotAccumulator(ChatRunSnapshot snapshot, int stepWatermark) {
         runId = snapshot.runId();
         aguiRunId = snapshot.aguiRunId();
         phaseNo = snapshot.phaseNo();
@@ -55,6 +89,7 @@ public final class ChatRunSnapshotAccumulator {
         pendingTools = snapshot.pendingTools();
         pendingInputs = snapshot.pendingInputs();
         generatedAttachmentIds.addAll(snapshot.generatedAttachmentIds());
+        nextStepNo = stepWatermark + 1;
     }
 
     /**
@@ -64,11 +99,12 @@ public final class ChatRunSnapshotAccumulator {
      * @param nextPhaseNo 新阶段号
      */
     public void beginPhase(String nextAguiRunId, int nextPhaseNo) {
+        // 先以旧阶段号闭合未完段落，保证边界步骤归属其发生的阶段，再推进阶段标识。
+        closeOpenMessages();
         aguiRunId = nextAguiRunId;
         phaseNo = nextPhaseNo;
         pendingTools = List.of();
         pendingInputs = List.of();
-        closeOpenMessages();
     }
 
     /**
@@ -80,6 +116,7 @@ public final class ChatRunSnapshotAccumulator {
     private void appendText(String messageId, String delta) {
         textMessageId = messageId;
         textOpen = true;
+        openTextStep();
         text.append(safe(delta));
     }
 
@@ -92,6 +129,7 @@ public final class ChatRunSnapshotAccumulator {
     private void appendReasoning(String messageId, String delta) {
         reasoningMessageId = messageId;
         reasoningOpen = true;
+        openReasoningStep();
         reasoning.append(safe(delta));
     }
 
@@ -111,11 +149,81 @@ public final class ChatRunSnapshotAccumulator {
     /** 关闭当前文本消息。 */
     private void closeText() {
         textOpen = false;
+        closeTextStep();
     }
 
     /** 关闭当前推理消息。 */
     private void closeReasoning() {
         reasoningOpen = false;
+        closeReasoningStep();
+    }
+
+    /** 开启新的文本步骤段：从当前文本尾部起记录，开始时间取首个内容事件到达时刻。 */
+    private void openTextStep() {
+        if (textStepStart >= 0) {
+            return;
+        }
+        textStepStart = text.length();
+        textStepStartedAt = LocalDateTime.now();
+    }
+
+    /** 开启新的推理步骤段：从当前推理尾部起记录，开始时间取首个内容事件到达时刻。 */
+    private void openReasoningStep() {
+        if (reasoningStepStart >= 0) {
+            return;
+        }
+        reasoningStepStart = reasoning.length();
+        reasoningStepStartedAt = LocalDateTime.now();
+    }
+
+    /** 闭合当前文本步骤段并产出 TEXT 步骤；空段不产出。 */
+    private void closeTextStep() {
+        if (textStepStart < 0) {
+            return;
+        }
+        String content = text.substring(textStepStart);
+        LocalDateTime startedAt = textStepStartedAt;
+        textStepStart = -1;
+        textStepStartedAt = null;
+        if (!content.isEmpty()) {
+            closedSteps.add(new ChatRunStep(
+                    nextStepNo++,
+                    phaseNo,
+                    ChatRunStepKind.TEXT.getCode(),
+                    content,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    startedAt,
+                    LocalDateTime.now()));
+        }
+    }
+
+    /** 闭合当前推理步骤段并产出 REASONING 步骤；空段不产出。 */
+    private void closeReasoningStep() {
+        if (reasoningStepStart < 0) {
+            return;
+        }
+        String content = reasoning.substring(reasoningStepStart);
+        LocalDateTime startedAt = reasoningStepStartedAt;
+        reasoningStepStart = -1;
+        reasoningStepStartedAt = null;
+        if (!content.isEmpty()) {
+            closedSteps.add(new ChatRunStep(
+                    nextStepNo++,
+                    phaseNo,
+                    ChatRunStepKind.REASONING.getCode(),
+                    content,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    startedAt,
+                    LocalDateTime.now()));
+        }
     }
 
     /** 应用一批已标准化的 AG-UI 事件。 */
@@ -173,6 +281,30 @@ public final class ChatRunSnapshotAccumulator {
     private void setToolResult(String toolCallId, String result) {
         upsertTool(toolCallId, null, null, result, ChatRunToolStatus.COMPLETE.getCode());
         sanitizeCompletedTool(toolCallId);
+        closeToolStep(toolCallId);
+    }
+
+    /** 工具结果到达后产出 TOOL_CALL 步骤；同一工具调用只产出一次。 */
+    private void closeToolStep(String toolCallId) {
+        if (!steppedToolCallIds.add(toolCallId)) {
+            return;
+        }
+        ToolCallState state = tools.get(toolCallId);
+        if (state == null) {
+            return;
+        }
+        closedSteps.add(new ChatRunStep(
+                nextStepNo++,
+                phaseNo,
+                ChatRunStepKind.TOOL_CALL.getCode(),
+                "",
+                toolCallId,
+                state.toolCallName,
+                state.args.toString(),
+                state.result,
+                state.status,
+                state.startedAt,
+                LocalDateTime.now()));
     }
 
     /** 仅更新工具调用状态。 */
@@ -294,6 +426,62 @@ public final class ChatRunSnapshotAccumulator {
         return !pendingTools.isEmpty() || !pendingInputs.isEmpty();
     }
 
+    /**
+     * 已闭合、待持久化的步骤快照（按闭合顺序排列）。
+     *
+     * @return 待刷写步骤
+     */
+    public List<ChatRunStep> pendingSteps() {
+        return List.copyOf(closedSteps);
+    }
+
+    /**
+     * 标记前 {@code count} 个步骤已持久化成功并从待刷写队列移除；写入期间新闭合的步骤保留在队尾。
+     *
+     * @param count 已成功持久化的步骤数
+     */
+    public void markStepsFlushed(int count) {
+        if (count > 0) {
+            closedSteps.subList(0, Math.min(count, closedSteps.size())).clear();
+        }
+    }
+
+    /**
+     * 终态收口：把尚未产出结果的工具调用按当前状态补记为步骤。挂起、被拒或仍在运行的工具调用
+     * 终态后不会再有结果事件，不补记会让时间线缺失这些调用；幂等，已产出步骤的工具调用跳过。
+     */
+    public void closeRemainingToolSteps() {
+        for (Map.Entry<String, ToolCallState> entry : tools.entrySet()) {
+            if (!steppedToolCallIds.add(entry.getKey())) {
+                continue;
+            }
+            ToolCallState state = entry.getValue();
+            if (isBlankState(state)) {
+                steppedToolCallIds.remove(entry.getKey());
+                continue;
+            }
+            closedSteps.add(new ChatRunStep(
+                    nextStepNo++,
+                    phaseNo,
+                    ChatRunStepKind.TOOL_CALL.getCode(),
+                    "",
+                    entry.getKey(),
+                    state.toolCallName,
+                    state.args.toString(),
+                    state.result,
+                    state.status,
+                    state.startedAt,
+                    LocalDateTime.now()));
+        }
+    }
+
+    /** 判断工具状态是否无任何可记录内容（无名称、无参数且无结果）。 */
+    private static boolean isBlankState(ToolCallState state) {
+        return (state.toolCallName == null || state.toolCallName.isBlank())
+                && state.args.isEmpty()
+                && (state.result == null || state.result.isBlank());
+    }
+
     /** 查找工具调用的当前状态；不存在时返回 {@code null}。 */
     private ToolCallState findTool(String toolCallId) {
         return tools.get(toolCallId);
@@ -311,6 +499,9 @@ public final class ChatRunSnapshotAccumulator {
      */
     private void upsertTool(String toolCallId, String toolCallName, String args, String result, String status) {
         ToolCallState current = tools.computeIfAbsent(toolCallId, id -> new ToolCallState());
+        if (current.startedAt == null) {
+            current.startedAt = LocalDateTime.now();
+        }
         if (toolCallName != null) {
             current.toolCallName = safe(toolCallName);
         }
@@ -341,6 +532,8 @@ public final class ChatRunSnapshotAccumulator {
         private final StringBuilder args = new StringBuilder();
         private String result;
         private String status;
+        /** 首次出现（事件到达）时刻，作为工具步骤的开始时间。 */
+        private LocalDateTime startedAt;
 
         static ToolCallState fromRecord(ChatRunSnapshot.ToolCall record) {
             ToolCallState state = new ToolCallState();

@@ -16,6 +16,7 @@ import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.chat.service.ChatService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
 import java.util.concurrent.Executors;
@@ -42,6 +43,7 @@ class ChatControllerAsyncTest {
                 chatMessageService,
                 chatService,
                 chatRunService,
+                mock(ChatRunStepService.class),
                 properties,
                 new TaskExecutorAdapter(Executors.newVirtualThreadPerTaskExecutor()));
         return MockMvcBuilders.standaloneSetup(controller).build();

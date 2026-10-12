@@ -1045,4 +1045,52 @@
         </preConditions>
         <sql>ALTER TABLE `ai_chat_message` MODIFY COLUMN `id` BIGINT NOT NULL COMMENT '主键';</sql>
     </changeSet>
+
+    <!-- ========== 对话运行执行步骤（推理/文本/工具时间线，增量写入） ========== -->
+    <changeSet id="lambda-ai-2026101200010" author="Jin">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="ai_chat_run_step"/>
+            </not>
+        </preConditions>
+        <createTable tableName="ai_chat_run_step" remarks="对话运行执行步骤">
+            <column name="id" type="bigint" autoIncrement="true" remarks="主键">
+                <constraints primaryKey="true" primaryKeyName="pk_ai_chat_run_step_id" nullable="false"/>
+            </column>
+            <column name="tenant_id" type="varchar(32)" remarks="租户ID"/>
+            <column name="session_id" type="varchar(32)" remarks="会话ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="run_id" type="varchar(32)" remarks="运行ID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="phase_no" type="int" remarks="执行阶段号"/>
+            <column name="step_no" type="int" remarks="Run内步骤序号，从1开始">
+                <constraints nullable="false"/>
+            </column>
+            <column name="kind" type="varchar(16)" remarks="步骤类型: reasoning/text/tool_call">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content" type="longtext" remarks="步骤正文(reasoning/text)"/>
+            <column name="tool_call_id" type="varchar(64)" remarks="工具调用ID"/>
+            <column name="tool_name" type="varchar(128)" remarks="工具名称"/>
+            <column name="tool_args" type="text" remarks="工具参数JSON(已脱敏截断)"/>
+            <column name="tool_result" type="text" remarks="工具结果JSON(已脱敏截断)"/>
+            <column name="status" type="varchar(16)" remarks="工具调用状态"/>
+            <column name="started_at" type="datetime" remarks="步骤开始时间"/>
+            <column name="finished_at" type="datetime" remarks="步骤结束时间"/>
+            <column name="created_at" type="datetime" remarks="创建时间"/>
+        </createTable>
+        <addUniqueConstraint
+                tableName="ai_chat_run_step"
+                constraintName="uk_ai_chat_run_step_no"
+                columnNames="run_id,step_no"/>
+        <createIndex tableName="ai_chat_run_step" indexName="idx_ai_chat_run_step_session">
+            <column name="session_id"/>
+            <column name="run_id"/>
+        </createIndex>
+        <createIndex tableName="ai_chat_run_step" indexName="idx_ai_chat_run_step_tenant">
+            <column name="tenant_id"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

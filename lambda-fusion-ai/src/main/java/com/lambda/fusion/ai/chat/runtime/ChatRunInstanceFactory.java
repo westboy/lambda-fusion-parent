@@ -4,8 +4,10 @@ import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
+import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.gateway.FusionSubagentGateway;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
@@ -34,6 +36,7 @@ public class ChatRunInstanceFactory {
     private final ChatRunEventStore eventStore;
     private final AgentFactory agentFactory;
     private final WorkspaceAuditRecorder workspaceAuditRecorder;
+    private final ChatRunStepService stepService;
     private final ObjectProvider<FusionSubagentGateway> subagentGatewayProvider;
     private final AiProperties properties;
     /**
@@ -84,14 +87,15 @@ public class ChatRunInstanceFactory {
         return newInstance(run, session, scheduler, null);
     }
 
-    /** 组装实例的公共部分：解码持久化快照，聚合所有构造依赖。 */
+    /** 组装实例的公共部分：解码持久化快照，从步骤水位续接序号，聚合所有构造依赖。 */
     private ChatRunInstance newInstance(
             ChatRunEntity run,
             ChatSessionEntity session,
             ScheduledExecutorService scheduler,
             AgentExecutionAdapter agentExecution) {
+        ChatRunSnapshot snapshot = ChatRunSnapshotCodec.decode(run.getSnapshotJson());
         ChatRunSnapshotAccumulator chatExecutionSnapshotBuilder =
-                new ChatRunSnapshotAccumulator(ChatRunSnapshotCodec.decode(run.getSnapshotJson()));
+                new ChatRunSnapshotAccumulator(snapshot, stepService.maxStepNo(run.getId()));
         return new ChatRunInstance(
                 runService,
                 eventStore,
@@ -99,6 +103,7 @@ public class ChatRunInstanceFactory {
                 scheduler,
                 blockingExecutor,
                 workspaceAuditRecorder,
+                stepService,
                 run,
                 session,
                 agentExecution,

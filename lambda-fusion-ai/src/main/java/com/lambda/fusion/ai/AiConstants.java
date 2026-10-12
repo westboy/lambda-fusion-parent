@@ -723,6 +723,17 @@ public interface AiConstants {
         private final String code;
     }
 
+    /** 对话运行步骤类型，持久化字面量为小写 code。 */
+    @Getter
+    @AllArgsConstructor
+    enum ChatRunStepKind {
+        REASONING("reasoning"),
+        TEXT("text"),
+        TOOL_CALL("tool_call");
+
+        private final String code;
+    }
+
     /** 对话附件来源，持久化字面量为小写 code。 */
     @Getter
     @AllArgsConstructor

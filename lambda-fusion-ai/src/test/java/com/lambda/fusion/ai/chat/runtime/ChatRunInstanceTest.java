@@ -22,6 +22,7 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEvent;
 import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.agui.event.AguiEvent;
@@ -70,6 +71,7 @@ class ChatRunInstanceTest {
                 scheduler,
                 (Runnable task) -> task.run(),
                 mock(WorkspaceAuditRecorder.class),
+                mock(ChatRunStepService.class),
                 run,
                 session(),
                 null,

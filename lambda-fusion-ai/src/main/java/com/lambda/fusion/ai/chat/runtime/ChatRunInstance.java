@@ -5,6 +5,7 @@ import com.lambda.fusion.ai.AiConstants.ChatRunFinishReason;
 import com.lambda.fusion.ai.AiConstants.ChatRunStatus;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.ChatRunFinalizationResult;
+import com.lambda.fusion.ai.chat.model.ChatRunStep;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
 import com.lambda.fusion.ai.chat.model.ConfirmTransition;
 import com.lambda.fusion.ai.chat.model.SubmitToolInput;
@@ -20,6 +21,7 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotSanitizer;
 import com.lambda.fusion.ai.chat.runtime.validator.ConfirmationValidator;
 import com.lambda.fusion.ai.chat.runtime.validator.ToolInputValidator;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
@@ -74,6 +76,7 @@ public final class ChatRunInstance {
 
     private final ChatRunFinalizer chatExecutionFinalizer;
     private final AgentStreamLifecycle agentStreamLifecycle;
+    private final ChatRunStepService stepService;
 
     private final ChatRunEntity run;
     private final ChatSessionEntity session;
@@ -120,6 +123,7 @@ public final class ChatRunInstance {
      * @param scheduler              定时任务执行器（只承载计时）
      * @param blockingExecutor       阻塞工作执行器（DB 提交、工作区审计）
      * @param workspaceAuditRecorder 工作区审计记录器
+     * @param stepService            执行步骤存储服务
      * @param run                    运行实体
      * @param session                会话实体
      * @param agentExecutionAdapter  Agent 执行适配器；仅执行终结流程时可为 {@code null}
@@ -132,6 +136,7 @@ public final class ChatRunInstance {
             ScheduledExecutorService scheduler,
             Executor blockingExecutor,
             WorkspaceAuditRecorder workspaceAuditRecorder,
+            ChatRunStepService stepService,
             ChatRunEntity run,
             ChatSessionEntity session,
             AgentExecutionAdapter agentExecutionAdapter,
@@ -142,6 +147,7 @@ public final class ChatRunInstance {
         this.scheduler = scheduler;
         this.blockingExecutor = blockingExecutor;
         this.workspaceAuditRecorder = workspaceAuditRecorder;
+        this.stepService = stepService;
         this.run = run;
         this.session = session;
         this.agentExecutionAdapter = agentExecutionAdapter;
@@ -545,6 +551,8 @@ public final class ChatRunInstance {
             pendingInteractionEvents = null;
             return;
         }
+        // 待交互可能长时间等待用户决策：先把已闭合步骤落库，避免节点故障丢失本阶段时间线。
+        flushClosedSteps(accumulator.pendingSteps());
         try {
             eventStore.appendAll(run.getId(), run.getAguiRunId(), events);
         } catch (RuntimeException publishFailure) {
@@ -598,6 +606,30 @@ public final class ChatRunInstance {
             // 单事件超过本地缓冲容量：丢弃本次实时推送（快照已先行应用，重连后经 bootstrap 补齐），
             // 不能让一个超大事件把整条 Run 打死。
             log.warn("Run事件超过本地缓冲容量，已丢弃实时推送: runId={}", run.getId());
+        }
+    }
+
+    /**
+     * 把已闭合步骤落库：调用方在实例锁内收集快照，此处锁外写入，成功后回锁移除已刷写前缀；
+     * 失败保留队列，由后续检查点或终态收口重试。终态路径的重试机会有限，仍失败时放弃并告警——
+     * 步骤是补充事实，不能阻塞终态提交。
+     */
+    private void flushClosedSteps(List<ChatRunStep> steps) {
+        if (steps.isEmpty()) {
+            return;
+        }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                stepService.appendSteps(run.getSessionId(), run.getId(), steps);
+                synchronized (this) {
+                    accumulator.markStepsFlushed(steps.size());
+                }
+                return;
+            } catch (RuntimeException flushFailure) {
+                if (attempt == 2) {
+                    log.warn("Run执行步骤落库失败，交由后续刷写点重试: runId={}, count={}", run.getId(), steps.size(), flushFailure);
+                }
+            }
         }
     }
 
@@ -730,6 +762,7 @@ public final class ChatRunInstance {
     private ChatRunFinalizationResult finalizeTerminal(
             ChatRunStatus status, ChatRunFinishReason reason, ChatRunFailureCode errorCode, String errorMessage) {
         ChatRunSnapshot snapshot;
+        List<ChatRunStep> stepsToFlush;
         synchronized (this) {
             if (terminal || finalizeCommitInProgress) {
                 return null;
@@ -747,6 +780,9 @@ public final class ChatRunInstance {
             // 必须保证检查点读到的是已关闭快照，而非「事件已关闭、快照仍打开」。
             accumulator.apply(closeEvents);
             accumulator.closeOpenMessages();
+            // 终态后不会再有工具结果事件：把未决工具调用按当前状态补记为步骤，随后与已闭合步骤一并落库。
+            accumulator.closeRemainingToolSteps();
+            stepsToFlush = accumulator.pendingSteps();
             try {
                 appendAll(closeEvents);
             } catch (RuntimeException closeEventFailure) {
@@ -754,6 +790,7 @@ public final class ChatRunInstance {
             }
             snapshot = accumulator.buildSnapshot();
         }
+        flushClosedSteps(stepsToFlush);
         ChatRunFinalizationResult result;
         try {
             result = chatExecutionFinalizer.commitTerminal(
@@ -966,12 +1003,15 @@ public final class ChatRunInstance {
         ChatRunSnapshot snapshot;
         long expectedVersion;
         long generationAtBuild;
+        List<ChatRunStep> stepsToFlush;
         synchronized (this) {
             cancelCheckpointTask();
             snapshot = accumulator.buildSnapshot();
             expectedVersion = persistedSnapshotVersion;
             generationAtBuild = snapshotGeneration;
+            stepsToFlush = accumulator.pendingSteps();
         }
+        flushClosedSteps(stepsToFlush);
         if (runService.checkpoint(run, snapshot, expectedVersion)) {
             synchronized (this) {
                 persistedSnapshotVersion = expectedVersion + 1;

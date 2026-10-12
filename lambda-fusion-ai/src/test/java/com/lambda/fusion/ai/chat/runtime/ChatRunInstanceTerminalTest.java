@@ -24,6 +24,7 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
@@ -150,6 +151,7 @@ class ChatRunInstanceTerminalTest {
                     scheduler,
                     (Runnable task) -> task.run(),
                     workspaceAuditRecorder,
+                    mock(ChatRunStepService.class),
                     run,
                     session(),
                     adapter,
@@ -315,6 +317,7 @@ class ChatRunInstanceTerminalTest {
                 scheduler,
                 (Runnable task) -> task.run(),
                 workspaceAuditRecorder,
+                mock(ChatRunStepService.class),
                 run,
                 session(),
                 adapter,

@@ -24,6 +24,7 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 | --- | --- | --- |
 | AgentScope AgentState / memory | Agent 执行上下文、模型工作记忆、ASKING/HITL 状态 | 由 AgentScope 管理 |
 | `ai_chat_message` | 用户可见的产品对话历史、附件关联、权限查询和审计 | 长期保存 |
+| `ai_chat_run_step` | 执行步骤时间线：推理段/文本段/工具调用按发生顺序的持久化事实 | 长期保存；保留期/归档策略按数据量增长另行决策 |
 | `ai_chat_run` | 一次请求的业务身份、幂等键、四态终态和运行中 UI 投影 | Run 记录长期保存；快照仅 RUNNING |
 | 当前 JVM 事件缓冲 | 把实时 AG-UI 事件送给当前订阅者，并消除“快照后、订阅前”的极短竞态 | 仅进程内；终态后短期释放 |
 | 当前 JVM 阶段句柄 | 本地 stop、内存引导与容量释放；不是 Run 注册表或所有权记录 | 单个 Agent 源流及尾处理结束即释放 |
@@ -34,6 +35,12 @@ HITL 暂停是一个窄例外：AgentScope 已经把 `ASKING` 状态持久化，
 `snapshot_json` 也不是第三份对话记录。它只保存尚未完成的助手气泡投影：已生成文本、推理文本、
 工具展示状态和待确认工具。Run 进入 `COMPLETED`、`STOPPED` 或 `FAILED` 后，助手结果已经写入
 `ai_chat_message`，必须清空快照。
+
+`ai_chat_run_step` 与 `ai_chat_message` 分工：消息表只保存最终回复文本与工具展示汇总，分页热路径
+不携带推理正文；步骤表按发生顺序保存推理段、文本段与工具调用（工具内容沿用快照脱敏截断），供
+前端刷新后懒加载“思考过程”时间线。步骤由执行实例在检查点、待交互提交与终态收口时增量写入，
+`(run_id, step_no)` 唯一键幂等；实例重建时从已持久化最大 `step_no` 水位续接序号。整段思考文本
+不写入消息表，也不落快照之外的第二份汇总。
 
 ## 3. 状态与执行边界
 
@@ -122,6 +129,10 @@ Tomcat 工作线程。
 - 清空 `snapshot_json`；
 - 更新会话最后消息时间。
 
+终态提交前，执行实例先闭合剩余步骤：文本/推理段随消息关闭产出步骤，尚未产出结果的工具调用
+（挂起、被拒、仍在运行）按当前状态补记，随后与已闭合步骤一并幂等落库。步骤落库失败不阻塞
+终态提交，由后续刷写点有限重试后放弃。FAILED/STOPPED 的运行同样留下已发生的步骤，供排障。
+
 事务成功后在当前 JVM 发布一个 `RUN_FINISHED` 或 `RUN_ERROR`。终态事件不持久化；终态恢复直接
 读取 Run 状态与业务消息，不依赖事件重放。
 
@@ -196,6 +207,7 @@ Tomcat 工作线程。
 | 接口 | 语义 |
 | --- | --- |
 | `POST /{id}/chat` | 幂等创建或查看同一请求的 Run，并打开事件流 |
+| `GET /{id}/messages/{messageId}/steps` | 按助手消息反查 Run 的执行步骤时间线（会话归属校验，按 stepNo 升序懒加载） |
 | `GET /{id}/runs/active` | 返回唯一 `RUNNING` Run；没有则为空 |
 | `GET /{id}/runs/{runId}` | 返回业务状态、phase 和待确认工具投影 |
 | `GET /{id}/runs/{runId}/events` | 总是先引导当前运行中气泡，再尝试接本地实时事件；无查询参数 |
@@ -244,7 +256,8 @@ Tomcat 工作线程。
 | `ChatRunInstance` | 执行实例 | 单条 Run 的状态机：事件流、快照、检查点、终态提交 |
 | `ChatRunInstanceFactory` | 实例工厂 | 组装带 Agent 的实例或纯终结实例 |
 | `ChatRunFinalizer` | 终结器 | 终态事务提交与本地终态事件发布 |
-| `ChatRunSnapshotAccumulator` | 快照累加器 | 把 AG-UI 事件投影成浏览器可恢复快照 |
+| `ChatRunSnapshotAccumulator` | 快照累加器 | 把 AG-UI 事件投影成浏览器可恢复快照，并产出闭合的执行步骤 |
+| `ChatRunStepService` | 步骤存储 | 执行步骤时间线的幂等落库、水位查询与按助手消息懒加载 |
 | `ChatRunEventStore` | 事件存储 | 进程内事件窗口与订阅广播（非持久化） |
 | `ChatRunReconciler` | 对账任务 | 孤儿运行与待交互超时的周期收敛（只走终态 CAS） |
 | `ChatRunStateService` | 状态机面 | Run 的持久化状态迁移（checkpoint/advanceConfirmation/finalizeExecution） |

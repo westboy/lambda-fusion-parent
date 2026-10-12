@@ -6,6 +6,7 @@ import com.lambda.cloud.logger.annotation.OperationLog;
 import com.lambda.fusion.ai.AiProperties;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatRun;
+import com.lambda.fusion.ai.chat.model.ChatRunStep;
 import com.lambda.fusion.ai.chat.model.ChatSessionPage;
 import com.lambda.fusion.ai.chat.model.ConfirmToolCall;
 import com.lambda.fusion.ai.chat.model.CreateSession;
@@ -15,6 +16,7 @@ import com.lambda.fusion.ai.chat.model.SubmitToolInput;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.chat.service.ChatService;
 import com.lambda.fusion.ai.chat.service.ChatSessionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +24,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.concurrent.Callable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -48,6 +51,7 @@ public class ChatController {
     private final ChatMessageService chatMessageService;
     private final ChatService chatService;
     private final ChatRunService chatRunService;
+    private final ChatRunStepService chatRunStepService;
     private final AiProperties properties;
     private final AsyncTaskExecutor chatWebAsyncExecutor;
 
@@ -90,6 +94,15 @@ public class ChatController {
             @Parameter(description = "页大小，默认 50，最大 200") @RequestParam(name = "limit", required = false)
                     Integer limit) {
         return chatMessageService.listBySession(id, before, limit);
+    }
+
+    @SaCheckPermission(value = "ai:chat-session:run-get")
+    @Operation(summary = "查询助手消息的执行步骤时间线(推理/文本/工具，懒加载)")
+    @GetMapping("/{id}/messages/{messageId}/steps")
+    public List<ChatRunStep> messageSteps(
+            @Parameter(description = "会话ID", required = true) @PathVariable String id,
+            @Parameter(description = "助手消息ID", required = true) @PathVariable Long messageId) {
+        return chatRunStepService.listByMessage(id, messageId);
     }
 
     @SaCheckPermission(value = "ai:chat-session:chat")

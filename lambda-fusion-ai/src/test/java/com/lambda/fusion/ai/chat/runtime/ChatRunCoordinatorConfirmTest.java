@@ -23,6 +23,7 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.ai.exception.AiErrorCode;
 import com.lambda.fusion.ai.runtime.AgentFactory;
@@ -76,6 +77,7 @@ class ChatRunCoordinatorConfirmTest {
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
+                mock(ChatRunStepService.class),
                 mock(ObjectProvider.class),
                 properties);
         coordinator = new ChatRunCoordinator(

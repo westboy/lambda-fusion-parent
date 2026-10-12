@@ -28,6 +28,7 @@ import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.runtime.AgentFactory;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.ReActAgent;
@@ -78,6 +79,7 @@ class ChatRunCoordinatorStartTest {
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
+                mock(ChatRunStepService.class),
                 mock(ObjectProvider.class),
                 properties);
         coordinator = new ChatRunCoordinator(
@@ -207,6 +209,7 @@ class ChatRunCoordinatorStartTest {
                 eventStore,
                 agentFactory,
                 mock(WorkspaceAuditRecorder.class),
+                mock(ChatRunStepService.class),
                 mock(ObjectProvider.class),
                 properties);
         coordinator = new ChatRunCoordinator(

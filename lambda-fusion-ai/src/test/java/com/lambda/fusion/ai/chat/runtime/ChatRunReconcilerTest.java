@@ -23,6 +23,7 @@ import com.lambda.fusion.ai.chat.runtime.event.ChatRunEventStore;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshot;
 import com.lambda.fusion.ai.chat.runtime.snapshot.ChatRunSnapshotCodec;
 import com.lambda.fusion.ai.chat.service.ChatRunStateService;
+import com.lambda.fusion.ai.chat.service.ChatRunStepService;
 import com.lambda.fusion.ai.runtime.workspace.WorkspaceAuditRecorder;
 import io.agentscope.core.agui.event.AguiEvent;
 import java.time.LocalDateTime;
@@ -235,6 +236,7 @@ class ChatRunReconcilerTest {
                 instanceScheduler,
                 (Runnable task) -> task.run(),
                 workspaceAuditRecorder,
+                mock(ChatRunStepService.class),
                 run,
                 session,
                 executionAdapter,
