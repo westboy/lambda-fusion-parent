@@ -42,6 +42,12 @@ public class ChatMessageView {
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 
+    @Schema(description = "归属运行的开始时间（助手消息经 Run 反查；前端收起态总耗时展示用）")
+    private LocalDateTime runStartedAt;
+
+    @Schema(description = "归属运行的结束时间")
+    private LocalDateTime runFinishedAt;
+
     @Schema(description = "该消息的附件列表")
     private List<ChatAttachmentView> attachments;
 

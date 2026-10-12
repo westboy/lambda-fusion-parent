@@ -3,11 +3,13 @@ package com.lambda.fusion.ai.chat.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lambda.fusion.ai.chat.mapper.ChatMessageMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatMessageView;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
+import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
@@ -21,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -41,6 +44,7 @@ public class ChatMessageServiceImpl implements ChatMessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatAttachmentService chatAttachmentService;
+    private final ChatRunMapper chatRunMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -93,6 +97,7 @@ public class ChatMessageServiceImpl implements ChatMessageService {
                                 .map(chatAttachmentService::toView)
                                 .toList()))
                 .toList();
+        enrichWithRunTimes(sessionId, ascending, messages);
 
         ChatMessagePage result = new ChatMessagePage();
         result.setMessages(messages);
@@ -107,6 +112,35 @@ public class ChatMessageServiceImpl implements ChatMessageService {
             return DEFAULT_PAGE_SIZE;
         }
         return Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
+    }
+
+    /**
+     * 助手消息反查归属运行的起止时间并填充视图：run 两列建表即有、终态必填，
+     * 前端收起态即可展示总耗时，不依赖步骤懒加载。一条会话内一条索引查询。
+     */
+    private void enrichWithRunTimes(String sessionId, List<ChatMessageEntity> entities, List<ChatMessageView> views) {
+        List<Long> assistantMessageIds = entities.stream()
+                .filter(m -> "assistant".equals(m.getRole()) && m.getId() != null)
+                .map(ChatMessageEntity::getId)
+                .toList();
+        if (assistantMessageIds.isEmpty()) {
+            return;
+        }
+        Map<Long, ChatRunEntity> runByMessageId = chatRunMapper
+                .selectList(new LambdaQueryWrapper<ChatRunEntity>()
+                        .eq(ChatRunEntity::getSessionId, sessionId)
+                        .in(ChatRunEntity::getAssistantMessageId, assistantMessageIds))
+                .stream()
+                .filter(run -> run.getAssistantMessageId() != null)
+                .collect(Collectors.toMap(
+                        ChatRunEntity::getAssistantMessageId, Function.identity(), (first, second) -> first));
+        for (ChatMessageView view : views) {
+            ChatRunEntity run = view.getId() == null ? null : runByMessageId.get(view.getId());
+            if (run != null) {
+                view.setRunStartedAt(run.getStartedAt());
+                view.setRunFinishedAt(run.getFinishedAt());
+            }
+        }
     }
 
     @Override

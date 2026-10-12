@@ -7,19 +7,26 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lambda.fusion.ai.chat.mapper.ChatMessageMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatMessageView;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
+import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.exception.AiBusinessException;
 import com.lambda.fusion.core.identity.UserDetails;
 import com.lambda.fusion.core.utils.AuthUtils;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -28,9 +35,19 @@ import org.mockito.Mockito;
 /** 会话消息历史游标分页测试。 */
 class ChatMessageServiceImplTest {
 
+    @BeforeAll
+    static void initMybatisLambdaCache() {
+        // 纯 Mockito 环境没有 MyBatis-Plus 启动过程，Lambda wrapper 依赖的实体元数据
+        // 缓存需显式初始化，否则 ChatRunEntity::assistantMessageId 之类的列解析会抛异常。
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, ChatMessageEntity.class);
+        TableInfoHelper.initTableInfo(assistant, ChatRunEntity.class);
+    }
+
     private ChatMessageMapper messageMapper;
     private ChatSessionMapper sessionMapper;
     private ChatAttachmentService attachmentService;
+    private ChatRunMapper runMapper;
     private ChatMessageServiceImpl service;
 
     @BeforeEach
@@ -38,7 +55,8 @@ class ChatMessageServiceImplTest {
         messageMapper = mock(ChatMessageMapper.class);
         sessionMapper = mock(ChatSessionMapper.class);
         attachmentService = mock(ChatAttachmentService.class);
-        service = new ChatMessageServiceImpl(messageMapper, sessionMapper, attachmentService);
+        runMapper = mock(ChatRunMapper.class);
+        service = new ChatMessageServiceImpl(messageMapper, sessionMapper, attachmentService, runMapper);
 
         ChatSessionEntity session = new ChatSessionEntity();
         session.setId("session-1");
@@ -129,17 +147,47 @@ class ChatMessageServiceImplTest {
         assertThat(assistant.getToolCall()).isEqualTo("tool-result");
     }
 
+    @Test
+    void shouldEnrichAssistantMessagesWithRunTimes() {
+        ChatMessageEntity user = message(1L, "user");
+        ChatMessageEntity assistant = message(2L, "assistant");
+        when(messageMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(assistant, user)));
+        ChatRunEntity run = new ChatRunEntity();
+        run.setAssistantMessageId(2L);
+        run.setStartedAt(LocalDateTime.of(2026, 10, 12, 10, 0, 0));
+        run.setFinishedAt(LocalDateTime.of(2026, 10, 12, 10, 0, 12));
+        when(runMapper.selectList(any())).thenReturn(List.of(run));
+
+        ChatMessagePage page = withAuth(() -> service.listBySession("session-1", null, 5));
+
+        ChatMessageView assistantView = viewById(page, 2L);
+        assertThat(assistantView.getRunStartedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
+        assertThat(assistantView.getRunFinishedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0, 12));
+        assertThat(viewById(page, 1L).getRunStartedAt()).isNull();
+    }
+
+    private static ChatMessageView viewById(ChatMessagePage page, long id) {
+        return page.getMessages().stream()
+                .filter(view -> view.getId() == id)
+                .findFirst()
+                .orElseThrow();
+    }
+
     /** 按 ID 倒序构造消息列表，模拟 orderByDesc 查询结果。 */
     private static List<ChatMessageEntity> messages(long... idsDesc) {
         List<ChatMessageEntity> list = new ArrayList<>();
         for (long id : idsDesc) {
-            ChatMessageEntity message = new ChatMessageEntity();
-            message.setId(id);
-            message.setSessionId("session-1");
-            message.setRole("user");
-            message.setContent("m" + id);
-            list.add(message);
+            list.add(message(id, "user"));
         }
         return list;
+    }
+
+    private static ChatMessageEntity message(long id, String role) {
+        ChatMessageEntity message = new ChatMessageEntity();
+        message.setId(id);
+        message.setSessionId("session-1");
+        message.setRole(role);
+        message.setContent("m" + id);
+        return message;
     }
 }
