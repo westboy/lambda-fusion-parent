@@ -72,3 +72,16 @@ evn
 /lambda-fusion-startup/certs/
 *.pem
 /lambda-fusion-robot/**
+
+# 嵌套独立仓库（各自维护 git 历史，不入父库）
+/_lambda_cloud_parent
+/_lambda_fusion_web
+/lambda-fusion-robot/
+
+# 本地临时文件
+/.temp/
+/.agentscope/
+/.zcodeignore
+/.tmp.log
+/1.json
+/.idea/inspectionProfiles/
