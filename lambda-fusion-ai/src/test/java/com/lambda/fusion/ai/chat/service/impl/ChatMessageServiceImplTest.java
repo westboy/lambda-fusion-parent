@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lambda.fusion.ai.chat.mapper.ChatMessageMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunStepMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatMessageView;
@@ -24,6 +25,7 @@ import com.lambda.fusion.core.utils.AuthUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,6 +50,7 @@ class ChatMessageServiceImplTest {
     private ChatSessionMapper sessionMapper;
     private ChatAttachmentService attachmentService;
     private ChatRunMapper runMapper;
+    private ChatRunStepMapper runStepMapper;
     private ChatMessageServiceImpl service;
 
     @BeforeEach
@@ -56,7 +59,8 @@ class ChatMessageServiceImplTest {
         sessionMapper = mock(ChatSessionMapper.class);
         attachmentService = mock(ChatAttachmentService.class);
         runMapper = mock(ChatRunMapper.class);
-        service = new ChatMessageServiceImpl(messageMapper, sessionMapper, attachmentService, runMapper);
+        runStepMapper = mock(ChatRunStepMapper.class);
+        service = new ChatMessageServiceImpl(messageMapper, sessionMapper, attachmentService, runMapper, runStepMapper);
 
         ChatSessionEntity session = new ChatSessionEntity();
         session.setId("session-1");
@@ -148,22 +152,26 @@ class ChatMessageServiceImplTest {
     }
 
     @Test
-    void shouldEnrichAssistantMessagesWithRunTimes() {
+    void shouldEnrichAssistantMessagesWithRunTimesAndStepCount() {
         ChatMessageEntity user = message(1L, "user");
         ChatMessageEntity assistant = message(2L, "assistant");
         when(messageMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(assistant, user)));
         ChatRunEntity run = new ChatRunEntity();
+        run.setId("run-1");
         run.setAssistantMessageId(2L);
         run.setStartedAt(LocalDateTime.of(2026, 10, 12, 10, 0, 0));
         run.setFinishedAt(LocalDateTime.of(2026, 10, 12, 10, 0, 12));
         when(runMapper.selectList(any())).thenReturn(List.of(run));
+        when(runStepMapper.selectMaps(any())).thenReturn(List.of(Map.of("run_id", "run-1", "cnt", 2L)));
 
         ChatMessagePage page = withAuth(() -> service.listBySession("session-1", null, 5));
 
         ChatMessageView assistantView = viewById(page, 2L);
         assertThat(assistantView.getRunStartedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0));
         assertThat(assistantView.getRunFinishedAt()).isEqualTo(LocalDateTime.of(2026, 10, 12, 10, 0, 12));
+        assertThat(assistantView.getStepCount()).isEqualTo(2);
         assertThat(viewById(page, 1L).getRunStartedAt()).isNull();
+        assertThat(viewById(page, 1L).getStepCount()).isNull();
     }
 
     private static ChatMessageView viewById(ChatMessagePage page, long id) {

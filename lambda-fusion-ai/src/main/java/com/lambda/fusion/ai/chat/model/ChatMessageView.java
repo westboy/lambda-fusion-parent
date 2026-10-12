@@ -48,6 +48,9 @@ public class ChatMessageView {
     @Schema(description = "归属运行的结束时间")
     private LocalDateTime runFinishedAt;
 
+    @Schema(description = "归属运行的非文本步骤数（推理/工具；前端据此渲染时间线并在收起态显示步数）")
+    private Integer stepCount;
+
     @Schema(description = "该消息的附件列表")
     private List<ChatAttachmentView> attachments;
 

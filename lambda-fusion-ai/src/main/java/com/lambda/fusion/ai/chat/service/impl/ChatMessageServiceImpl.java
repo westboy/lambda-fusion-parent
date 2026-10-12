@@ -2,14 +2,17 @@ package com.lambda.fusion.ai.chat.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.lambda.fusion.ai.chat.mapper.ChatMessageMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatRunMapper;
+import com.lambda.fusion.ai.chat.mapper.ChatRunStepMapper;
 import com.lambda.fusion.ai.chat.mapper.ChatSessionMapper;
 import com.lambda.fusion.ai.chat.model.ChatMessagePage;
 import com.lambda.fusion.ai.chat.model.ChatMessageView;
 import com.lambda.fusion.ai.chat.model.entity.ChatAttachmentEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatMessageEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatRunEntity;
+import com.lambda.fusion.ai.chat.model.entity.ChatRunStepEntity;
 import com.lambda.fusion.ai.chat.model.entity.ChatSessionEntity;
 import com.lambda.fusion.ai.chat.service.ChatAttachmentService;
 import com.lambda.fusion.ai.chat.service.ChatMessageService;
@@ -45,6 +48,7 @@ public class ChatMessageServiceImpl implements ChatMessageService {
     private final ChatSessionMapper chatSessionMapper;
     private final ChatAttachmentService chatAttachmentService;
     private final ChatRunMapper chatRunMapper;
+    private final ChatRunStepMapper chatRunStepMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -115,8 +119,9 @@ public class ChatMessageServiceImpl implements ChatMessageService {
     }
 
     /**
-     * 助手消息反查归属运行的起止时间并填充视图：run 两列建表即有、终态必填，
-     * 前端收起态即可展示总耗时，不依赖步骤懒加载。一条会话内一条索引查询。
+     * 助手消息反查归属运行的起止时间与非文本步骤数并填充视图：run 两列建表即有、终态必填，
+     * 前端收起态即可展示总耗时与步数、并据此判断是否渲染时间线，不依赖步骤懒加载。
+     * 一条会话内两条索引查询（run 反查 + 步骤按 run 分组计数；TEXT 步骤即正文，不计数）。
      */
     private void enrichWithRunTimes(String sessionId, List<ChatMessageEntity> entities, List<ChatMessageView> views) {
         List<Long> assistantMessageIds = entities.stream()
@@ -134,11 +139,24 @@ public class ChatMessageServiceImpl implements ChatMessageService {
                 .filter(run -> run.getAssistantMessageId() != null)
                 .collect(Collectors.toMap(
                         ChatRunEntity::getAssistantMessageId, Function.identity(), (first, second) -> first));
+        Map<String, Integer> stepCountByRun = chatRunStepMapper
+                .selectMaps(new QueryWrapper<ChatRunStepEntity>()
+                        .select("run_id", "COUNT(*) AS cnt")
+                        .eq("session_id", sessionId)
+                        .ne("kind", "text")
+                        .groupBy("run_id"))
+                .stream()
+                .filter(row -> row.get("run_id") != null && row.get("cnt") != null)
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row.get("run_id")),
+                        row -> ((Number) row.get("cnt")).intValue(),
+                        (first, second) -> first));
         for (ChatMessageView view : views) {
             ChatRunEntity run = view.getId() == null ? null : runByMessageId.get(view.getId());
             if (run != null) {
                 view.setRunStartedAt(run.getStartedAt());
                 view.setRunFinishedAt(run.getFinishedAt());
+                view.setStepCount(stepCountByRun.getOrDefault(run.getId(), 0));
             }
         }
     }
