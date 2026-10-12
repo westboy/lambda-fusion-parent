@@ -154,6 +154,26 @@ class ToolOperatorContextPocTest {
         }
     }
 
+    /** callAsPlatform：显式平台模式——即便操作人有租户归属也不绑租户（元数据工具跨全部租户查询）。 */
+    @Test
+    void callAsPlatformSkipsTenantBindingEvenForTenantAffiliatedOperator() throws Exception {
+        String token = loginAs("dev-with-tenant", "org-1", "tenant-9");
+        ToolOperatorContext.capture(RUN_ID, token);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            AtomicReference<String> tenantInView = new AtomicReference<>();
+            pool.submit(() -> ToolOperatorContext.callAsPlatform(RUN_ID, () -> {
+                        tenantInView.set(TenantContextHolder.getCurrentTenantId());
+                        return AuthUtils.getUser();
+                    }))
+                    .get(5, TimeUnit.SECONDS);
+            assertThat(tenantInView).hasValue(null);
+        } finally {
+            pool.shutdownNow();
+            ToolOperatorContext.release(RUN_ID);
+        }
+    }
+
     /** 租户用户未指定目标 → 自动回落到操作人自身租户（防 fail-open 的兜底绑定）。 */
     @Test
     void tenantUserWithoutTargetAutoBindsOwnTenant() throws Exception {

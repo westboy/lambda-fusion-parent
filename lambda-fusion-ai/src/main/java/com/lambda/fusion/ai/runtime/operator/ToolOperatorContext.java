@@ -82,12 +82,45 @@ public final class ToolOperatorContext {
      * 复用操作人自己的活跃会话，不新建会话。未捕获 token（Run 未捕获/已释放/匿名对话）→ fail-closed，
      * 抛 {@link AiErrorCode#TOOL_OPERATOR_CONTEXT_UNAVAILABLE}，绝不降级为匿名执行。
      *
+     * <p>目标租户缺失时回落到操作人自身归属（数据类工具的防 fail-open 兜底）；平台模式
+     * （跨全部租户）请使用 {@link #callAsPlatform}。
+     *
      * @param runId 对话运行标识（取登记表中的 token）
      * @param targetTenantId 目标租户：通常来自对话上下文；代维场景由操作者显式传入；null/空表示未指定
      * @param body 绑定作用域内的执行体
      * @return body 返回值
      */
     public static <T> T callAs(String runId, String targetTenantId, Supplier<T> body) {
+        return bindSession(runId, () -> {
+            // 会话失效在此抛 NotLoginException —— fail-closed
+            String effectiveTenantId = resolveTenantId(AuthUtils.getUser(), targetTenantId);
+            if (StringUtils.hasText(effectiveTenantId)) {
+                TenantContextHolder.getInstance().setTenantId(effectiveTenantId);
+            }
+            try {
+                return body.get();
+            } finally {
+                TenantContextHolder.getInstance().close();
+            }
+        });
+    }
+
+    /**
+     * 工具体内绑定（平台模式）：只绑操作人 Sa-Token 会话，不绑租户——跨全部租户查询。
+     *
+     * <p>仅供平台角色门槛保护的工具使用（控制台元数据等，操作者定位即"不属于任何租户的
+     * 开发者/管理员"）；数据类工具（问数等）使用 {@link #callAs} 以保留自身租户兜底。
+     *
+     * @param runId 对话运行标识（取登记表中的 token）
+     * @param body 绑定作用域内的执行体
+     * @return body 返回值
+     */
+    public static <T> T callAsPlatform(String runId, Supplier<T> body) {
+        return bindSession(runId, body);
+    }
+
+    /** 会话绑定公共骨架：token 校验 → mock 上下文 + 请求头注入 → body → 上下文清理。 */
+    private static <T> T bindSession(String runId, Supplier<T> body) {
         String token = TOKEN_REGISTRY.get(runId);
         if (!StringUtils.hasText(token)) {
             throw new AiBusinessException(AiErrorCode.TOOL_OPERATOR_CONTEXT_UNAVAILABLE);
@@ -101,16 +134,7 @@ public final class ToolOperatorContext {
             } else {
                 throw new AiBusinessException(AiErrorCode.TOOL_OPERATOR_CONTEXT_UNAVAILABLE);
             }
-            // 会话失效在此抛 NotLoginException —— fail-closed
-            String effectiveTenantId = resolveTenantId(AuthUtils.getUser(), targetTenantId);
-            if (StringUtils.hasText(effectiveTenantId)) {
-                TenantContextHolder.getInstance().setTenantId(effectiveTenantId);
-            }
-            try {
-                return body.get();
-            } finally {
-                TenantContextHolder.getInstance().close();
-            }
+            return body.get();
         });
     }
 

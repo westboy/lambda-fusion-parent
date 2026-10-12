@@ -71,7 +71,8 @@ public class MetadataQueryTools {
             page.setPageSize(MAX_LIST_SIZE);
             PageView<FormDefView> result = formDesignService.page(page);
             if (result.getRecords().isEmpty()) {
-                return "平台上暂无表单定义。";
+                // 平台模式跨全部租户查询仍为空：大概率后端连接的库里确实没有表单定义
+                return "平台上暂无表单定义（平台模式：已跨全部租户查询）。" + "若表单在其他环境/数据库，请确认后端数据源连接。";
             }
             StringJoiner rows = new StringJoiner("\n");
             for (FormDefView view : result.getRecords()) {
@@ -148,19 +149,25 @@ public class MetadataQueryTools {
         });
     }
 
-    /** 统一执行骨架：run-as 绑定（目标租户 = 显式参数 > 对话上下文）→ 绑定作用域内平台角色门槛 → 异常转译为工具结果。 */
+    /**
+     * 统一执行骨架：绑定作用域内平台角色门槛 → 异常转译为工具结果。
+     * 显式 tenantId（代维）→ 绑定目标租户执行；未指定 → 平台模式（跨全部租户，
+     * 操作者定位即"不属于任何租户的开发者/管理员"，不回落会话/操作人租户）。
+     */
     private String execute(RuntimeContext context, String explicitTenantId, Supplier<String> body) {
-        String targetTenantId =
-                StringUtils.hasText(explicitTenantId) ? explicitTenantId : RuntimeProperty.tenantId(context);
         try {
-            return ToolOperatorContext.callAs(RuntimeProperty.runId(context), targetTenantId, () -> {
+            String runId = RuntimeProperty.runId(context);
+            Supplier<String> guarded = () -> {
                 // 平台角色门槛在绑定作用域内执行：读取的是绑定会话中的操作人角色
                 String denied = platformOperatorDenied();
                 if (denied != null) {
                     return denied;
                 }
                 return body.get();
-            });
+            };
+            return StringUtils.hasText(explicitTenantId)
+                    ? ToolOperatorContext.callAs(runId, explicitTenantId, guarded)
+                    : ToolOperatorContext.callAsPlatform(runId, guarded);
         } catch (RuntimeException e) {
             // 工具错误以可读文本返回，交由 Agent 自纠错/如实答复，不中断 ReAct 循环
             log.warn("控制台元数据查询失败: {}", e.getMessage());
