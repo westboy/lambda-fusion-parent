@@ -13,6 +13,7 @@ import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
 import com.lambda.fusion.ai.chat.attachment.WorkspaceArtifactPublishTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
+import com.lambda.fusion.ai.console.MetadataQueryTools;
 import com.lambda.fusion.ai.llm.model.entity.LlmModelEntity;
 import com.lambda.fusion.ai.llm.model.entity.LlmProviderEntity;
 import com.lambda.fusion.ai.llm.service.LlmModelService;
@@ -45,6 +46,7 @@ class ToolkitAssemblerImageToolTest {
     private ApplicationContext applicationContext;
     private ObjectProvider<KnowledgeRetriever> knowledgeRetrieverProvider;
     private ObjectProvider<QwenImageGenerationTool> qwenImageGenerationToolProvider;
+    private ObjectProvider<MetadataQueryTools> metadataQueryToolsProvider;
     private ToolkitAssembler assembler;
 
     @BeforeEach
@@ -55,6 +57,7 @@ class ToolkitAssemblerImageToolTest {
         applicationContext = mock(ApplicationContext.class);
         knowledgeRetrieverProvider = mock(ObjectProvider.class);
         qwenImageGenerationToolProvider = mock(ObjectProvider.class);
+        metadataQueryToolsProvider = mock(ObjectProvider.class);
         when(applicationContext.getBeanDefinitionNames()).thenReturn(new String[0]);
         // 不触发 @PostConstruct 扫描：本测试只关心生图工具的条件挂载
         assembler = new ToolkitAssembler(
@@ -67,7 +70,8 @@ class ToolkitAssemblerImageToolTest {
                 mock(ChatAttachmentContentTool.class),
                 mock(WorkspaceArtifactPublishTool.class),
                 knowledgeRetrieverProvider,
-                qwenImageGenerationToolProvider);
+                qwenImageGenerationToolProvider,
+                metadataQueryToolsProvider);
     }
 
     @Test

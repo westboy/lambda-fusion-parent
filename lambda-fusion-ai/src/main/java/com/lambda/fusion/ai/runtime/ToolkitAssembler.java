@@ -11,6 +11,7 @@ import com.lambda.fusion.ai.apps.service.MediaGenerationBindingResolver.Binding;
 import com.lambda.fusion.ai.chat.attachment.ChatAttachmentContentTool;
 import com.lambda.fusion.ai.chat.attachment.WorkspaceArtifactPublishTool;
 import com.lambda.fusion.ai.chat.runtime.media.ToolResultMediaMaterializer;
+import com.lambda.fusion.ai.console.MetadataQueryTools;
 import com.lambda.fusion.ai.mcp.model.entity.McpServerEntity;
 import com.lambda.fusion.ai.mcp.service.McpServerService;
 import com.lambda.fusion.ai.rag.runtime.KnowledgeRetrievalTool;
@@ -66,6 +67,7 @@ public class ToolkitAssembler {
     private final WorkspaceArtifactPublishTool workspaceArtifactPublishTool;
     private final ObjectProvider<KnowledgeRetriever> knowledgeRetrieverProvider;
     private final ObjectProvider<QwenImageGenerationTool> qwenImageGenerationToolProvider;
+    private final ObjectProvider<MetadataQueryTools> metadataQueryToolsProvider;
 
     /**
      * -- GETTER --
@@ -147,9 +149,22 @@ public class ToolkitAssembler {
             registerMediaGenerationTools(toolkit, app);
         }
         registerKnowledgeTool(toolkit, app);
+        registerMetadataTools(toolkit);
         registerMcpServers(toolkit, app.getMcpServerIds());
         applyToolPolicy(toolkit, app.getToolsAllow(), app.getToolsDeny());
         return toolkit;
+    }
+
+    /**
+     * 控制台助手元数据只读工具：form 在 classpath 时由 AiConfigure 条件装配，
+     * 全局注册（工具内自带平台角色门槛与 run-as fail-closed，匿名/非平台对话结构性不可执行）。
+     */
+    private void registerMetadataTools(Toolkit toolkit) {
+        MetadataQueryTools tools = metadataQueryToolsProvider.getIfAvailable();
+        if (tools != null) {
+            toolkit.registerTool(tools);
+            log.info("已挂载控制台助手元数据只读工具（list_forms/get_form_fields/list_datasources）");
+        }
     }
 
     /** 所有来源注册完成后统一应用应用级工具策略，避免本地、媒体和 MCP 工具各自解释白黑名单。 */

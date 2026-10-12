@@ -26,7 +26,8 @@ import org.springframework.util.StringUtils;
 /**
  * 控制台助手元数据只读工具（能力包①）：面向平台开发者/管理员，回答「平台有哪些表单/数据源、
  * 表单有什么字段」等元数据问题。由 {@code AiConfigure.ConsoleConfiguration} 按 form 在 classpath
- * 与能力开关条件装配，非组件扫描（可选依赖优雅降级，契约 §3.3/§4.1）。
+ * 条件装配，经 {@code ToolkitAssembler.registerMetadataTools} 全局注册进各应用工具集
+ * （ObjectProvider 模式，form 缺失时优雅降级，契约 §3.3/§4.1）。
  *
  * <p>执行语义：每个工具经 {@link ToolOperatorContext#callAs} 在操作人会话与租户上下文内执行——
  * 平台开发者/管理员无租户归属即平台模式（跨租户元数据 listing）；显式传入 tenantId 即代维模式。
